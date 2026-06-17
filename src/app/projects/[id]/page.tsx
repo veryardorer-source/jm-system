@@ -32,6 +32,10 @@ export default function ProjectDetail() {
   const [copiedUrlId, setCopiedUrlId] = useState<string | null>(null)
   const [lightbox, setLightbox] = useState<string | null>(null)
 
+  const [collapsedCats, setCollapsedCats] = useState<Record<string, boolean>>({})
+  const [selectedFileIds, setSelectedFileIds] = useState<Set<string>>(new Set())
+  const [selectMode, setSelectMode] = useState(false)
+
   const [showScheduleForm, setShowScheduleForm] = useState(false)
   const [sForm, setSForm] = useState({ task_name: '', scheduled_date: '', end_date: '', manager: '' })
   const [savingS, setSavingS] = useState(false)
@@ -62,23 +66,30 @@ export default function ProjectDetail() {
       setUploadProgress(Math.round((i / selectedFiles.length) * 100))
       const ext = file.name.split('.').pop() || 'bin'
       const path = `files/${id}/${Date.now()}_${i}.${ext}`
-      const { data: uploadData } = await supabase.storage.from('uploads').upload(path, file, {
+      const { data: uploadData, error: uploadError } = await supabase.storage.from('uploads').upload(path, file, {
         contentType: file.type || 'application/octet-stream',
+        upsert: true,
       })
-      if (uploadData) {
-        const { data: urlData } = supabase.storage.from('uploads').getPublicUrl(path)
-        await supabase.from('project_files').insert([{
-          project_id: id,
-          file_name: file.name,
-          file_url: urlData.publicUrl,
-          file_type: file.type,
-          category: fileForm.category,
-          memo: fileForm.memo,
-        }])
+      if (uploadError) {
+        alert('스토리지 업로드 실패: ' + uploadError.message)
+        continue
+      }
+      const { data: urlData } = supabase.storage.from('uploads').getPublicUrl(path)
+      const { error: insertError } = await supabase.from('project_files').insert([{
+        project_id: id,
+        file_name: file.name,
+        file_url: urlData.publicUrl,
+        file_type: file.type || '',
+        category: fileForm.category,
+        memo: fileForm.memo || '',
+        uploaded_by: '',
+      }])
+      if (insertError) {
+        alert('DB 저장 실패: ' + insertError.message)
       }
     }
     setUploadProgress(100)
-    setFileForm({ category: '사진', memo: '' })
+    setFileForm({ category: '시공전사진', memo: '' })
     setSelectedFiles([])
     setShowFileForm(false)
     setUploading(false)
@@ -95,13 +106,34 @@ export default function ProjectDetail() {
 
   async function deleteFile(file: ProjectFile) {
     if (!confirm(`"${file.file_name}" 을 삭제할까요?`)) return
-    // Storage에서 파일 경로 추출 후 삭제
     if (file.file_url) {
       const path = file.file_url.split('/uploads/')[1]
       if (path) await supabase.storage.from('uploads').remove([path])
     }
     await supabase.from('project_files').delete().eq('id', file.id)
     fetchAll()
+  }
+
+  async function deleteSelectedFiles() {
+    if (selectedFileIds.size === 0) return
+    if (!confirm(`선택한 ${selectedFileIds.size}장을 삭제할까요?`)) return
+    const toDelete = files.filter(f => selectedFileIds.has(f.id))
+    const paths = toDelete.map(f => f.file_url.split('/uploads/')[1]).filter(Boolean)
+    if (paths.length > 0) await supabase.storage.from('uploads').remove(paths)
+    const ids = Array.from(selectedFileIds)
+    const { error } = await supabase.from('project_files').delete().in('id', ids)
+    if (error) { alert('삭제 실패: ' + error.message); return }
+    setSelectedFileIds(new Set())
+    setSelectMode(false)
+    fetchAll()
+  }
+
+  function toggleSelectFile(id: string) {
+    setSelectedFileIds(prev => {
+      const next = new Set(prev)
+      next.has(id) ? next.delete(id) : next.add(id)
+      return next
+    })
   }
 
   async function handleSchedule(e: React.FormEvent) {
@@ -153,9 +185,6 @@ export default function ProjectDetail() {
     </div>
   )
 
-  const pendingReceipts = receipts.filter(r => !r.is_processed).length
-  const pendingWithdrawals = withdrawals.filter(w => w.status === '요청').length
-
   return (
     <div className="flex h-screen overflow-hidden">
       <Sidebar />
@@ -192,12 +221,6 @@ export default function ProjectDetail() {
                   tab === t ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'
                 }`}>
                 {t}
-                {t === '영수증' && pendingReceipts > 0 && (
-                  <span className="ml-1.5 bg-red-500 text-white text-xs rounded-full px-1.5 py-0.5">{pendingReceipts}</span>
-                )}
-                {t === '출금요청' && pendingWithdrawals > 0 && (
-                  <span className="ml-1.5 bg-red-500 text-white text-xs rounded-full px-1.5 py-0.5">{pendingWithdrawals}</span>
-                )}
               </button>
             ))}
           </div>
@@ -208,7 +231,52 @@ export default function ProjectDetail() {
           {/* 자료 탭 */}
           {tab === '자료' && (
             <div>
-              <div className="flex justify-end mb-4">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex gap-2">
+                  {selectMode ? (
+                    <>
+                      <button onClick={async () => {
+                        const selected = files.filter(f => selectedFileIds.has(f.id))
+                        for (const f of selected) {
+                          try {
+                            const res = await fetch(f.file_url)
+                            const blob = await res.blob()
+                            const url = URL.createObjectURL(blob)
+                            const a = document.createElement('a')
+                            a.href = url
+                            a.download = f.file_name
+                            a.click()
+                            URL.revokeObjectURL(url)
+                            await new Promise(r => setTimeout(r, 300))
+                          } catch { /* skip */ }
+                        }
+                      }} disabled={selectedFileIds.size === 0}
+                        className="bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-40">
+                        {selectedFileIds.size > 0 ? `${selectedFileIds.size}장 다운로드` : '다운로드'}
+                      </button>
+                      <button onClick={async () => {
+                        const selected = files.filter(f => selectedFileIds.has(f.id))
+                        const text = selected.map(f => `${f.file_name}\n${f.file_url}`).join('\n\n')
+                        await navigator.clipboard.writeText(text)
+                        alert(`${selected.length}장 링크가 복사됐습니다.`)
+                      }} disabled={selectedFileIds.size === 0}
+                        className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-40">
+                        {selectedFileIds.size > 0 ? `${selectedFileIds.size}장 링크복사` : '링크복사'}
+                      </button>
+                      <button onClick={deleteSelectedFiles} disabled={selectedFileIds.size === 0}
+                        className="bg-red-500 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-red-600 disabled:opacity-40">
+                        {selectedFileIds.size > 0 ? `${selectedFileIds.size}장 삭제` : '삭제'}
+                      </button>
+                      <button onClick={() => { setSelectMode(false); setSelectedFileIds(new Set()) }}
+                        className="border border-gray-300 text-gray-600 px-4 py-2 rounded-lg text-sm">취소</button>
+                    </>
+                  ) : (
+                    <button onClick={() => setSelectMode(true)}
+                      className="border border-gray-300 text-gray-600 px-4 py-2 rounded-lg text-sm hover:bg-gray-50">
+                      사진 선택
+                    </button>
+                  )}
+                </div>
                 <button onClick={() => setShowFileForm(true)}
                   className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700">
                   + 자료 추가
@@ -219,54 +287,96 @@ export default function ProjectDetail() {
                   <p className="text-3xl mb-2">📁</p><p>등록된 자료가 없어요</p>
                 </div>
               ) : (
-                <div className="flex flex-col gap-6">
+                <div className="flex flex-col gap-3">
                   {CATEGORY_LIST.map(cat => {
                     const catFiles = files.filter(f => f.category === cat)
                     if (catFiles.length === 0) return null
                     const isPhoto = ['시공전사진','시공사진','마감사진'].includes(cat)
+                    const isCollapsed = collapsedCats[cat] !== false
+                    const allSelected = catFiles.every(f => selectedFileIds.has(f.id))
                     return (
-                      <div key={cat}>
-                        <h3 className="text-sm font-semibold text-gray-600 mb-3">{cat} <span className="text-gray-400 font-normal">({catFiles.length})</span></h3>
-                        {isPhoto ? (
-                          /* 사진: 그리드 썸네일 */
-                          <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-2">
-                            {catFiles.map(f => (
-                              <div key={f.id} className="relative group aspect-square">
-                                <img src={f.file_url} alt={f.file_name}
-                                  onClick={() => setLightbox(f.file_url)}
-                                  className="w-full h-full object-cover rounded-lg border border-gray-200 cursor-pointer hover:opacity-90 transition-opacity" />
-                                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 rounded-lg transition-all flex items-end justify-between p-1 opacity-0 group-hover:opacity-100">
-                                  <button onClick={() => copyFileUrl(f)}
-                                    className="text-white bg-black/50 text-xs px-1.5 py-0.5 rounded">
-                                    {copiedUrlId === f.id ? '✓' : '링크'}
-                                  </button>
-                                  <button onClick={() => deleteFile(f)}
-                                    className="text-white bg-red-500/80 text-xs px-1.5 py-0.5 rounded">삭제</button>
-                                </div>
+                      <div key={cat} className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+                        {/* 카테고리 헤더 토글 */}
+                        <div className="flex items-center justify-between px-4 py-3 hover:bg-gray-50">
+                          <button onClick={() => setCollapsedCats(prev => ({ ...prev, [cat]: !isCollapsed }))}
+                            className="flex-1 flex items-center gap-2 text-left">
+                            <span className="text-sm font-semibold text-gray-700">
+                              {cat} <span className="text-gray-400 font-normal ml-1">({catFiles.length})</span>
+                            </span>
+                            <span className="text-gray-400 text-xs">{isCollapsed ? '▼ 펼치기' : '▲ 접기'}</span>
+                          </button>
+                          {selectMode && isPhoto && (
+                            <button onClick={() => {
+                              if (allSelected) {
+                                setSelectedFileIds(prev => {
+                                  const next = new Set(prev)
+                                  catFiles.forEach(f => next.delete(f.id))
+                                  return next
+                                })
+                              } else {
+                                setSelectedFileIds(prev => {
+                                  const next = new Set(prev)
+                                  catFiles.forEach(f => next.add(f.id))
+                                  return next
+                                })
+                              }
+                            }} className={`text-xs px-3 py-1 rounded-lg border ${allSelected ? 'border-blue-500 text-blue-600 bg-blue-50' : 'border-gray-300 text-gray-600'}`}>
+                              {allSelected ? '전체해제' : '전체선택'}
+                            </button>
+                          )}
+                        </div>
+                        {!isCollapsed && (
+                          <div className="border-t border-gray-100 p-3">
+                            {isPhoto ? (
+                              <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-2">
+                                {catFiles.map(f => (
+                                  <div key={f.id} className="relative group aspect-square">
+                                    {selectMode && (
+                                      <div onClick={() => toggleSelectFile(f.id)}
+                                        className={`absolute inset-0 z-10 rounded-lg border-2 cursor-pointer transition-all ${selectedFileIds.has(f.id) ? 'border-blue-500 bg-blue-500/20' : 'border-transparent'}`}>
+                                        <div className={`absolute top-1 left-1 w-5 h-5 rounded-full border-2 flex items-center justify-center text-xs font-bold ${selectedFileIds.has(f.id) ? 'bg-blue-500 border-blue-500 text-white' : 'bg-white border-gray-300'}`}>
+                                          {selectedFileIds.has(f.id) ? '✓' : ''}
+                                        </div>
+                                      </div>
+                                    )}
+                                    <img src={f.file_url} alt={f.file_name}
+                                      onClick={() => !selectMode && setLightbox(f.file_url)}
+                                      className="w-full h-full object-cover rounded-lg border border-gray-200 cursor-pointer hover:opacity-90 transition-opacity" />
+                                    {!selectMode && (
+                                      <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 rounded-lg transition-all flex items-end justify-between p-1 opacity-0 group-hover:opacity-100">
+                                        <button onClick={() => copyFileUrl(f)}
+                                          className="text-white bg-black/50 text-xs px-1.5 py-0.5 rounded">
+                                          {copiedUrlId === f.id ? '✓' : '링크'}
+                                        </button>
+                                        <button onClick={() => deleteFile(f)}
+                                          className="text-white bg-red-500/80 text-xs px-1.5 py-0.5 rounded">삭제</button>
+                                      </div>
+                                    )}
+                                  </div>
+                                ))}
                               </div>
-                            ))}
-                          </div>
-                        ) : (
-                          /* 기타 파일: 리스트 */
-                          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-                            {catFiles.map((f, i) => (
-                              <div key={f.id} className={`flex items-center gap-3 px-4 py-3 hover:bg-gray-50 ${i > 0 ? 'border-t border-gray-100' : ''}`}>
-                                <span className="text-lg">{f.file_type?.includes('pdf') ? '📄' : f.file_type?.includes('image') ? '🖼️' : '📎'}</span>
-                                <div className="flex-1 min-w-0">
-                                  <p className="text-sm font-medium text-gray-800 truncate">{f.file_name}</p>
-                                  {f.memo && <p className="text-xs text-gray-400">{f.memo}</p>}
-                                </div>
-                                <span className="text-xs text-gray-400 flex-shrink-0">{new Date(f.created_at).toLocaleDateString('ko-KR')}</span>
-                                <a href={f.file_url} target="_blank" rel="noopener noreferrer"
-                                  className="text-xs text-blue-600 hover:underline flex-shrink-0">열기</a>
-                                <button onClick={() => copyFileUrl(f)}
-                                  className={`text-xs flex-shrink-0 ${copiedUrlId === f.id ? 'text-green-600' : 'text-gray-400 hover:text-blue-600'}`}>
-                                  {copiedUrlId === f.id ? '✓' : '링크'}
-                                </button>
-                                <button onClick={() => deleteFile(f)}
-                                  className="text-xs text-red-400 hover:text-red-600 flex-shrink-0">삭제</button>
+                            ) : (
+                              <div>
+                                {catFiles.map((f, i) => (
+                                  <div key={f.id} className={`flex items-center gap-3 px-2 py-2.5 hover:bg-gray-50 rounded-lg ${i > 0 ? 'border-t border-gray-100' : ''}`}>
+                                    <span className="text-lg">{f.file_type?.includes('pdf') ? '📄' : f.file_type?.includes('image') ? '🖼️' : '📎'}</span>
+                                    <div className="flex-1 min-w-0">
+                                      <p className="text-sm font-medium text-gray-800 truncate">{f.file_name}</p>
+                                      {f.memo && <p className="text-xs text-gray-400">{f.memo}</p>}
+                                    </div>
+                                    <span className="text-xs text-gray-400 flex-shrink-0">{new Date(f.created_at).toLocaleDateString('ko-KR')}</span>
+                                    <a href={f.file_url} target="_blank" rel="noopener noreferrer"
+                                      className="text-xs text-blue-600 hover:underline flex-shrink-0">열기</a>
+                                    <button onClick={() => copyFileUrl(f)}
+                                      className={`text-xs flex-shrink-0 ${copiedUrlId === f.id ? 'text-green-600' : 'text-gray-400 hover:text-blue-600'}`}>
+                                      {copiedUrlId === f.id ? '✓' : '링크'}
+                                    </button>
+                                    <button onClick={() => deleteFile(f)}
+                                      className="text-xs text-red-400 hover:text-red-600 flex-shrink-0">삭제</button>
+                                  </div>
+                                ))}
                               </div>
-                            ))}
+                            )}
                           </div>
                         )}
                       </div>
