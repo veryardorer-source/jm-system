@@ -38,8 +38,8 @@ export default function Sidebar() {
   return (
     <>
       {/* 데스크탑 사이드바 */}
-      <aside className="hidden md:flex w-56 bg-gray-900 min-h-screen flex-col flex-shrink-0">
-        <div className="px-5 py-5 border-b border-gray-700">
+      <aside className="hidden md:flex w-56 bg-green-800 min-h-screen flex-col flex-shrink-0">
+        <div className="px-5 py-5 border-b border-green-700">
           <Image src="/logo.png" alt="JM Architecture Interior" width={140} height={48} className="brightness-0 invert" />
         </div>
         <nav className="flex-1 px-3 py-4 flex flex-col gap-1">
@@ -48,7 +48,7 @@ export default function Sidebar() {
             return (
               <Link key={item.href} href={item.href}
                 className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors ${
-                  active ? 'bg-green-600 text-white' : 'text-green-400 hover:bg-gray-800 hover:text-green-300'
+                  active ? 'bg-green-600 text-white' : 'text-green-100 hover:bg-green-700 hover:text-white'
                 }`}>
                 <span>{item.label}</span>
               </Link>
@@ -56,13 +56,13 @@ export default function Sidebar() {
           })}
           {isAdmin && (
             <>
-              <div className="mt-3 mb-1 px-3 text-xs text-gray-600 font-semibold uppercase tracking-wide">관리자</div>
+              <div className="mt-3 mb-1 px-3 text-xs text-green-400 font-semibold uppercase tracking-wide">관리자</div>
               {ADMIN_ITEMS.map(item => {
                 const active = pathname.startsWith(item.href)
                 return (
                   <Link key={item.href} href={item.href}
                     className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors ${
-                      active ? 'bg-green-600 text-white' : 'text-gray-400 hover:bg-gray-800 hover:text-white'
+                      active ? 'bg-green-600 text-white' : 'text-gray-400 hover:bg-green-700 hover:text-white'
                     }`}>
                     <span>{item.icon}</span>
                     <span>{item.label}</span>
@@ -76,18 +76,18 @@ export default function Sidebar() {
           {profile && (
             <div className="mb-3">
               <p className="text-white text-sm font-medium">{profile.name}</p>
-              <p className="text-gray-400 text-xs mt-0.5">{ROLE_LABEL[profile.role] || profile.role}</p>
+              <p className="text-green-200 text-xs mt-0.5">{ROLE_LABEL[profile.role] || profile.role}</p>
             </div>
           )}
           <button onClick={handleSignOut}
-            className="w-full text-left text-gray-500 hover:text-gray-300 text-xs transition-colors">
+            className="w-full text-left text-green-300 hover:text-white text-xs transition-colors">
             로그아웃
           </button>
         </div>
       </aside>
 
       {/* 모바일 하단 탭바 */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-gray-900 border-t border-gray-700 z-40 flex">
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-green-800 border-t border-green-700 z-40 flex">
         {NAV_ITEMS.map(item => {
           const active = pathname === item.href || (item.href !== '/' && pathname.startsWith(item.href))
           return (
