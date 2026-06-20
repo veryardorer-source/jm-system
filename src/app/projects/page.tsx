@@ -20,8 +20,15 @@ export default function ProjectsPage() {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [search, setSearch] = useState('')
+  const [editingStatusId, setEditingStatusId] = useState<string | null>(null)
 
   useEffect(() => { fetchProjects() }, [])
+  useEffect(() => {
+    if (!editingStatusId) return
+    const close = () => setEditingStatusId(null)
+    document.addEventListener('click', close)
+    return () => document.removeEventListener('click', close)
+  }, [editingStatusId])
 
   async function fetchProjects() {
     setLoading(true)
@@ -29,6 +36,12 @@ export default function ProjectsPage() {
     if (error) console.error(error)
     setProjects(data || [])
     setLoading(false)
+  }
+
+  async function updateStatus(id: string, status: Project['status']) {
+    await supabase.from('projects').update({ status }).eq('id', id)
+    setEditingStatusId(null)
+    fetchProjects()
   }
 
   async function handleCreate(e: React.FormEvent) {
@@ -110,19 +123,34 @@ export default function ProjectsPage() {
                 {/* 모바일: 카드형 */}
                 <div className="md:hidden flex flex-col gap-3">
                   {filtered.map(p => (
-                    <Link key={p.id} href={`/projects/${p.id}`}>
-                      <div className="bg-white rounded-xl border border-gray-200 p-4 active:bg-gray-50">
-                        <div className="flex items-start justify-between gap-2 mb-2">
-                          <p className="font-semibold text-gray-900">{p.name}</p>
-                          <span className={`text-xs px-2 py-1 rounded-full font-medium border flex-shrink-0 ${STATUS_COLOR[p.status]}`}>{p.status}</span>
+                    <div key={p.id} className="bg-white rounded-xl border border-gray-200 p-4">
+                      <div className="flex items-start justify-between gap-2 mb-2">
+                        <Link href={`/projects/${p.id}`} className="font-semibold text-gray-900 flex-1">{p.name}</Link>
+                        <div className="relative flex-shrink-0">
+                          <button onClick={e => { e.stopPropagation(); e.preventDefault(); setEditingStatusId(editingStatusId === p.id ? null : p.id) }}
+                            className={`text-xs px-2 py-1 rounded-full font-medium border ${STATUS_COLOR[p.status]}`}>
+                            {p.status} ▾
+                          </button>
+                          {editingStatusId === p.id && (
+                            <div className="absolute right-0 top-7 z-50 bg-white border border-gray-200 rounded-xl shadow-xl w-36 py-1 max-h-72 overflow-y-auto">
+                              {STATUS_LIST.map(s => (
+                                <button key={s} onClick={() => updateStatus(p.id, s as Project['status'])}
+                                  className={`w-full text-left px-3 py-2 text-xs hover:bg-gray-50 ${p.status === s ? 'font-bold text-green-600' : 'text-gray-700'}`}>
+                                  {s}
+                                </button>
+                              ))}
+                            </div>
+                          )}
                         </div>
+                      </div>
+                      <Link href={`/projects/${p.id}`} className="block">
                         <div className="flex items-center gap-3 text-xs text-gray-500">
                           {p.client_name && <span>{p.client_name}</span>}
                           {p.manager && <span>· {p.manager}</span>}
                           {p.end_date && <span>· ~{p.end_date}</span>}
                         </div>
-                      </div>
-                    </Link>
+                      </Link>
+                    </div>
                   ))}
                 </div>
                 {/* 데스크탑: 테이블형 */}
@@ -150,7 +178,22 @@ export default function ProjectsPage() {
                           <td className="px-4 py-3.5 text-sm text-gray-600">{p.client_name || '-'}</td>
                           <td className="px-4 py-3.5 text-sm text-gray-600">{p.manager || '-'}</td>
                           <td className="px-4 py-3.5">
-                            <span className={`text-xs px-2.5 py-1 rounded-full font-medium border ${STATUS_COLOR[p.status]}`}>{p.status}</span>
+                            <div className="relative inline-block">
+                              <button onClick={e => { e.stopPropagation(); e.preventDefault(); setEditingStatusId(editingStatusId === p.id ? null : p.id) }}
+                                className={`text-xs px-2.5 py-1 rounded-full font-medium border hover:opacity-80 transition-opacity ${STATUS_COLOR[p.status]}`}>
+                                {p.status} ▾
+                              </button>
+                              {editingStatusId === p.id && (
+                                <div className="absolute left-0 top-8 z-50 bg-white border border-gray-200 rounded-xl shadow-xl w-36 py-1 max-h-72 overflow-y-auto">
+                                  {STATUS_LIST.map(s => (
+                                    <button key={s} onClick={() => updateStatus(p.id, s as Project['status'])}
+                                      className={`w-full text-left px-3 py-2 text-xs hover:bg-gray-50 ${p.status === s ? 'font-bold text-green-600' : 'text-gray-700'}`}>
+                                      {s}
+                                    </button>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
                           </td>
                           <td className="px-4 py-3.5 text-sm text-gray-500">
                             {p.start_date && p.end_date ? `${p.start_date} ~ ${p.end_date}` : p.start_date ? `${p.start_date} ~` : '-'}
