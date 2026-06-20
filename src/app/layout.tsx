@@ -3,13 +3,20 @@ import "./globals.css";
 import { AuthProvider } from "@/lib/auth-context";
 
 export const metadata: Metadata = {
-  title: "JM 업무 관리 시스템",
-  description: "JM 통합 업무 관리 시스템",
+  title: "JM 관리 시스템",
+  description: "JM건축인테리어 통합 업무 관리",
+  manifest: '/manifest.json',
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'black-translucent',
+    title: 'JM관리',
+  },
 };
 
 export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
+  themeColor: '#2563eb',
 };
 
 export default function RootLayout({
