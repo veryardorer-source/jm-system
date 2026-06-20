@@ -6,7 +6,7 @@ import Sidebar from '@/components/Sidebar'
 import { supabase, Project, ProjectFile, Schedule } from '@/lib/supabase'
 
 const TAB_LIST = ['자료', '공정']
-const CATEGORY_LIST = ['시공전사진', '시공사진', '마감사진', '도면', '3D', '미팅내용', '고객요청', '구매링크', '사용법', '기타']
+const CATEGORY_LIST = ['시공전사진', '시공사진', '마감사진', '도면', '3D', '미팅내용', '고객요청', '구매링크', '기타']
 const STATUS_COLOR: Record<string, string> = {
   '디자인진행중': 'bg-purple-100 text-purple-700',
   '견적진행중': 'bg-yellow-100 text-yellow-700',
