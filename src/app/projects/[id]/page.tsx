@@ -368,8 +368,17 @@ export default function ProjectDetail() {
                                       {f.memo && <p className="text-xs text-gray-400">{f.memo}</p>}
                                     </div>
                                     <span className="text-xs text-gray-400 flex-shrink-0">{new Date(f.created_at).toLocaleDateString('ko-KR')}</span>
-                                    <a href={f.file_url} target="_blank" rel="noopener noreferrer"
-                                      className="text-xs text-blue-600 hover:underline flex-shrink-0">열기</a>
+                                    <button onClick={() => {
+                                      const type = f.file_type?.toLowerCase() || ''
+                                      const name = f.file_name?.toLowerCase() || ''
+                                      if (type.includes('image') || /\.(jpg|jpeg|png|gif|webp|heic)$/.test(name)) {
+                                        setLightbox(f.file_url)
+                                      } else if (type.includes('pdf') || name.endsWith('.pdf')) {
+                                        window.open(`https://docs.google.com/viewer?url=${encodeURIComponent(f.file_url)}`, '_blank')
+                                      } else {
+                                        window.open(f.file_url, '_blank')
+                                      }
+                                    }} className="text-xs text-blue-600 hover:underline flex-shrink-0">열기</button>
                                     <button onClick={() => copyFileUrl(f)}
                                       className={`text-xs flex-shrink-0 ${copiedUrlId === f.id ? 'text-green-600' : 'text-gray-400 hover:text-blue-600'}`}>
                                       {copiedUrlId === f.id ? '✓' : '링크'}
