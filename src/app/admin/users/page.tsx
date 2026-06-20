@@ -13,12 +13,18 @@ const ROLE_OPTIONS: { value: UserRole; label: string; color: string }[] = [
   { value: 'staff', label: '직원', color: 'bg-gray-100 text-gray-700' },
 ]
 
+const INITIAL_FORM = { name: '', email: '', password: '', role: 'staff' as UserRole }
+
 export default function AdminUsersPage() {
   const router = useRouter()
   const { profile: myProfile, loading: authLoading } = useAuth()
   const [users, setUsers] = useState<Profile[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState<string | null>(null)
+  const [showAddForm, setShowAddForm] = useState(false)
+  const [addForm, setAddForm] = useState(INITIAL_FORM)
+  const [adding, setAdding] = useState(false)
+  const [addError, setAddError] = useState('')
 
   useEffect(() => {
     if (!authLoading) {
@@ -35,6 +41,27 @@ export default function AdminUsersPage() {
     const { data } = await supabase.from('profiles').select('*').order('name')
     setUsers(data || [])
     setLoading(false)
+  }
+
+  async function addUser(e: React.FormEvent) {
+    e.preventDefault()
+    setAdding(true)
+    setAddError('')
+    const res = await fetch('/api/admin/create-user', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(addForm),
+    })
+    const data = await res.json()
+    if (!res.ok) {
+      setAddError(data.error || '오류가 발생했습니다')
+      setAdding(false)
+      return
+    }
+    setAddForm(INITIAL_FORM)
+    setShowAddForm(false)
+    setAdding(false)
+    fetchUsers()
   }
 
   async function updateRole(userId: string, role: UserRole) {
@@ -63,15 +90,23 @@ export default function AdminUsersPage() {
       <Sidebar />
       <div className="flex-1 flex flex-col">
         <header className="bg-white border-b border-gray-200 px-4 md:px-8 py-4 md:py-5">
-          <h1 className="text-xl font-bold text-gray-900">직원 관리</h1>
-          <p className="text-sm text-gray-500 mt-0.5">가입한 직원의 권한을 설정합니다</p>
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-xl font-bold text-gray-900">직원 관리</h1>
+              <p className="text-sm text-gray-500 mt-0.5">직원 계정 생성 및 권한 설정</p>
+            </div>
+            <button onClick={() => setShowAddForm(true)}
+              className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700">
+              + 직원 추가
+            </button>
+          </div>
         </header>
 
         <div className="flex-1 px-4 md:px-8 py-6 pb-20 md:pb-6">
           {users.length === 0 ? (
             <div className="bg-white rounded-xl border border-gray-200 text-center py-16 text-gray-400">
               <p className="text-3xl mb-2">👥</p>
-              <p>가입한 직원이 없습니다</p>
+              <p>등록된 직원이 없습니다</p>
             </div>
           ) : (
             <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
@@ -158,6 +193,64 @@ export default function AdminUsersPage() {
           )}
         </div>
       </div>
+
+      {/* 직원 추가 모달 */}
+      {showAddForm && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl w-full max-w-md shadow-xl">
+            <div className="flex items-center justify-between px-6 py-5 border-b border-gray-100">
+              <h2 className="text-lg font-bold">직원 추가</h2>
+              <button onClick={() => { setShowAddForm(false); setAddError(''); setAddForm(INITIAL_FORM) }}
+                className="text-gray-400 text-2xl">&times;</button>
+            </div>
+            <form onSubmit={addUser} className="px-6 py-5 flex flex-col gap-4">
+              <div>
+                <label className="text-sm font-medium text-gray-700 block mb-1.5">이름 *</label>
+                <input required value={addForm.name} onChange={e => setAddForm({ ...addForm, name: e.target.value })}
+                  placeholder="홍길동"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+              </div>
+              <div>
+                <label className="text-sm font-medium text-gray-700 block mb-1.5">이메일 *</label>
+                <input required type="email" value={addForm.email} onChange={e => setAddForm({ ...addForm, email: e.target.value })}
+                  placeholder="example@email.com"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+              </div>
+              <div>
+                <label className="text-sm font-medium text-gray-700 block mb-1.5">임시 비밀번호 *</label>
+                <input required type="text" value={addForm.password} onChange={e => setAddForm({ ...addForm, password: e.target.value })}
+                  placeholder="직원에게 알려줄 임시 비밀번호"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+              </div>
+              <div>
+                <label className="text-sm font-medium text-gray-700 block mb-1.5">권한 *</label>
+                <div className="grid grid-cols-2 gap-2">
+                  {ROLE_OPTIONS.map(r => (
+                    <button key={r.value} type="button"
+                      onClick={() => setAddForm({ ...addForm, role: r.value })}
+                      className={`py-2.5 rounded-lg text-sm font-medium border transition-colors ${
+                        addForm.role === r.value
+                          ? r.color + ' border-transparent'
+                          : 'border-gray-200 text-gray-500 hover:border-gray-300'
+                      }`}>
+                      {r.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              {addError && <p className="text-sm text-red-500 text-center">{addError}</p>}
+              <div className="flex gap-3 mt-2">
+                <button type="button" onClick={() => { setShowAddForm(false); setAddError(''); setAddForm(INITIAL_FORM) }}
+                  className="flex-1 border border-gray-300 text-gray-700 py-2.5 rounded-lg text-sm font-medium">취소</button>
+                <button type="submit" disabled={adding}
+                  className="flex-1 bg-blue-600 text-white py-2.5 rounded-lg text-sm font-medium disabled:opacity-50">
+                  {adding ? '생성 중...' : '계정 생성'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
