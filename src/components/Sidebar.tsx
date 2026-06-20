@@ -1,6 +1,7 @@
 ﻿'use client'
 
 import Link from 'next/link'
+import Image from 'next/image'
 import { usePathname, useRouter } from 'next/navigation'
 import { useAuth } from '@/lib/auth-context'
 
@@ -39,10 +40,7 @@ export default function Sidebar() {
       {/* 데스크탑 사이드바 */}
       <aside className="hidden md:flex w-56 bg-gray-900 min-h-screen flex-col flex-shrink-0">
         <div className="px-5 py-5 border-b border-gray-700">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 bg-green-500 rounded-lg flex items-center justify-center text-white font-bold text-sm flex-shrink-0">JM</div>
-            <span className="text-white font-bold text-sm">JM 관리 시스템</span>
-          </div>
+          <Image src="/logo.png" alt="JM Architecture Interior" width={140} height={48} className="brightness-0 invert" />
         </div>
         <nav className="flex-1 px-3 py-4 flex flex-col gap-1">
           {NAV_ITEMS.map(item => {
