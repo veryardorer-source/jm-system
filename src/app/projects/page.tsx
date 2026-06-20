@@ -132,7 +132,7 @@ export default function ProjectsPage() {
                             {p.status} ▾
                           </button>
                           {editingStatusId === p.id && (
-                            <div className="absolute right-0 top-7 z-50 bg-white border border-gray-200 rounded-xl shadow-xl w-36 py-1 max-h-72 overflow-y-auto">
+                            <div className="absolute right-0 bottom-7 z-50 bg-white border border-gray-200 rounded-xl shadow-xl w-36 py-1 max-h-72 overflow-y-auto">
                               {STATUS_LIST.map(s => (
                                 <button key={s} onClick={() => updateStatus(p.id, s as Project['status'])}
                                   className={`w-full text-left px-3 py-2 text-xs hover:bg-gray-50 ${p.status === s ? 'font-bold text-green-600' : 'text-gray-700'}`}>
@@ -184,7 +184,7 @@ export default function ProjectsPage() {
                                 {p.status} ▾
                               </button>
                               {editingStatusId === p.id && (
-                                <div className="absolute left-0 top-8 z-50 bg-white border border-gray-200 rounded-xl shadow-xl w-36 py-1 max-h-72 overflow-y-auto">
+                                <div className="absolute left-0 bottom-8 z-50 bg-white border border-gray-200 rounded-xl shadow-xl w-36 py-1 max-h-72 overflow-y-auto">
                                   {STATUS_LIST.map(s => (
                                     <button key={s} onClick={() => updateStatus(p.id, s as Project['status'])}
                                       className={`w-full text-left px-3 py-2 text-xs hover:bg-gray-50 ${p.status === s ? 'font-bold text-green-600' : 'text-gray-700'}`}>
