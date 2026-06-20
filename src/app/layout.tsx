@@ -11,6 +11,10 @@ export const metadata: Metadata = {
     statusBarStyle: 'black-translucent',
     title: 'JM관리',
   },
+  icons: {
+    apple: '/icons/apple-touch-icon.png',
+    icon: '/icons/icon-192.png',
+  },
 };
 
 export const viewport: Viewport = {
