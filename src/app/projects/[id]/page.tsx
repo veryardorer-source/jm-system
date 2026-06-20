@@ -34,7 +34,7 @@ export default function ProjectDetail() {
 
   const [collapsedCats, setCollapsedCats] = useState<Record<string, boolean>>({})
   const [selectedFileIds, setSelectedFileIds] = useState<Set<string>>(new Set())
-  const [selectMode, setSelectMode] = useState(false)
+  const [hoveredFileId, setHoveredFileId] = useState<string | null>(null)
 
   const [showScheduleForm, setShowScheduleForm] = useState(false)
   const [sForm, setSForm] = useState({ task_name: '', scheduled_date: '', end_date: '', manager: '' })
@@ -124,16 +124,19 @@ export default function ProjectDetail() {
     const { error } = await supabase.from('project_files').delete().in('id', ids)
     if (error) { alert('삭제 실패: ' + error.message); return }
     setSelectedFileIds(new Set())
-    setSelectMode(false)
     fetchAll()
   }
 
-  function toggleSelectFile(id: string) {
+  function toggleSelectFile(fileId: string) {
     setSelectedFileIds(prev => {
       const next = new Set(prev)
-      next.has(id) ? next.delete(id) : next.add(id)
+      next.has(fileId) ? next.delete(fileId) : next.add(fileId)
       return next
     })
+  }
+
+  function clearSelection() {
+    setSelectedFileIds(new Set())
   }
 
   async function handleSchedule(e: React.FormEvent) {
@@ -233,47 +236,10 @@ export default function ProjectDetail() {
             <div>
               <div className="flex items-center justify-between mb-4">
                 <div className="flex gap-2">
-                  {selectMode ? (
-                    <>
-                      <button onClick={async () => {
-                        const selected = files.filter(f => selectedFileIds.has(f.id))
-                        for (const f of selected) {
-                          try {
-                            const res = await fetch(f.file_url)
-                            const blob = await res.blob()
-                            const url = URL.createObjectURL(blob)
-                            const a = document.createElement('a')
-                            a.href = url
-                            a.download = f.file_name
-                            a.click()
-                            URL.revokeObjectURL(url)
-                            await new Promise(r => setTimeout(r, 300))
-                          } catch { /* skip */ }
-                        }
-                      }} disabled={selectedFileIds.size === 0}
-                        className="bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-40">
-                        {selectedFileIds.size > 0 ? `${selectedFileIds.size}장 다운로드` : '다운로드'}
-                      </button>
-                      <button onClick={async () => {
-                        const selected = files.filter(f => selectedFileIds.has(f.id))
-                        const text = selected.map(f => `${f.file_name}\n${f.file_url}`).join('\n\n')
-                        await navigator.clipboard.writeText(text)
-                        alert(`${selected.length}장 링크가 복사됐습니다.`)
-                      }} disabled={selectedFileIds.size === 0}
-                        className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-40">
-                        {selectedFileIds.size > 0 ? `${selectedFileIds.size}장 링크복사` : '링크복사'}
-                      </button>
-                      <button onClick={deleteSelectedFiles} disabled={selectedFileIds.size === 0}
-                        className="bg-red-500 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-red-600 disabled:opacity-40">
-                        {selectedFileIds.size > 0 ? `${selectedFileIds.size}장 삭제` : '삭제'}
-                      </button>
-                      <button onClick={() => { setSelectMode(false); setSelectedFileIds(new Set()) }}
-                        className="border border-gray-300 text-gray-600 px-4 py-2 rounded-lg text-sm">취소</button>
-                    </>
-                  ) : (
-                    <button onClick={() => setSelectMode(true)}
+                  {selectedFileIds.size > 0 && (
+                    <button onClick={clearSelection}
                       className="border border-gray-300 text-gray-600 px-4 py-2 rounded-lg text-sm hover:bg-gray-50">
-                      사진 선택
+                      선택 취소
                     </button>
                   )}
                 </div>
@@ -305,7 +271,7 @@ export default function ProjectDetail() {
                             </span>
                             <span className="text-gray-400 text-xs">{isCollapsed ? '▼ 펼치기' : '▲ 접기'}</span>
                           </button>
-                          {selectMode && isPhoto && (
+                          {isPhoto && (
                             <button onClick={() => {
                               if (allSelected) {
                                 setSelectedFileIds(prev => {
@@ -320,7 +286,7 @@ export default function ProjectDetail() {
                                   return next
                                 })
                               }
-                            }} className={`text-xs px-3 py-1 rounded-lg border ${allSelected ? 'border-blue-500 text-blue-600 bg-blue-50' : 'border-gray-300 text-gray-600'}`}>
+                            }} className={`text-xs px-3 py-1 rounded-lg border transition-colors ${allSelected ? 'border-blue-500 text-blue-600 bg-blue-50' : 'border-gray-300 text-gray-500 hover:border-blue-400 hover:text-blue-600'}`}>
                               {allSelected ? '전체해제' : '전체선택'}
                             </button>
                           )}
@@ -329,31 +295,50 @@ export default function ProjectDetail() {
                           <div className="border-t border-gray-100 p-3">
                             {isPhoto ? (
                               <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-2">
-                                {catFiles.map(f => (
-                                  <div key={f.id} className="relative group aspect-square">
-                                    {selectMode && (
-                                      <div onClick={() => toggleSelectFile(f.id)}
-                                        className={`absolute inset-0 z-10 rounded-lg border-2 cursor-pointer transition-all ${selectedFileIds.has(f.id) ? 'border-blue-500 bg-blue-500/20' : 'border-transparent'}`}>
-                                        <div className={`absolute top-1 left-1 w-5 h-5 rounded-full border-2 flex items-center justify-center text-xs font-bold ${selectedFileIds.has(f.id) ? 'bg-blue-500 border-blue-500 text-white' : 'bg-white border-gray-300'}`}>
-                                          {selectedFileIds.has(f.id) ? '✓' : ''}
-                                        </div>
-                                      </div>
-                                    )}
-                                    <img src={f.file_url} alt={f.file_name}
-                                      onClick={() => !selectMode && setLightbox(f.file_url)}
-                                      className="w-full h-full object-cover rounded-lg border border-gray-200 cursor-pointer hover:opacity-90 transition-opacity" />
-                                    {!selectMode && (
-                                      <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 rounded-lg transition-all flex items-end justify-between p-1 opacity-0 group-hover:opacity-100">
-                                        <button onClick={() => copyFileUrl(f)}
-                                          className="text-white bg-black/50 text-xs px-1.5 py-0.5 rounded">
-                                          {copiedUrlId === f.id ? '✓' : '링크'}
+                                {catFiles.map(f => {
+                                  const isSelected = selectedFileIds.has(f.id)
+                                  const isHovered = hoveredFileId === f.id
+                                  const anySelected = selectedFileIds.size > 0
+                                  return (
+                                    <div key={f.id} className="relative group aspect-square"
+                                      onMouseEnter={() => setHoveredFileId(f.id)}
+                                      onMouseLeave={() => setHoveredFileId(null)}>
+                                      {/* 이미지 */}
+                                      <img src={f.file_url} alt={f.file_name}
+                                        onClick={() => anySelected ? toggleSelectFile(f.id) : setLightbox(f.file_url)}
+                                        className={`w-full h-full object-cover rounded-lg border cursor-pointer transition-all ${
+                                          isSelected ? 'border-blue-500 ring-2 ring-blue-500 opacity-90' : 'border-gray-200 hover:opacity-90'
+                                        }`} />
+                                      {/* 선택 오버레이 */}
+                                      {isSelected && (
+                                        <div className="absolute inset-0 bg-blue-500/10 rounded-lg pointer-events-none" />
+                                      )}
+                                      {/* 체크박스 (선택됐거나 hover시 표시) */}
+                                      {(isSelected || isHovered || anySelected) && (
+                                        <button
+                                          onClick={e => { e.stopPropagation(); toggleSelectFile(f.id) }}
+                                          className={`absolute top-1.5 left-1.5 w-6 h-6 rounded-full border-2 flex items-center justify-center text-xs font-bold transition-all shadow-sm z-10 ${
+                                            isSelected
+                                              ? 'bg-blue-500 border-blue-500 text-white'
+                                              : 'bg-white/90 border-gray-300 hover:border-blue-400'
+                                          }`}>
+                                          {isSelected ? '✓' : ''}
                                         </button>
-                                        <button onClick={() => deleteFile(f)}
-                                          className="text-white bg-red-500/80 text-xs px-1.5 py-0.5 rounded">삭제</button>
-                                      </div>
-                                    )}
-                                  </div>
-                                ))}
+                                      )}
+                                      {/* 하단 액션 (비선택 hover시) */}
+                                      {!anySelected && isHovered && (
+                                        <div className="absolute inset-0 bg-black/20 rounded-lg flex items-end justify-between p-1">
+                                          <button onClick={e => { e.stopPropagation(); copyFileUrl(f) }}
+                                            className="text-white bg-black/50 text-xs px-1.5 py-0.5 rounded">
+                                            {copiedUrlId === f.id ? '✓' : '링크'}
+                                          </button>
+                                          <button onClick={e => { e.stopPropagation(); deleteFile(f) }}
+                                            className="text-white bg-red-500/80 text-xs px-1.5 py-0.5 rounded">삭제</button>
+                                        </div>
+                                      )}
+                                    </div>
+                                  )
+                                })}
                               </div>
                             ) : (
                               <div>
@@ -514,6 +499,45 @@ export default function ProjectDetail() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* 선택 플로팅 액션바 */}
+      {selectedFileIds.size > 0 && (
+        <div className="fixed bottom-20 md:bottom-6 left-1/2 -translate-x-1/2 z-40 bg-gray-900 text-white rounded-2xl shadow-2xl px-4 py-3 flex items-center gap-3 min-w-[320px] max-w-[90vw]">
+          <span className="text-sm font-semibold text-blue-300 whitespace-nowrap">{selectedFileIds.size}장 선택됨</span>
+          <div className="flex-1 flex gap-2 justify-end">
+            <button onClick={async () => {
+              const selected = files.filter(f => selectedFileIds.has(f.id))
+              for (const f of selected) {
+                try {
+                  const res = await fetch(f.file_url)
+                  const blob = await res.blob()
+                  const url = URL.createObjectURL(blob)
+                  const a = document.createElement('a')
+                  a.href = url; a.download = f.file_name; a.click()
+                  URL.revokeObjectURL(url)
+                  await new Promise(r => setTimeout(r, 300))
+                } catch { /* skip */ }
+              }
+            }} className="bg-white/10 hover:bg-white/20 text-white text-sm px-3 py-1.5 rounded-lg transition-colors">
+              다운로드
+            </button>
+            <button onClick={async () => {
+              const selected = files.filter(f => selectedFileIds.has(f.id))
+              const text = selected.map(f => `${f.file_name}\n${f.file_url}`).join('\n\n')
+              await navigator.clipboard.writeText(text)
+              alert(`${selected.length}장 링크가 복사됐습니다.`)
+            }} className="bg-white/10 hover:bg-white/20 text-white text-sm px-3 py-1.5 rounded-lg transition-colors">
+              링크복사
+            </button>
+            <button onClick={deleteSelectedFiles}
+              className="bg-red-500 hover:bg-red-600 text-white text-sm px-3 py-1.5 rounded-lg transition-colors">
+              삭제
+            </button>
+            <button onClick={clearSelection}
+              className="text-gray-400 hover:text-white text-lg leading-none px-1 transition-colors">&times;</button>
           </div>
         </div>
       )}
