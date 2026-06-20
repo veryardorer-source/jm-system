@@ -381,23 +381,18 @@ export default function ProjectDetail() {
                                 {catFiles.map((f, i) => {
                                   const isSelected = selectedFileIds.has(f.id)
                                   return (
-                                  <div key={f.id} className={`flex items-center gap-3 px-2 py-2.5 rounded-lg cursor-pointer transition-colors ${i > 0 ? 'border-t border-gray-100' : ''} ${isSelected ? 'bg-green-50' : 'hover:bg-gray-50'}`}
-                                    onClick={() => anySelected && toggleSelectFile(f.id)}>
+                                  <div key={f.id} className={`flex items-center gap-3 px-2 py-2.5 rounded-lg transition-colors ${i > 0 ? 'border-t border-gray-100' : ''} ${isSelected ? 'bg-green-50' : 'hover:bg-gray-50'}`}>
                                     {/* 체크박스 */}
                                     <button
-                                      onClick={e => { e.stopPropagation(); toggleSelectFile(f.id) }}
+                                      onClick={() => toggleSelectFile(f.id)}
                                       className={`w-5 h-5 rounded border-2 flex-shrink-0 flex items-center justify-center transition-colors ${
                                         isSelected ? 'bg-green-500 border-green-500 text-white' : 'border-gray-300 hover:border-green-400'
                                       }`}>
                                       {isSelected && <span className="text-xs font-bold">✓</span>}
                                     </button>
-                                    <span className="text-lg">{f.file_type === 'link' ? '🔗' : f.file_type?.includes('pdf') ? '📄' : f.file_type?.includes('image') ? '🖼️' : '📎'}</span>
-                                    <div className="flex-1 min-w-0">
-                                      <p className="text-sm font-medium text-gray-800 truncate">{f.file_name}</p>
-                                      {f.memo && <p className="text-xs text-gray-400">{f.memo}</p>}
-                                    </div>
-                                    <span className="text-xs text-gray-400 flex-shrink-0">{new Date(f.created_at).toLocaleDateString('ko-KR')}</span>
-                                    <button onClick={e => { e.stopPropagation()
+                                    <span className="text-lg flex-shrink-0">{f.file_type === 'link' ? '🔗' : f.file_type?.includes('pdf') ? '📄' : f.file_type?.includes('image') ? '🖼️' : '📎'}</span>
+                                    {/* 파일명 클릭 = 열기 */}
+                                    <button onClick={() => {
                                       const type = f.file_type?.toLowerCase() || ''
                                       const name = f.file_name?.toLowerCase() || ''
                                       if (type === 'link') {
@@ -409,22 +404,30 @@ export default function ProjectDetail() {
                                       } else {
                                         window.open(f.file_url, '_blank')
                                       }
-                                    }} className="text-xs text-green-600 hover:underline flex-shrink-0">열기</button>
-                                    {f.file_type !== 'link' && (
-                                      <button onClick={async e => { e.stopPropagation()
+                                    }} className="flex-1 min-w-0 text-left">
+                                      <p className="text-sm font-medium text-gray-800 hover:text-green-600 truncate">{f.file_name}</p>
+                                      {f.memo && <p className="text-xs text-gray-400">{f.memo}</p>}
+                                    </button>
+                                    <span className="text-xs text-gray-400 flex-shrink-0 hidden sm:block">{new Date(f.created_at).toLocaleDateString('ko-KR')}</span>
+                                    {f.file_type !== 'link' && (<>
+                                      {/* 내보내기: Web Share API */}
+                                      <button onClick={async () => {
                                         try {
                                           const res = await fetch(f.file_url, { mode: 'cors', credentials: 'omit' })
                                           const blob = await res.blob()
-                                          const file = new File([blob], f.file_name, { type: blob.type })
-                                          if (navigator.canShare && navigator.canShare({ files: [file] })) {
-                                            await navigator.share({ files: [file], title: f.file_name })
+                                          const fileObj = new File([blob], f.file_name, { type: blob.type })
+                                          if (navigator.canShare && navigator.canShare({ files: [fileObj] })) {
+                                            await navigator.share({ files: [fileObj], title: f.file_name })
                                             return
                                           }
                                         } catch {}
                                         downloadFile(f)
-                                      }} className="text-xs text-gray-400 hover:text-green-600 flex-shrink-0">내보내기</button>
-                                    )}
-                                    <button onClick={e => { e.stopPropagation(); deleteFile(f) }}
+                                      }} className="text-xs text-blue-400 hover:text-blue-600 flex-shrink-0">내보내기</button>
+                                      {/* 저장: 직접 다운로드 */}
+                                      <button onClick={() => downloadFile(f)}
+                                        className="text-xs text-gray-400 hover:text-green-600 flex-shrink-0">저장</button>
+                                    </>)}
+                                    <button onClick={() => deleteFile(f)}
                                       className="text-xs text-red-400 hover:text-red-600 flex-shrink-0">삭제</button>
                                   </div>
                                 )})}
