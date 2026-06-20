@@ -3,9 +3,9 @@
 import { useEffect, useState, useRef, useCallback } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Sidebar from '@/components/Sidebar'
-import { supabase, Project, ProjectFile, Schedule } from '@/lib/supabase'
+import { supabase, Project, ProjectFile, Schedule, ProjectCost, COST_CATEGORY_LIST } from '@/lib/supabase'
 
-const TAB_LIST = ['자료', '공정']
+const TAB_LIST = ['자료', '공정', '비용']
 const CATEGORY_LIST = ['시공전사진', '시공사진', '마감사진', '도면', '3D', '미팅내용', '고객요청', '구매링크', '기타']
 const STATUS_COLOR: Record<string, string> = {
   '디자인진행중': 'bg-purple-100 text-purple-700',
@@ -21,6 +21,7 @@ export default function ProjectDetail() {
   const [tab, setTab] = useState('자료')
   const [files, setFiles] = useState<ProjectFile[]>([])
   const [schedules, setSchedules] = useState<Schedule[]>([])
+  const [costs, setCosts] = useState<ProjectCost[]>([])
   const [loading, setLoading] = useState(true)
 
   const [showFileForm, setShowFileForm] = useState(false)
@@ -41,18 +42,25 @@ export default function ProjectDetail() {
   const [savingS, setSavingS] = useState(false)
   const [editingSchedule, setEditingSchedule] = useState<Schedule | null>(null)
 
+  const [showCostForm, setShowCostForm] = useState(false)
+  const [cForm, setCForm] = useState({ title: '', amount: '', category: '자재비', cost_date: '', memo: '' })
+  const [savingC, setSavingC] = useState(false)
+  const [editingCost, setEditingCost] = useState<ProjectCost | null>(null)
+
   useEffect(() => { fetchAll() }, [id])
 
   async function fetchAll() {
     setLoading(true)
-    const [p, f, s] = await Promise.all([
+    const [p, f, s, c] = await Promise.all([
       supabase.from('projects').select('*').eq('id', id).single(),
       supabase.from('project_files').select('*').eq('project_id', id).order('created_at', { ascending: false }),
       supabase.from('schedules').select('*').eq('project_id', id).order('scheduled_date'),
+      supabase.from('project_costs').select('*').eq('project_id', id).order('cost_date', { ascending: false }),
     ])
     setProject(p.data)
     setFiles(f.data || [])
     setSchedules(s.data || [])
+    setCosts(c.data || [])
     setLoading(false)
   }
 
@@ -253,6 +261,40 @@ export default function ProjectDetail() {
     fetchAll()
   }
 
+  async function handleCost(e: React.FormEvent) {
+    e.preventDefault()
+    setSavingC(true)
+    const payload = {
+      title: cForm.title,
+      amount: Number(cForm.amount) || 0,
+      category: cForm.category,
+      cost_date: cForm.cost_date || null,
+      memo: cForm.memo,
+    }
+    if (editingCost) {
+      await supabase.from('project_costs').update(payload).eq('id', editingCost.id)
+      setEditingCost(null)
+    } else {
+      await supabase.from('project_costs').insert([{ project_id: id, ...payload }])
+    }
+    setCForm({ title: '', amount: '', category: '자재비', cost_date: '', memo: '' })
+    setShowCostForm(false)
+    setSavingC(false)
+    fetchAll()
+  }
+
+  function openEditCost(c: ProjectCost) {
+    setEditingCost(c)
+    setCForm({ title: c.title, amount: String(c.amount), category: c.category, cost_date: c.cost_date || '', memo: c.memo || '' })
+    setShowCostForm(true)
+  }
+
+  async function deleteCost(c: ProjectCost) {
+    if (!confirm(`"${c.title}" 비용을 삭제할까요?`)) return
+    await supabase.from('project_costs').delete().eq('id', c.id)
+    fetchAll()
+  }
+
 
   if (loading) return (
     <div className="flex h-screen">
@@ -300,7 +342,7 @@ export default function ProjectDetail() {
             {TAB_LIST.map(t => (
               <button key={t} onClick={() => setTab(t)}
                 className={`relative px-5 py-3 text-sm font-medium border-b-2 transition-colors ${
-                  tab === t ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'
+                  tab === t ? 'border-green-600 text-green-600' : 'border-transparent text-gray-500 hover:text-gray-700'
                 }`}>
                 {t}
               </button>
@@ -323,7 +365,7 @@ export default function ProjectDetail() {
                   )}
                 </div>
                 <button onClick={() => setShowFileForm(true)}
-                  className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700">
+                  className="bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-700">
                   + 자료 추가
                 </button>
               </div>
@@ -486,7 +528,7 @@ export default function ProjectDetail() {
             <div>
               <div className="flex justify-end mb-4">
                 <button onClick={() => setShowScheduleForm(true)}
-                  className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700">
+                  className="bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-700">
                   + 공정 추가
                 </button>
               </div>
@@ -537,7 +579,7 @@ export default function ProjectDetail() {
                           <td className="px-4 py-3">
                             <div className="flex items-center gap-2">
                               <button onClick={() => openEditSchedule(s)}
-                                className="text-xs text-blue-400 hover:text-blue-600 hover:bg-blue-50 px-2 py-1 rounded transition-colors">
+                                className="text-xs text-green-500 hover:text-green-700 hover:bg-green-50 px-2 py-1 rounded transition-colors">
                                 수정
                               </button>
                               <button onClick={() => deleteSchedule(s)}
@@ -549,6 +591,75 @@ export default function ProjectDetail() {
                         </tr>
                         )
                       })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* 비용 탭 */}
+          {tab === '비용' && (
+            <div>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+                {COST_CATEGORY_LIST.map(cat => {
+                  const sum = costs.filter(c => c.category === cat).reduce((s, c) => s + c.amount, 0)
+                  return (
+                    <div key={cat} className="bg-white rounded-xl border border-gray-200 px-4 py-3">
+                      <p className="text-xs text-gray-400">{cat}</p>
+                      <p className="text-base font-bold text-gray-800 mt-0.5">{sum.toLocaleString()}원</p>
+                    </div>
+                  )
+                })}
+              </div>
+              <div className="bg-green-50 border border-green-200 rounded-xl px-4 py-3 mb-4 flex items-center justify-between">
+                <span className="text-sm font-medium text-green-700">총 비용</span>
+                <span className="text-lg font-bold text-green-700">{costs.reduce((s, c) => s + c.amount, 0).toLocaleString()}원</span>
+              </div>
+              <div className="flex justify-end mb-4">
+                <button onClick={() => setShowCostForm(true)}
+                  className="bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-700">
+                  + 비용 추가
+                </button>
+              </div>
+              {costs.length === 0 ? (
+                <div className="bg-white rounded-xl border border-gray-200 text-center py-16 text-gray-400">
+                  <p className="text-3xl mb-2">💰</p><p>등록된 비용이 없어요</p>
+                </div>
+              ) : (
+                <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="border-b border-gray-100 bg-gray-50">
+                        <th className="text-left text-xs font-semibold text-gray-400 px-6 py-3">항목</th>
+                        <th className="text-left text-xs font-semibold text-gray-400 px-4 py-3">분류</th>
+                        <th className="text-left text-xs font-semibold text-gray-400 px-4 py-3">날짜</th>
+                        <th className="text-right text-xs font-semibold text-gray-400 px-4 py-3">금액</th>
+                        <th className="px-4 py-3"></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {costs.map(c => (
+                        <tr key={c.id} className="border-b border-gray-50 hover:bg-gray-50">
+                          <td className="px-6 py-3 text-sm font-medium text-gray-800">
+                            {c.title}
+                            {c.memo && <p className="text-xs text-gray-400">{c.memo}</p>}
+                          </td>
+                          <td className="px-4 py-3">
+                            <span className="text-xs px-2 py-1 rounded-full bg-gray-100 text-gray-600">{c.category}</span>
+                          </td>
+                          <td className="px-4 py-3 text-sm text-gray-500">{c.cost_date || '-'}</td>
+                          <td className="px-4 py-3 text-sm text-right font-semibold text-gray-800">{c.amount.toLocaleString()}원</td>
+                          <td className="px-4 py-3">
+                            <div className="flex items-center gap-2 justify-end">
+                              <button onClick={() => openEditCost(c)}
+                                className="text-xs text-green-500 hover:text-green-700 hover:bg-green-50 px-2 py-1 rounded transition-colors">수정</button>
+                              <button onClick={() => deleteCost(c)}
+                                className="text-xs text-red-400 hover:text-red-600 hover:bg-red-50 px-2 py-1 rounded transition-colors">삭제</button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
                     </tbody>
                   </table>
                 </div>
@@ -682,25 +793,25 @@ export default function ProjectDetail() {
                 <label className="text-sm font-medium text-gray-700 block mb-1.5">공정명 *</label>
                 <input required value={sForm.task_name} onChange={e => setSForm({...sForm, task_name: e.target.value})}
                   placeholder="목공, 타일, 입주청소"
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="text-sm font-medium text-gray-700 block mb-1.5">시작일</label>
                   <input type="date" value={sForm.scheduled_date} onChange={e => setSForm({...sForm, scheduled_date: e.target.value})}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
                 </div>
                 <div>
                   <label className="text-sm font-medium text-gray-700 block mb-1.5">종료일</label>
                   <input type="date" value={sForm.end_date} onChange={e => setSForm({...sForm, end_date: e.target.value})}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
                 </div>
               </div>
               <div>
                 <label className="text-sm font-medium text-gray-700 block mb-1.5">담당자</label>
                 <input value={sForm.manager} onChange={e => setSForm({...sForm, manager: e.target.value})}
                   placeholder="김팀장"
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
               </div>
               <div className="flex gap-3 mt-2">
                 <button type="button" onClick={() => { setShowScheduleForm(false); setEditingSchedule(null); setSForm({ task_name: '', scheduled_date: '', end_date: '', manager: '' }) }}
@@ -708,6 +819,60 @@ export default function ProjectDetail() {
                 <button type="submit" disabled={savingS}
                   className="flex-1 bg-blue-600 text-white py-2.5 rounded-lg text-sm font-medium disabled:opacity-50">
                   {savingS ? '저장 중...' : editingSchedule ? '수정' : '추가'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* 비용 추가 모달 */}
+      {showCostForm && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl w-full max-w-md shadow-xl">
+            <div className="flex items-center justify-between px-6 py-5 border-b border-gray-100">
+              <h2 className="text-lg font-bold">{editingCost ? '비용 수정' : '비용 추가'}</h2>
+              <button onClick={() => { setShowCostForm(false); setEditingCost(null); setCForm({ title: '', amount: '', category: '자재비', cost_date: '', memo: '' }) }} className="text-gray-400 text-2xl">&times;</button>
+            </div>
+            <form onSubmit={handleCost} className="px-6 py-5 flex flex-col gap-4">
+              <div>
+                <label className="text-sm font-medium text-gray-700 block mb-1.5">항목명 *</label>
+                <input required value={cForm.title} onChange={e => setCForm({...cForm, title: e.target.value})}
+                  placeholder="타일 자재 구입"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-sm font-medium text-gray-700 block mb-1.5">분류</label>
+                  <select value={cForm.category} onChange={e => setCForm({...cForm, category: e.target.value})}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500">
+                    {COST_CATEGORY_LIST.map(c => <option key={c}>{c}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-sm font-medium text-gray-700 block mb-1.5">금액 *</label>
+                  <input required type="number" value={cForm.amount} onChange={e => setCForm({...cForm, amount: e.target.value})}
+                    placeholder="500000"
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
+                </div>
+              </div>
+              <div>
+                <label className="text-sm font-medium text-gray-700 block mb-1.5">날짜</label>
+                <input type="date" value={cForm.cost_date} onChange={e => setCForm({...cForm, cost_date: e.target.value})}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
+              </div>
+              <div>
+                <label className="text-sm font-medium text-gray-700 block mb-1.5">메모</label>
+                <input value={cForm.memo} onChange={e => setCForm({...cForm, memo: e.target.value})}
+                  placeholder="예) OO업체 결제"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
+              </div>
+              <div className="flex gap-3 mt-2">
+                <button type="button" onClick={() => { setShowCostForm(false); setEditingCost(null); setCForm({ title: '', amount: '', category: '자재비', cost_date: '', memo: '' }) }}
+                  className="flex-1 border border-gray-300 text-gray-700 py-2.5 rounded-lg text-sm font-medium">취소</button>
+                <button type="submit" disabled={savingC}
+                  className="flex-1 bg-green-600 text-white py-2.5 rounded-lg text-sm font-medium disabled:opacity-50">
+                  {savingC ? '저장 중...' : editingCost ? '수정' : '추가'}
                 </button>
               </div>
             </form>
@@ -743,9 +908,9 @@ function DropZone({ files, onChange }: { files: File[]; onChange: (f: File[]) =>
         onDragLeave={() => setDragging(false)}
         onDrop={handleDrop}
         className={`flex flex-col items-center justify-center w-full h-28 border-2 border-dashed rounded-xl cursor-pointer transition-all ${
-          dragging ? 'border-blue-500 bg-blue-100 scale-[1.01]' :
-          files.length > 0 ? 'border-blue-400 bg-blue-50' :
-          'border-gray-300 hover:border-blue-400 hover:bg-blue-50'
+          dragging ? 'border-green-500 bg-green-100 scale-[1.01]' :
+          files.length > 0 ? 'border-green-400 bg-green-50' :
+          'border-gray-300 hover:border-green-400 hover:bg-green-50'
         }`}
       >
         <input ref={inputRef} type="file" multiple className="hidden"
@@ -753,7 +918,7 @@ function DropZone({ files, onChange }: { files: File[]; onChange: (f: File[]) =>
         {files.length > 0 ? (
           <div className="text-center pointer-events-none">
             <p className="text-2xl mb-1">📁</p>
-            <p className="text-sm font-semibold text-blue-600">{files.length}개 선택됨</p>
+            <p className="text-sm font-semibold text-green-600">{files.length}개 선택됨</p>
             <p className="text-xs text-gray-400 mt-0.5">총 {totalMB.toFixed(1)}MB · 클릭해서 추가</p>
           </div>
         ) : (

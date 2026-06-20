@@ -107,6 +107,19 @@ export type WithdrawalRequest = {
   created_at: string
 }
 
+export type ProjectCost = {
+  id: string
+  project_id: string
+  title: string
+  amount: number
+  category: string
+  cost_date: string
+  memo: string
+  created_at: string
+}
+
+export const COST_CATEGORY_LIST = ['자재비', '인건비', '장비비', '기타'] as const
+
 export type PhaseStatus = '예정' | '진행중' | '완료'
 
 export type Schedule = {
