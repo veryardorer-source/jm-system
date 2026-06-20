@@ -136,8 +136,10 @@ export default function ProjectDetail() {
     }
   }
 
+  const isMobile = () => typeof window !== 'undefined' && window.matchMedia('(hover: none)').matches
+
   async function shareFile(file: ProjectFile) {
-    if (navigator.share) {
+    if (isMobile() && navigator.share) {
       try {
         const res = await fetch(file.file_url, { mode: 'cors', credentials: 'omit' })
         const blob = await res.blob()
@@ -147,16 +149,14 @@ export default function ProjectDetail() {
           return
         }
       } catch (e: unknown) {
-        // 사용자가 취소한 경우(AbortError)는 다운로드 안 함
         if (e instanceof Error && e.name === 'AbortError') return
-        // 그 외 오류(NotAllowedError 등)는 다운로드로 폴백
       }
     }
     downloadFile(file)
   }
 
   async function shareFiles(fileList: ProjectFile[]) {
-    if (navigator.share) {
+    if (isMobile() && navigator.share) {
       try {
         const fileObjects = await Promise.all(fileList.map(async f => {
           const res = await fetch(f.file_url, { mode: 'cors', credentials: 'omit' })
@@ -171,7 +171,6 @@ export default function ProjectDetail() {
         if (e instanceof Error && e.name === 'AbortError') return
       }
     }
-    // 폴백: 순차 다운로드
     for (const f of fileList) {
       await downloadFile(f)
       await new Promise(r => setTimeout(r, 300))
