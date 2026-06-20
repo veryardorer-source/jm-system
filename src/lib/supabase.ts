@@ -107,6 +107,25 @@ export type WithdrawalRequest = {
   created_at: string
 }
 
+export type EmploymentType = '상용직' | '일용직'
+
+export type Employee = {
+  id: string
+  name: string
+  resident_number: string
+  department: string
+  phone: string
+  hire_date: string
+  resign_date: string
+  bank_name: string
+  account_number: string
+  email: string
+  employment_type: EmploymentType
+  is_active: boolean
+  memo: string
+  created_at: string
+}
+
 export type ProjectCost = {
   id: string
   project_id: string
