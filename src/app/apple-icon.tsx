@@ -1,4 +1,4 @@
-import { ImageResponse } from 'next/og'
+﻿import { ImageResponse } from 'next/og'
 
 export const size = { width: 180, height: 180 }
 export const contentType = 'image/png'
@@ -8,7 +8,7 @@ export default function AppleIcon() {
     (
       <div style={{
         width: 180, height: 180,
-        background: '#2563eb',
+        background: '#16a34a',
         borderRadius: 40,
         display: 'flex',
         alignItems: 'center',
@@ -24,3 +24,4 @@ export default function AppleIcon() {
     { width: 180, height: 180 }
   )
 }
+

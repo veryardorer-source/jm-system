@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
@@ -9,7 +9,7 @@ import { createClient } from '@/lib/supabase-browser'
 const ROLE_OPTIONS: { value: UserRole; label: string; color: string }[] = [
   { value: 'admin', label: '관리자', color: 'bg-red-100 text-red-700' },
   { value: 'designer', label: '디자인팀', color: 'bg-purple-100 text-purple-700' },
-  { value: 'field', label: '현장팀', color: 'bg-blue-100 text-blue-700' },
+  { value: 'field', label: '현장팀', color: 'bg-green-100 text-green-700' },
 ]
 
 const INITIAL_FORM = { name: '', email: '', password: '', role: 'designer' as UserRole }
@@ -95,7 +95,7 @@ export default function AdminUsersPage() {
               <p className="text-sm text-gray-500 mt-0.5">직원 계정 생성 및 권한 설정</p>
             </div>
             <button onClick={() => setShowAddForm(true)}
-              className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700">
+              className="bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-700">
               + 직원 추가
             </button>
           </div>
@@ -162,7 +162,7 @@ export default function AdminUsersPage() {
                       <div className="flex items-center justify-between mb-3">
                         <div>
                           <p className="text-sm font-semibold text-gray-800">{u.name}</p>
-                          {u.id === myProfile?.id && <p className="text-xs text-blue-500">나</p>}
+                          {u.id === myProfile?.id && <p className="text-xs text-green-500">나</p>}
                         </div>
                         <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${roleInfo?.color}`}>
                           {roleInfo?.label}
@@ -207,19 +207,19 @@ export default function AdminUsersPage() {
                 <label className="text-sm font-medium text-gray-700 block mb-1.5">이름 *</label>
                 <input required value={addForm.name} onChange={e => setAddForm({ ...addForm, name: e.target.value })}
                   placeholder="홍길동"
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
               </div>
               <div>
                 <label className="text-sm font-medium text-gray-700 block mb-1.5">이메일 *</label>
                 <input required type="email" value={addForm.email} onChange={e => setAddForm({ ...addForm, email: e.target.value })}
                   placeholder="example@email.com"
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
               </div>
               <div>
                 <label className="text-sm font-medium text-gray-700 block mb-1.5">임시 비밀번호 *</label>
                 <input required type="text" value={addForm.password} onChange={e => setAddForm({ ...addForm, password: e.target.value })}
                   placeholder="직원에게 알려줄 임시 비밀번호"
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
               </div>
               <div>
                 <label className="text-sm font-medium text-gray-700 block mb-1.5">권한 *</label>
@@ -242,7 +242,7 @@ export default function AdminUsersPage() {
                 <button type="button" onClick={() => { setShowAddForm(false); setAddError(''); setAddForm(INITIAL_FORM) }}
                   className="flex-1 border border-gray-300 text-gray-700 py-2.5 rounded-lg text-sm font-medium">취소</button>
                 <button type="submit" disabled={adding}
-                  className="flex-1 bg-blue-600 text-white py-2.5 rounded-lg text-sm font-medium disabled:opacity-50">
+                  className="flex-1 bg-green-600 text-white py-2.5 rounded-lg text-sm font-medium disabled:opacity-50">
                   {adding ? '생성 중...' : '계정 생성'}
                 </button>
               </div>
@@ -262,10 +262,10 @@ function NameCell({ user, onSave, isMe }: { user: Profile; onSave: (name: string
     return (
       <div className="flex items-center gap-2">
         <input value={value} onChange={e => setValue(e.target.value)}
-          className="border border-gray-300 rounded px-2 py-1 text-sm w-28 focus:outline-none focus:ring-1 focus:ring-blue-500"
+          className="border border-gray-300 rounded px-2 py-1 text-sm w-28 focus:outline-none focus:ring-1 focus:ring-green-500"
           onKeyDown={e => { if (e.key === 'Enter') { onSave(value); setEditing(false) } if (e.key === 'Escape') setEditing(false) }}
           autoFocus />
-        <button onClick={() => { onSave(value); setEditing(false) }} className="text-xs text-blue-600 hover:underline">저장</button>
+        <button onClick={() => { onSave(value); setEditing(false) }} className="text-xs text-green-600 hover:underline">저장</button>
         <button onClick={() => setEditing(false)} className="text-xs text-gray-400">취소</button>
       </div>
     )
@@ -273,8 +273,9 @@ function NameCell({ user, onSave, isMe }: { user: Profile; onSave: (name: string
   return (
     <div className="flex items-center gap-2">
       <span className="text-sm font-medium text-gray-800">{user.name}</span>
-      {isMe && <span className="text-xs text-blue-500 bg-blue-50 px-1.5 py-0.5 rounded">나</span>}
+      {isMe && <span className="text-xs text-green-500 bg-green-50 px-1.5 py-0.5 rounded">나</span>}
       <button onClick={() => setEditing(true)} className="text-xs text-gray-300 hover:text-gray-500">수정</button>
     </div>
   )
 }
+

@@ -1,4 +1,4 @@
-import { createClient } from '@supabase/supabase-js'
+﻿import { createClient } from '@supabase/supabase-js'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
@@ -30,10 +30,10 @@ export const STATUS_COLOR: Record<string, string> = {
   '견적작성중':'bg-yellow-100 text-yellow-700 border-yellow-200',
   '견적확정':  'bg-yellow-200 text-yellow-800 border-yellow-300',
   '계약완료':  'bg-yellow-300 text-yellow-900 border-yellow-400',
-  '시공준비':  'bg-blue-50 text-blue-600 border-blue-200',
-  '철거':      'bg-blue-100 text-blue-700 border-blue-200',
-  '목공':      'bg-blue-200 text-blue-800 border-blue-300',
-  '전기/설비': 'bg-blue-300 text-blue-900 border-blue-300',
+  '시공준비':  'bg-green-50 text-green-600 border-blue-200',
+  '철거':      'bg-green-100 text-green-700 border-blue-200',
+  '목공':      'bg-blue-200 text-green-800 border-green-300',
+  '전기/설비': 'bg-green-300 text-blue-900 border-green-300',
   '타일':      'bg-cyan-200 text-cyan-800 border-cyan-300',
   '도배/마루': 'bg-cyan-300 text-cyan-900 border-cyan-300',
   '가구/조명': 'bg-teal-200 text-teal-800 border-teal-300',
@@ -44,7 +44,7 @@ export const STATUS_COLOR: Record<string, string> = {
 export const GROUP_BG: Record<string, string> = {
   'purple': 'bg-purple-50 border-purple-200',
   'yellow': 'bg-yellow-50 border-yellow-200',
-  'blue':   'bg-blue-50 border-blue-200',
+  'blue':   'bg-green-50 border-blue-200',
   'green':  'bg-green-50 border-green-200',
 }
 
@@ -120,3 +120,4 @@ export type Schedule = {
   phase_status: PhaseStatus
   created_at: string
 }
+

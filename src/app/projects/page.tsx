@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
@@ -62,7 +62,7 @@ export default function ProjectsPage() {
             <p className="text-sm text-gray-500 mt-0.5">총 {projects.length}개 현장 · 진행중 {projects.filter(p => p.status !== '완료').length}개</p>
           </div>
           <button onClick={() => setShowForm(true)}
-            className="bg-blue-600 text-white px-4 py-2.5 rounded-lg text-sm font-medium hover:bg-blue-700">
+            className="bg-green-600 text-white px-4 py-2.5 rounded-lg text-sm font-medium hover:bg-green-700">
             + 현장 등록
           </button>
         </header>
@@ -72,7 +72,7 @@ export default function ProjectsPage() {
           <div className="bg-white border-b border-gray-200 px-4 md:px-8 py-3 flex items-center gap-4 flex-shrink-0 overflow-x-auto">
             <input value={search} onChange={e => setSearch(e.target.value)}
               placeholder="현장명, 고객명, 담당자 검색..."
-              className="border border-gray-300 rounded-lg px-3 py-2 text-sm w-56 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+              className="border border-gray-300 rounded-lg px-3 py-2 text-sm w-56 focus:outline-none focus:ring-2 focus:ring-green-500" />
             <div className="flex gap-1 overflow-x-auto">
               <button onClick={() => setFilter('전체')}
                 className={`px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap ${filter === '전체' ? 'bg-gray-800 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
@@ -140,10 +140,10 @@ export default function ProjectsPage() {
                     </thead>
                     <tbody>
                       {filtered.map((p, i) => (
-                        <tr key={p.id} className={`border-b border-gray-50 hover:bg-blue-50 cursor-pointer transition-colors ${i % 2 === 1 ? 'bg-gray-50/30' : ''}`}>
+                        <tr key={p.id} className={`border-b border-gray-50 hover:bg-green-50 cursor-pointer transition-colors ${i % 2 === 1 ? 'bg-gray-50/30' : ''}`}>
                           <td className="px-6 py-3.5">
                             <Link href={`/projects/${p.id}`} className="block">
-                              <p className="font-semibold text-gray-900 hover:text-blue-600">{p.name}</p>
+                              <p className="font-semibold text-gray-900 hover:text-green-600">{p.name}</p>
                               {p.address && <p className="text-xs text-gray-400 mt-0.5 truncate max-w-48">{p.address}</p>}
                             </Link>
                           </td>
@@ -183,32 +183,32 @@ export default function ProjectsPage() {
                 <label className="text-sm font-medium text-gray-700 block mb-1.5">현장명 <span className="text-red-500">*</span></label>
                 <input required value={form.name} onChange={e => setForm({...form, name: e.target.value})}
                   placeholder="예) 강남구 OO아파트 101호"
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="text-sm font-medium text-gray-700 block mb-1.5">고객명</label>
                   <input value={form.client_name} onChange={e => setForm({...form, client_name: e.target.value})}
                     placeholder="홍길동"
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
                 </div>
                 <div>
                   <label className="text-sm font-medium text-gray-700 block mb-1.5">담당자</label>
                   <input value={form.manager} onChange={e => setForm({...form, manager: e.target.value})}
                     placeholder="김팀장"
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
                 </div>
               </div>
               <div>
                 <label className="text-sm font-medium text-gray-700 block mb-1.5">주소</label>
                 <input value={form.address} onChange={e => setForm({...form, address: e.target.value})}
                   placeholder="서울시 강남구 ..."
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
               </div>
               <div>
                 <label className="text-sm font-medium text-gray-700 block mb-1.5">현재 단계</label>
                 <select value={form.status} onChange={e => setForm({...form, status: e.target.value as Project['status']})}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500">
                   {STATUS_LIST.map(s => <option key={s}>{s}</option>)}
                 </select>
               </div>
@@ -216,12 +216,12 @@ export default function ProjectsPage() {
                 <div>
                   <label className="text-sm font-medium text-gray-700 block mb-1.5">시작일</label>
                   <input type="date" value={form.start_date} onChange={e => setForm({...form, start_date: e.target.value})}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
                 </div>
                 <div>
                   <label className="text-sm font-medium text-gray-700 block mb-1.5">완료 예정일</label>
                   <input type="date" value={form.end_date} onChange={e => setForm({...form, end_date: e.target.value})}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
                 </div>
               </div>
               <div>
@@ -229,13 +229,13 @@ export default function ProjectsPage() {
                 <textarea value={form.memo} onChange={e => setForm({...form, memo: e.target.value})}
                   placeholder="특이사항 등"
                   rows={2}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none" />
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 resize-none" />
               </div>
               <div className="flex gap-3 mt-2">
                 <button type="button" onClick={() => { setShowForm(false); setError('') }}
                   className="flex-1 border border-gray-300 text-gray-700 py-2.5 rounded-lg text-sm font-medium hover:bg-gray-50">취소</button>
                 <button type="submit" disabled={saving}
-                  className="flex-1 bg-blue-600 text-white py-2.5 rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50">
+                  className="flex-1 bg-green-600 text-white py-2.5 rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-50">
                   {saving ? '저장 중...' : '등록'}
                 </button>
               </div>
@@ -246,3 +246,4 @@ export default function ProjectsPage() {
     </div>
   )
 }
+

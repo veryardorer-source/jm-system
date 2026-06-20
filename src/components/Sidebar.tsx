@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
@@ -40,7 +40,7 @@ export default function Sidebar() {
       <aside className="hidden md:flex w-56 bg-gray-900 min-h-screen flex-col flex-shrink-0">
         <div className="px-5 py-5 border-b border-gray-700">
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 bg-blue-500 rounded-lg flex items-center justify-center text-white font-bold text-sm flex-shrink-0">JM</div>
+            <div className="w-8 h-8 bg-green-500 rounded-lg flex items-center justify-center text-white font-bold text-sm flex-shrink-0">JM</div>
             <span className="text-white font-bold text-sm">JM 관리 시스템</span>
           </div>
         </div>
@@ -50,7 +50,7 @@ export default function Sidebar() {
             return (
               <Link key={item.href} href={item.href}
                 className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors ${
-                  active ? 'bg-blue-600 text-white' : 'text-gray-400 hover:bg-gray-800 hover:text-white'
+                  active ? 'bg-green-600 text-white' : 'text-gray-400 hover:bg-gray-800 hover:text-white'
                 }`}>
                 <span>{item.label}</span>
               </Link>
@@ -64,7 +64,7 @@ export default function Sidebar() {
                 return (
                   <Link key={item.href} href={item.href}
                     className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors ${
-                      active ? 'bg-blue-600 text-white' : 'text-gray-400 hover:bg-gray-800 hover:text-white'
+                      active ? 'bg-green-600 text-white' : 'text-gray-400 hover:bg-gray-800 hover:text-white'
                     }`}>
                     <span>{item.icon}</span>
                     <span>{item.label}</span>
@@ -95,7 +95,7 @@ export default function Sidebar() {
           return (
             <Link key={item.href} href={item.href}
               className={`flex-1 flex flex-col items-center justify-center py-2 text-xs transition-colors ${
-                active ? 'text-blue-400' : 'text-gray-500'
+                active ? 'text-green-400' : 'text-gray-500'
               }`}>
               <span className="text-lg mb-0.5">{item.icon}</span>
               <span className="leading-none">{item.label.replace(' 관리', '').replace('사항', '')}</span>
@@ -106,3 +106,4 @@ export default function Sidebar() {
     </>
   )
 }
+

@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
@@ -83,8 +83,8 @@ const [loading, setLoading] = useState(true)
                   <p className="text-3xl font-bold text-gray-900 mt-1">{projects.length}</p>
                 </div>
                 <div className="bg-white rounded-xl border border-blue-200 p-5">
-                  <p className="text-sm text-blue-500">진행중</p>
-                  <p className="text-3xl font-bold text-blue-600 mt-1">{activeProjects.length}</p>
+                  <p className="text-sm text-green-500">진행중</p>
+                  <p className="text-3xl font-bold text-green-600 mt-1">{activeProjects.length}</p>
                 </div>
                 <div className="bg-white rounded-xl border border-green-200 p-5">
                   <p className="text-sm text-green-500">완료</p>
@@ -107,7 +107,7 @@ const [loading, setLoading] = useState(true)
                         🗂 카드
                       </button>
                     </div>
-                    <Link href="/projects" className="text-sm text-blue-600 hover:underline">전체보기 →</Link>
+                    <Link href="/projects" className="text-sm text-green-600 hover:underline">전체보기 →</Link>
                   </div>
                 </div>
 
@@ -115,7 +115,7 @@ const [loading, setLoading] = useState(true)
                   <div className="bg-white rounded-xl border border-gray-200 text-center py-12 text-gray-400">
                     <p className="text-3xl mb-2">🏗️</p>
                     <p>진행중인 현장이 없어요</p>
-                    <Link href="/projects" className="text-blue-600 text-sm mt-2 inline-block">현장 등록하기 →</Link>
+                    <Link href="/projects" className="text-green-600 text-sm mt-2 inline-block">현장 등록하기 →</Link>
                   </div>
                 ) : viewMode === 'timeline' ? (
                   <TimelineView projects={activeProjects} schedules={schedules} onRefresh={fetchAll} />
@@ -130,7 +130,7 @@ const [loading, setLoading] = useState(true)
                           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 mb-4">
                             {groupProjects.map(p => (
                               <Link key={p.id} href={`/projects/${p.id}`}>
-                                <div className="bg-white rounded-xl border border-gray-200 p-4 hover:shadow-md hover:border-blue-300 transition-all cursor-pointer">
+                                <div className="bg-white rounded-xl border border-gray-200 p-4 hover:shadow-md hover:border-green-300 transition-all cursor-pointer">
                                   <div className="flex items-start justify-between gap-2 mb-3">
                                     <div className="flex-1 min-w-0">
                                       <p className="font-semibold text-gray-900 truncate">{p.name}</p>
@@ -166,7 +166,7 @@ const [loading, setLoading] = useState(true)
                     {Object.entries(employeeMap).map(([name, tasks]) => (
                       <div key={name} className="bg-white rounded-xl border border-gray-200 p-4">
                         <div className="flex items-center gap-2 mb-3">
-                          <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center text-blue-600 font-semibold text-sm">
+                          <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center text-green-600 font-semibold text-sm">
                             {name[0]}
                           </div>
                           <div>
@@ -177,7 +177,7 @@ const [loading, setLoading] = useState(true)
                         <div className="flex flex-col gap-2">
                           {tasks.map(({ project, task, role, phaseStatus }, i) => (
                             <Link key={`${project.id}-${i}`} href={`/projects/${project.id}`}>
-                              <div className="flex items-center justify-between bg-gray-50 rounded-lg px-3 py-2 hover:bg-blue-50 transition-colors">
+                              <div className="flex items-center justify-between bg-gray-50 rounded-lg px-3 py-2 hover:bg-green-50 transition-colors">
                                 <div className="flex-1 min-w-0">
                                   <p className="text-xs font-medium text-gray-700 truncate">{project.name}</p>
                                   <p className="text-xs text-gray-400">{task}</p>
@@ -185,7 +185,7 @@ const [loading, setLoading] = useState(true)
                                 <div className="flex flex-col items-end gap-1 ml-2 flex-shrink-0">
                                   {role === '공정' && phaseStatus ? (
                                     <span className={`text-xs px-2 py-0.5 rounded-full font-medium border ${
-                                      phaseStatus === '진행중' ? 'bg-blue-100 text-blue-700 border-blue-300' :
+                                      phaseStatus === '진행중' ? 'bg-green-100 text-green-700 border-green-300' :
                                       phaseStatus === '완료' ? 'bg-green-100 text-green-700 border-green-300' :
                                       'bg-gray-100 text-gray-600 border-gray-200'
                                     }`}>{phaseStatus}</span>
@@ -222,8 +222,8 @@ const ALL_STATUSES = [
 
 // 상태별 색상
 const PHASE_STATUS_COLOR: Record<string, string> = {
-  '예정':   '#93c5fd', // blue-300
-  '진행중': '#3b82f6', // blue-500
+  '예정':   '#93c5fd', // green-300
+  '진행중': '#3b82f6', // green-500
   '완료':   '#86efac', // green-300
 }
 
@@ -294,7 +294,7 @@ function TimelineView({ projects, schedules, onRefresh }: {
       <div className="px-4 py-2.5 border-b border-gray-100 flex items-center gap-4 flex-wrap">
         {[
           { label: '예정', color: PHASE_STATUS_COLOR['예정'], textColor: '#1d4ed8' },
-          { label: '진행중', color: PHASE_STATUS_COLOR['진행중'], textColor: '#fff', border: '#2563eb' },
+          { label: '진행중', color: PHASE_STATUS_COLOR['진행중'], textColor: '#fff', border: '#16a34a' },
           { label: '완료', color: PHASE_STATUS_COLOR['완료'], textColor: '#166534' },
         ].map(item => (
           <div key={item.label} className="flex items-center gap-1.5">
@@ -351,9 +351,9 @@ function TimelineView({ projects, schedules, onRefresh }: {
                 <div className="flex" style={{ minHeight: 40 }}>
                   <div className="w-48 flex-shrink-0 px-4 flex items-center justify-between border-r border-gray-100 gap-1">
                     <Link href={`/projects/${p.id}`}
-                      className="text-xs font-semibold text-gray-800 hover:text-blue-600 truncate flex-1">{p.name}</Link>
+                      className="text-xs font-semibold text-gray-800 hover:text-green-600 truncate flex-1">{p.name}</Link>
                     <button onClick={() => { setShowAddForm(p.id); setAddForm({ task_name: '', scheduled_date: '', end_date: '' }) }}
-                      className="text-gray-300 hover:text-blue-500 text-base flex-shrink-0" title="공정 추가">+</button>
+                      className="text-gray-300 hover:text-green-500 text-base flex-shrink-0" title="공정 추가">+</button>
                   </div>
                   <div className="flex-1 relative" style={{ minHeight: 40 }}>
                     <div className="absolute top-0 bottom-0 w-px bg-red-300 z-10" style={{ left: `${todayPct}%` }} />
@@ -375,7 +375,7 @@ function TimelineView({ projects, schedules, onRefresh }: {
                           {/* 바 */}
                           <div onClick={e => { e.stopPropagation(); setStatusPicker(statusPicker === s.id ? null : s.id) }}
                             className="w-full h-6 rounded-full flex items-center px-2 overflow-hidden border cursor-pointer hover:opacity-90"
-                            style={{ backgroundColor: color, borderColor: ps === '진행중' ? '#2563eb' : 'transparent' }}>
+                            style={{ backgroundColor: color, borderColor: ps === '진행중' ? '#16a34a' : 'transparent' }}>
                             <span className="text-xs font-medium truncate" style={{ fontSize: 10, color: textColor }}>
                               {s.task_name}
                             </span>
@@ -392,7 +392,7 @@ function TimelineView({ projects, schedules, onRefresh }: {
                                   className={`w-full text-left px-3 py-2 text-xs font-medium hover:bg-gray-50 flex items-center gap-2 ${ps === st ? 'font-bold' : ''}`}>
                                   <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: PHASE_STATUS_COLOR[st] }} />
                                   {st}
-                                  {ps === st && <span className="ml-auto text-blue-500">✓</span>}
+                                  {ps === st && <span className="ml-auto text-green-500">✓</span>}
                                 </button>
                               ))}
                             </div>
@@ -422,27 +422,27 @@ function TimelineView({ projects, schedules, onRefresh }: {
                 <input required value={addForm.task_name}
                   onChange={e => setAddForm({...addForm, task_name: e.target.value})}
                   placeholder="예) 목공, 타일, 도배, 입주청소..."
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="text-sm font-medium text-gray-700 block mb-1.5">시작일 *</label>
                   <input required type="date" value={addForm.scheduled_date}
                     onChange={e => setAddForm({...addForm, scheduled_date: e.target.value})}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
                 </div>
                 <div>
                   <label className="text-sm font-medium text-gray-700 block mb-1.5">종료일</label>
                   <input type="date" value={addForm.end_date}
                     onChange={e => setAddForm({...addForm, end_date: e.target.value})}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
                 </div>
               </div>
               <div className="flex gap-3">
                 <button type="button" onClick={() => setShowAddForm(null)}
                   className="flex-1 border border-gray-300 text-gray-700 py-2.5 rounded-lg text-sm">취소</button>
                 <button type="submit" disabled={saving}
-                  className="flex-1 bg-blue-600 text-white py-2.5 rounded-lg text-sm font-medium disabled:opacity-50">
+                  className="flex-1 bg-green-600 text-white py-2.5 rounded-lg text-sm font-medium disabled:opacity-50">
                   {saving ? '저장 중...' : '추가'}
                 </button>
               </div>
@@ -462,7 +462,7 @@ function ProgressBar({ status }: { status: string }) {
     currentIndex <= 3 ? 'bg-purple-400' :
     currentIndex <= 6 ? 'bg-yellow-400' :
     currentIndex === 15 ? 'bg-green-400' :
-    'bg-blue-400'
+    'bg-green-400'
 
   return (
     <div>
@@ -476,3 +476,4 @@ function ProgressBar({ status }: { status: string }) {
     </div>
   )
 }
+

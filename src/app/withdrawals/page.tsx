@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 
 import { useEffect, useState, useRef, useCallback } from 'react'
 import Sidebar from '@/components/Sidebar'
@@ -82,7 +82,7 @@ export default function WithdrawalsPage() {
             <p className="text-sm text-gray-500 mt-0.5">총 {photos.length}장</p>
           </div>
           <button onClick={() => setShowForm(true)}
-            className="bg-blue-600 text-white px-4 py-2.5 rounded-lg text-sm font-medium hover:bg-blue-700">
+            className="bg-green-600 text-white px-4 py-2.5 rounded-lg text-sm font-medium hover:bg-green-700">
             + 사진 업로드
           </button>
         </header>
@@ -129,21 +129,21 @@ export default function WithdrawalsPage() {
               <div>
                 <label className="text-sm font-medium text-gray-700 block mb-1.5">사유</label>
                 <input value={reason} onChange={e => setReason(e.target.value)} placeholder="일당, 자재비 등"
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
               </div>
               <div>
                 <label className="text-sm font-medium text-gray-700 block mb-1.5">요청자</label>
                 <input value={requestedBy} onChange={e => setRequestedBy(e.target.value)} placeholder="이름"
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
               </div>
               {uploading && (
-                <p className="text-sm text-blue-600 text-center">{uploadCurrent}/{selectedFiles.length} 업로드 중...</p>
+                <p className="text-sm text-green-600 text-center">{uploadCurrent}/{selectedFiles.length} 업로드 중...</p>
               )}
               <div className="flex gap-3">
                 <button type="button" onClick={() => { setShowForm(false); setSelectedFiles([]) }}
                   className="flex-1 border border-gray-300 text-gray-700 py-2.5 rounded-lg text-sm">취소</button>
                 <button type="submit" disabled={uploading || selectedFiles.length === 0}
-                  className="flex-1 bg-blue-600 text-white py-2.5 rounded-lg text-sm font-medium disabled:opacity-50">
+                  className="flex-1 bg-green-600 text-white py-2.5 rounded-lg text-sm font-medium disabled:opacity-50">
                   {uploading ? '업로드 중...' : `${selectedFiles.length > 1 ? `${selectedFiles.length}장 ` : ''}업로드`}
                 </button>
               </div>
@@ -168,12 +168,12 @@ function MultiFileZone({ files, onChange }: { files: File[]; onChange: (f: File[
         onDragOver={e => { e.preventDefault(); setDragging(true) }}
         onDragLeave={() => setDragging(false)}
         onDrop={e => { e.preventDefault(); setDragging(false); addFiles(e.dataTransfer.files) }}
-        className={`flex flex-col items-center justify-center w-full h-28 border-2 border-dashed rounded-xl cursor-pointer transition-all ${dragging ? 'border-blue-500 bg-blue-50' : files.length > 0 ? 'border-blue-400 bg-blue-50' : 'border-gray-300 hover:border-blue-400'}`}>
+        className={`flex flex-col items-center justify-center w-full h-28 border-2 border-dashed rounded-xl cursor-pointer transition-all ${dragging ? 'border-green-500 bg-green-50' : files.length > 0 ? 'border-green-400 bg-green-50' : 'border-gray-300 hover:border-green-400'}`}>
         <input ref={inputRef} type="file" multiple accept="image/*" className="hidden"
           onChange={e => addFiles(e.target.files)} />
         {files.length > 0 ? (
           <div className="text-center pointer-events-none">
-            <p className="text-sm font-semibold text-blue-600">{files.length}장 선택됨</p>
+            <p className="text-sm font-semibold text-green-600">{files.length}장 선택됨</p>
             <p className="text-xs text-gray-400 mt-0.5">클릭해서 추가</p>
           </div>
         ) : (
@@ -192,3 +192,4 @@ function MultiFileZone({ files, onChange }: { files: File[]; onChange: (f: File[
     </div>
   )
 }
+

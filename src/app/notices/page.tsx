@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 
 import { useEffect, useState } from 'react'
 import Sidebar from '@/components/Sidebar'
@@ -18,7 +18,7 @@ const CATEGORIES = ['전체', '디자인팀', '현장팀']
 const CATEGORY_COLOR: Record<string, string> = {
   '전체':    'bg-gray-100 text-gray-700 border-gray-200',
   '디자인팀': 'bg-purple-100 text-purple-700 border-purple-200',
-  '현장팀':  'bg-blue-100 text-blue-700 border-blue-200',
+  '현장팀':  'bg-green-100 text-green-700 border-blue-200',
 }
 
 const EMPTY_FORM = { title: '', content: '', category: '전체', author: '' }
@@ -75,7 +75,7 @@ export default function NoticesPage() {
             <p className="text-sm text-gray-500 mt-0.5">전체 {notices.length}개</p>
           </div>
           <button onClick={() => setShowForm(true)}
-            className="bg-blue-600 text-white px-4 py-2.5 rounded-lg text-sm font-medium hover:bg-blue-700">
+            className="bg-green-600 text-white px-4 py-2.5 rounded-lg text-sm font-medium hover:bg-green-700">
             + 공지 등록
           </button>
         </header>
@@ -107,7 +107,7 @@ export default function NoticesPage() {
             <div className="flex flex-col gap-3">
               {filtered.map(n => (
                 <div key={n.id} onClick={() => setSelected(n)}
-                  className="bg-white rounded-xl border border-gray-200 px-6 py-4 hover:border-blue-300 hover:shadow-sm transition-all cursor-pointer">
+                  className="bg-white rounded-xl border border-gray-200 px-6 py-4 hover:border-green-300 hover:shadow-sm transition-all cursor-pointer">
                   <div className="flex items-start justify-between gap-4">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1.5">
@@ -186,26 +186,26 @@ export default function NoticesPage() {
                 <label className="text-sm font-medium text-gray-700 block mb-1.5">제목 *</label>
                 <input required value={form.title} onChange={e => setForm({...form, title: e.target.value})}
                   placeholder="공지 제목"
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
               </div>
               <div>
                 <label className="text-sm font-medium text-gray-700 block mb-1.5">내용 *</label>
                 <textarea required value={form.content} onChange={e => setForm({...form, content: e.target.value})}
                   placeholder="공지 내용을 입력하세요"
                   rows={6}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none" />
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 resize-none" />
               </div>
               <div>
                 <label className="text-sm font-medium text-gray-700 block mb-1.5">작성자</label>
                 <input value={form.author} onChange={e => setForm({...form, author: e.target.value})}
                   placeholder="홍길동"
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
               </div>
               <div className="flex gap-3 mt-2">
                 <button type="button" onClick={() => { setShowForm(false); setForm(EMPTY_FORM) }}
                   className="flex-1 border border-gray-300 text-gray-700 py-2.5 rounded-lg text-sm font-medium">취소</button>
                 <button type="submit" disabled={saving}
-                  className="flex-1 bg-blue-600 text-white py-2.5 rounded-lg text-sm font-medium disabled:opacity-50">
+                  className="flex-1 bg-green-600 text-white py-2.5 rounded-lg text-sm font-medium disabled:opacity-50">
                   {saving ? '저장 중...' : '등록'}
                 </button>
               </div>
@@ -216,3 +216,4 @@ export default function NoticesPage() {
     </div>
   )
 }
+
