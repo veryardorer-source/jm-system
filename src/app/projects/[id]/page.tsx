@@ -367,9 +367,27 @@ export default function ProjectDetail() {
                                         ⛶
                                       </button>
                                       {/* 하단 액션 (hover시) */}
-                                      {isHovered && !isSelected && (
-                                        <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/60 to-transparent rounded-b-lg flex items-end justify-end p-1 pointer-events-none">
-                                          <span className="text-white text-xs opacity-70">탭하여 선택</span>
+                                      {/* 하단 액션 버튼 (hover시) */}
+                                      {isHovered && (
+                                        <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent rounded-b-lg flex items-end justify-between p-1.5 gap-1">
+                                          <button onClick={async e => { e.stopPropagation()
+                                            try {
+                                              const res = await fetch(f.file_url, { mode: 'cors', credentials: 'omit' })
+                                              const blob = await res.blob()
+                                              const fileObj = new File([blob], f.file_name, { type: blob.type })
+                                              if (navigator.canShare && navigator.canShare({ files: [fileObj] })) {
+                                                await navigator.share({ files: [fileObj], title: f.file_name })
+                                                return
+                                              }
+                                            } catch {}
+                                            downloadFile(f)
+                                          }} className="text-white bg-black/40 text-xs px-1.5 py-0.5 rounded hover:bg-black/60">
+                                            내보내기
+                                          </button>
+                                          <button onClick={e => { e.stopPropagation(); downloadFile(f) }}
+                                            className="text-white bg-black/40 text-xs px-1.5 py-0.5 rounded hover:bg-black/60">
+                                            저장
+                                          </button>
                                         </div>
                                       )}
                                     </div>
@@ -619,6 +637,15 @@ export default function ProjectDetail() {
               }
             }} className="bg-white/10 hover:bg-white/20 text-white text-sm px-3 py-1.5 rounded-lg transition-colors">
               내보내기
+            </button>
+            <button onClick={async () => {
+              const selected = files.filter(f => selectedFileIds.has(f.id))
+              for (const f of selected) {
+                await downloadFile(f)
+                await new Promise(r => setTimeout(r, 400))
+              }
+            }} className="bg-white/10 hover:bg-white/20 text-white text-sm px-3 py-1.5 rounded-lg transition-colors">
+              저장
             </button>
             <button onClick={deleteSelectedFiles}
               className="bg-red-500 hover:bg-red-600 text-white text-sm px-3 py-1.5 rounded-lg transition-colors">
