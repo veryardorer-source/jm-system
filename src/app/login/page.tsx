@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { createClient } from '@/lib/supabase-browser'
 
 export default function LoginPage() {
@@ -32,10 +33,10 @@ export default function LoginPage() {
         <div className="text-center mb-8">
           <div className="w-14 h-14 bg-blue-600 rounded-2xl flex items-center justify-center text-white font-bold text-xl mx-auto mb-4">JM</div>
           <h1 className="text-2xl font-bold text-gray-900">JM 관리 시스템</h1>
-          <p className="text-sm text-gray-500 mt-1">JM건축인테리어</p>
+            <p className="text-sm text-gray-500 mt-1">JM건축인테리어</p>
         </div>
 
-        <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6">
+        <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6 mb-4">
           <form onSubmit={handleLogin} className="flex flex-col gap-4">
             <div>
               <label className="text-sm font-medium text-gray-700 block mb-1.5">이메일</label>
@@ -68,6 +69,10 @@ export default function LoginPage() {
             </button>
           </form>
         </div>
+        <p className="text-center text-sm text-gray-500">
+          처음 오셨나요?{' '}
+          <Link href="/signup" className="text-blue-600 hover:underline font-medium">회원가입</Link>
+        </p>
       </div>
     </div>
   )

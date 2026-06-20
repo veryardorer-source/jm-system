@@ -12,6 +12,10 @@ const NAV_ITEMS = [
   { href: '/withdrawals', label: '출금 요청', icon: '💸' },
 ]
 
+const ADMIN_ITEMS = [
+  { href: '/admin/users', label: '직원 관리', icon: '👥' },
+]
+
 const ROLE_LABEL: Record<string, string> = {
   admin: '관리자',
   designer: '디자인팀',
@@ -23,6 +27,7 @@ export default function Sidebar() {
   const pathname = usePathname()
   const router = useRouter()
   const { profile, signOut } = useAuth()
+  const isAdmin = profile?.role === 'admin'
 
   async function handleSignOut() {
     await signOut()
@@ -51,6 +56,23 @@ export default function Sidebar() {
               </Link>
             )
           })}
+          {isAdmin && (
+            <>
+              <div className="mt-3 mb-1 px-3 text-xs text-gray-600 font-semibold uppercase tracking-wide">관리자</div>
+              {ADMIN_ITEMS.map(item => {
+                const active = pathname.startsWith(item.href)
+                return (
+                  <Link key={item.href} href={item.href}
+                    className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors ${
+                      active ? 'bg-blue-600 text-white' : 'text-gray-400 hover:bg-gray-800 hover:text-white'
+                    }`}>
+                    <span>{item.icon}</span>
+                    <span>{item.label}</span>
+                  </Link>
+                )
+              })}
+            </>
+          )}
         </nav>
         <div className="px-4 py-4 border-t border-gray-700">
           {profile && (
