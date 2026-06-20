@@ -1,18 +1,33 @@
 'use client'
 
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
+import { useAuth } from '@/lib/auth-context'
 
 const NAV_ITEMS = [
-  { href: '/', label: '대시보드' },
-  { href: '/notices', label: '공지사항' },
-  { href: '/projects', label: '현장 관리' },
-  { href: '/receipts', label: '영수증' },
-  { href: '/withdrawals', label: '출금 요청' },
+  { href: '/', label: '대시보드', icon: '🏠' },
+  { href: '/notices', label: '공지사항', icon: '📢' },
+  { href: '/projects', label: '현장 관리', icon: '🏗️' },
+  { href: '/receipts', label: '영수증', icon: '🧾' },
+  { href: '/withdrawals', label: '출금 요청', icon: '💸' },
 ]
+
+const ROLE_LABEL: Record<string, string> = {
+  admin: '관리자',
+  designer: '디자인팀',
+  field: '현장팀',
+  staff: '직원',
+}
 
 export default function Sidebar() {
   const pathname = usePathname()
+  const router = useRouter()
+  const { profile, signOut } = useAuth()
+
+  async function handleSignOut() {
+    await signOut()
+    router.push('/login')
+  }
 
   return (
     <>
@@ -38,7 +53,16 @@ export default function Sidebar() {
           })}
         </nav>
         <div className="px-4 py-4 border-t border-gray-700">
-          <p className="text-gray-500 text-xs">JM건축인테리어</p>
+          {profile && (
+            <div className="mb-3">
+              <p className="text-white text-sm font-medium">{profile.name}</p>
+              <p className="text-gray-400 text-xs mt-0.5">{ROLE_LABEL[profile.role] || profile.role}</p>
+            </div>
+          )}
+          <button onClick={handleSignOut}
+            className="w-full text-left text-gray-500 hover:text-gray-300 text-xs transition-colors">
+            로그아웃
+          </button>
         </div>
       </aside>
 
@@ -51,13 +75,8 @@ export default function Sidebar() {
               className={`flex-1 flex flex-col items-center justify-center py-2 text-xs transition-colors ${
                 active ? 'text-blue-400' : 'text-gray-500'
               }`}>
-              <span className={`text-lg mb-0.5 ${active ? 'text-blue-400' : 'text-gray-500'}`}>
-                {item.href === '/' ? '🏠' :
-                 item.href === '/notices' ? '📢' :
-                 item.href === '/projects' ? '🏗️' :
-                 item.href === '/receipts' ? '🧾' : '💸'}
-              </span>
-              <span className="leading-none">{item.label.replace(' 관리', '')}</span>
+              <span className="text-lg mb-0.5">{item.icon}</span>
+              <span className="leading-none">{item.label.replace(' 관리', '').replace('사항', '')}</span>
             </Link>
           )
         })}
