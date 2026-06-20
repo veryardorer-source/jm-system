@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { supabase } from '@/lib/supabase'
+import { createClient } from '@/lib/supabase-browser'
 
 export default function LoginPage() {
   const router = useRouter()
@@ -15,13 +15,14 @@ export default function LoginPage() {
     e.preventDefault()
     setLoading(true)
     setError('')
+    const supabase = createClient()
     const { error } = await supabase.auth.signInWithPassword({ email, password })
     if (error) {
       setError('이메일 또는 비밀번호가 올바르지 않습니다.')
       setLoading(false)
     } else {
-      router.push('/')
       router.refresh()
+      router.push('/')
     }
   }
 

@@ -2,7 +2,9 @@
 
 import { createContext, useContext, useEffect, useState } from 'react'
 import { User } from '@supabase/supabase-js'
-import { supabase } from './supabase'
+import { createClient } from './supabase-browser'
+
+const supabase = createClient()
 
 export type UserRole = 'admin' | 'designer' | 'field' | 'staff'
 
