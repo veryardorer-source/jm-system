@@ -50,10 +50,13 @@ export default function AdminEmployeesPage() {
       hire_date: form.hire_date || null,
       resign_date: form.resign_date || null,
     }
-    if (editingId) {
-      await supabase.from('employees').update(payload).eq('id', editingId)
-    } else {
-      await supabase.from('employees').insert([{ ...payload, is_active: true }])
+    const { error } = editingId
+      ? await supabase.from('employees').update(payload).eq('id', editingId)
+      : await supabase.from('employees').insert([{ ...payload, is_active: true }])
+    if (error) {
+      alert('저장 실패: ' + error.message)
+      setSaving(false)
+      return
     }
     setForm(EMPTY_FORM)
     setEditingId(null)
