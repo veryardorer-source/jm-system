@@ -98,6 +98,24 @@ export default function ProjectDetail() {
     fetchAll()
   }
 
+  async function downloadFile(file: ProjectFile) {
+    try {
+      const res = await fetch(file.file_url, { mode: 'cors', credentials: 'omit' })
+      if (!res.ok) throw new Error('fetch failed')
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = file.file_name
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+    } catch {
+      window.open(file.file_url, '_blank')
+    }
+  }
+
   async function copyFileUrl(file: ProjectFile) {
     await navigator.clipboard.writeText(`${file.file_name}\n${file.file_url}`)
     setCopiedUrlId(file.id)
@@ -511,15 +529,8 @@ export default function ProjectDetail() {
             <button onClick={async () => {
               const selected = files.filter(f => selectedFileIds.has(f.id))
               for (const f of selected) {
-                try {
-                  const res = await fetch(f.file_url)
-                  const blob = await res.blob()
-                  const url = URL.createObjectURL(blob)
-                  const a = document.createElement('a')
-                  a.href = url; a.download = f.file_name; a.click()
-                  URL.revokeObjectURL(url)
-                  await new Promise(r => setTimeout(r, 300))
-                } catch { /* skip */ }
+                await downloadFile(f)
+                await new Promise(r => setTimeout(r, 400))
               }
             }} className="bg-white/10 hover:bg-white/20 text-white text-sm px-3 py-1.5 rounded-lg transition-colors">
               다운로드
