@@ -298,6 +298,7 @@ export default function ProjectDetail() {
                     const isPhoto = ['시공전사진','시공사진','마감사진'].includes(cat)
                     const isCollapsed = collapsedCats[cat] !== false
                     const allSelected = catFiles.every(f => selectedFileIds.has(f.id))
+                    const anySelected = selectedFileIds.size > 0
                     return (
                       <div key={cat} className="bg-white rounded-xl border border-gray-200 overflow-hidden">
                         {/* 카테고리 헤더 토글 */}
@@ -309,25 +310,23 @@ export default function ProjectDetail() {
                             </span>
                             <span className="text-gray-400 text-xs">{isCollapsed ? '▼ 펼치기' : '▲ 접기'}</span>
                           </button>
-                          {isPhoto && (
-                            <button onClick={() => {
-                              if (allSelected) {
-                                setSelectedFileIds(prev => {
-                                  const next = new Set(prev)
-                                  catFiles.forEach(f => next.delete(f.id))
-                                  return next
-                                })
-                              } else {
-                                setSelectedFileIds(prev => {
-                                  const next = new Set(prev)
-                                  catFiles.forEach(f => next.add(f.id))
-                                  return next
-                                })
-                              }
-                            }} className={`text-xs px-3 py-1 rounded-lg border transition-colors ${allSelected ? 'border-blue-500 text-blue-600 bg-blue-50' : 'border-gray-300 text-gray-500 hover:border-blue-400 hover:text-blue-600'}`}>
-                              {allSelected ? '전체해제' : '전체선택'}
-                            </button>
-                          )}
+                          <button onClick={() => {
+                            if (allSelected) {
+                              setSelectedFileIds(prev => {
+                                const next = new Set(prev)
+                                catFiles.forEach(f => next.delete(f.id))
+                                return next
+                              })
+                            } else {
+                              setSelectedFileIds(prev => {
+                                const next = new Set(prev)
+                                catFiles.forEach(f => next.add(f.id))
+                                return next
+                              })
+                            }
+                          }} className={`text-xs px-3 py-1 rounded-lg border transition-colors ${allSelected ? 'border-green-500 text-green-600 bg-green-50' : 'border-gray-300 text-gray-500 hover:border-green-400 hover:text-green-600'}`}>
+                            {allSelected ? '전체해제' : '전체선택'}
+                          </button>
                         </div>
                         {!isCollapsed && (
                           <div className="border-t border-gray-100 p-3">
@@ -336,39 +335,34 @@ export default function ProjectDetail() {
                                 {catFiles.map(f => {
                                   const isSelected = selectedFileIds.has(f.id)
                                   const isHovered = hoveredFileId === f.id
-                                  const anySelected = selectedFileIds.size > 0
                                   return (
                                     <div key={f.id} className="relative group aspect-square"
                                       onMouseEnter={() => setHoveredFileId(f.id)}
                                       onMouseLeave={() => setHoveredFileId(null)}>
-                                      {/* 이미지 */}
                                       <img src={f.file_url} alt={f.file_name}
                                         onClick={() => anySelected ? toggleSelectFile(f.id) : setLightbox(f.file_url)}
                                         className={`w-full h-full object-cover rounded-lg border cursor-pointer transition-all ${
-                                          isSelected ? 'border-blue-500 ring-2 ring-blue-500 opacity-90' : 'border-gray-200 hover:opacity-90'
+                                          isSelected ? 'border-green-500 ring-2 ring-green-500 opacity-90' : 'border-gray-200 hover:opacity-90'
                                         }`} />
-                                      {/* 선택 오버레이 */}
                                       {isSelected && (
-                                        <div className="absolute inset-0 bg-blue-500/10 rounded-lg pointer-events-none" />
+                                        <div className="absolute inset-0 bg-green-500/10 rounded-lg pointer-events-none" />
                                       )}
-                                      {/* 체크박스 (선택됐거나 hover시 표시) */}
                                       {(isSelected || isHovered || anySelected) && (
                                         <button
                                           onClick={e => { e.stopPropagation(); toggleSelectFile(f.id) }}
                                           className={`absolute top-1.5 left-1.5 w-6 h-6 rounded-full border-2 flex items-center justify-center text-xs font-bold transition-all shadow-sm z-10 ${
                                             isSelected
-                                              ? 'bg-blue-500 border-blue-500 text-white'
-                                              : 'bg-white/90 border-gray-300 hover:border-blue-400'
+                                              ? 'bg-green-500 border-green-500 text-white'
+                                              : 'bg-white/90 border-gray-300 hover:border-green-400'
                                           }`}>
                                           {isSelected ? '✓' : ''}
                                         </button>
                                       )}
-                                      {/* 하단 액션 (비선택 hover시) */}
                                       {!anySelected && isHovered && (
                                         <div className="absolute inset-0 bg-black/20 rounded-lg flex items-end justify-between p-1">
-                                          <button onClick={e => { e.stopPropagation(); copyFileUrl(f) }}
+                                          <button onClick={e => { e.stopPropagation(); downloadFile(f) }}
                                             className="text-white bg-black/50 text-xs px-1.5 py-0.5 rounded">
-                                            {copiedUrlId === f.id ? '✓' : '링크'}
+                                            저장
                                           </button>
                                           <button onClick={e => { e.stopPropagation(); deleteFile(f) }}
                                             className="text-white bg-red-500/80 text-xs px-1.5 py-0.5 rounded">삭제</button>
@@ -380,15 +374,26 @@ export default function ProjectDetail() {
                               </div>
                             ) : (
                               <div>
-                                {catFiles.map((f, i) => (
-                                  <div key={f.id} className={`flex items-center gap-3 px-2 py-2.5 hover:bg-gray-50 rounded-lg ${i > 0 ? 'border-t border-gray-100' : ''}`}>
+                                {catFiles.map((f, i) => {
+                                  const isSelected = selectedFileIds.has(f.id)
+                                  return (
+                                  <div key={f.id} className={`flex items-center gap-3 px-2 py-2.5 rounded-lg cursor-pointer transition-colors ${i > 0 ? 'border-t border-gray-100' : ''} ${isSelected ? 'bg-green-50' : 'hover:bg-gray-50'}`}
+                                    onClick={() => anySelected && toggleSelectFile(f.id)}>
+                                    {/* 체크박스 */}
+                                    <button
+                                      onClick={e => { e.stopPropagation(); toggleSelectFile(f.id) }}
+                                      className={`w-5 h-5 rounded border-2 flex-shrink-0 flex items-center justify-center transition-colors ${
+                                        isSelected ? 'bg-green-500 border-green-500 text-white' : 'border-gray-300 hover:border-green-400'
+                                      }`}>
+                                      {isSelected && <span className="text-xs font-bold">✓</span>}
+                                    </button>
                                     <span className="text-lg">{f.file_type === 'link' ? '🔗' : f.file_type?.includes('pdf') ? '📄' : f.file_type?.includes('image') ? '🖼️' : '📎'}</span>
                                     <div className="flex-1 min-w-0">
                                       <p className="text-sm font-medium text-gray-800 truncate">{f.file_name}</p>
                                       {f.memo && <p className="text-xs text-gray-400">{f.memo}</p>}
                                     </div>
                                     <span className="text-xs text-gray-400 flex-shrink-0">{new Date(f.created_at).toLocaleDateString('ko-KR')}</span>
-                                    <button onClick={() => {
+                                    <button onClick={e => { e.stopPropagation()
                                       const type = f.file_type?.toLowerCase() || ''
                                       const name = f.file_name?.toLowerCase() || ''
                                       if (type === 'link') {
@@ -401,14 +406,14 @@ export default function ProjectDetail() {
                                         window.open(f.file_url, '_blank')
                                       }
                                     }} className="text-xs text-green-600 hover:underline flex-shrink-0">열기</button>
-                                    <button onClick={() => copyFileUrl(f)}
-                                      className={`text-xs flex-shrink-0 ${copiedUrlId === f.id ? 'text-green-600' : 'text-gray-400 hover:text-blue-600'}`}>
-                                      {copiedUrlId === f.id ? '✓' : '링크'}
-                                    </button>
-                                    <button onClick={() => deleteFile(f)}
+                                    {f.file_type !== 'link' && (
+                                      <button onClick={e => { e.stopPropagation(); downloadFile(f) }}
+                                        className="text-xs text-gray-400 hover:text-green-600 flex-shrink-0">저장</button>
+                                    )}
+                                    <button onClick={e => { e.stopPropagation(); deleteFile(f) }}
                                       className="text-xs text-red-400 hover:text-red-600 flex-shrink-0">삭제</button>
                                   </div>
-                                ))}
+                                )})}
                               </div>
                             )}
                           </div>
@@ -576,7 +581,7 @@ export default function ProjectDetail() {
       {/* 선택 플로팅 액션바 */}
       {selectedFileIds.size > 0 && (
         <div className="fixed bottom-20 md:bottom-6 left-1/2 -translate-x-1/2 z-40 bg-gray-900 text-white rounded-2xl shadow-2xl px-4 py-3 flex items-center gap-3 min-w-[320px] max-w-[90vw]">
-          <span className="text-sm font-semibold text-blue-300 whitespace-nowrap">{selectedFileIds.size}장 선택됨</span>
+          <span className="text-sm font-semibold text-green-300 whitespace-nowrap">{selectedFileIds.size}개 선택됨</span>
           <div className="flex-1 flex gap-2 justify-end">
             <button onClick={async () => {
               const selected = files.filter(f => selectedFileIds.has(f.id))
