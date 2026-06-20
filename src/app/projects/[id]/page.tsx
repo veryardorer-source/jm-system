@@ -24,7 +24,7 @@ export default function ProjectDetail() {
   const [loading, setLoading] = useState(true)
 
   const [showFileForm, setShowFileForm] = useState(false)
-  const [fileForm, setFileForm] = useState({ category: '시공전사진', memo: '' })
+  const [fileForm, setFileForm] = useState({ category: '시공전사진', memo: '', linkUrl: '', linkTitle: '' })
   const [selectedFiles, setSelectedFiles] = useState<File[]>([])
   const [uploading, setUploading] = useState(false)
   const [uploadProgress, setUploadProgress] = useState(0)
@@ -58,6 +58,26 @@ export default function ProjectDetail() {
 
   async function handleFileUpload(e: React.FormEvent) {
     e.preventDefault()
+
+    // 구매링크: 파일 없이 URL만 저장
+    if (fileForm.category === '구매링크') {
+      if (!fileForm.linkUrl.trim()) return
+      const { error } = await supabase.from('project_files').insert([{
+        project_id: id,
+        file_name: fileForm.linkTitle.trim() || fileForm.linkUrl,
+        file_url: fileForm.linkUrl.trim(),
+        file_type: 'link',
+        category: '구매링크',
+        memo: fileForm.memo || '',
+        uploaded_by: '',
+      }])
+      if (error) { alert('저장 실패: ' + error.message); return }
+      setFileForm({ category: '구매링크', memo: '', linkUrl: '', linkTitle: '' })
+      setShowFileForm(false)
+      fetchAll()
+      return
+    }
+
     if (selectedFiles.length === 0) return
     setUploading(true)
     for (let i = 0; i < selectedFiles.length; i++) {
@@ -89,7 +109,7 @@ export default function ProjectDetail() {
       }
     }
     setUploadProgress(100)
-    setFileForm({ category: '시공전사진', memo: '' })
+    setFileForm({ category: '시공전사진', memo: '', linkUrl: '', linkTitle: '' })
     setSelectedFiles([])
     setShowFileForm(false)
     setUploading(false)
@@ -362,7 +382,7 @@ export default function ProjectDetail() {
                               <div>
                                 {catFiles.map((f, i) => (
                                   <div key={f.id} className={`flex items-center gap-3 px-2 py-2.5 hover:bg-gray-50 rounded-lg ${i > 0 ? 'border-t border-gray-100' : ''}`}>
-                                    <span className="text-lg">{f.file_type?.includes('pdf') ? '📄' : f.file_type?.includes('image') ? '🖼️' : '📎'}</span>
+                                    <span className="text-lg">{f.file_type === 'link' ? '🔗' : f.file_type?.includes('pdf') ? '📄' : f.file_type?.includes('image') ? '🖼️' : '📎'}</span>
                                     <div className="flex-1 min-w-0">
                                       <p className="text-sm font-medium text-gray-800 truncate">{f.file_name}</p>
                                       {f.memo && <p className="text-xs text-gray-400">{f.memo}</p>}
@@ -371,14 +391,16 @@ export default function ProjectDetail() {
                                     <button onClick={() => {
                                       const type = f.file_type?.toLowerCase() || ''
                                       const name = f.file_name?.toLowerCase() || ''
-                                      if (type.includes('image') || /\.(jpg|jpeg|png|gif|webp|heic)$/.test(name)) {
+                                      if (type === 'link') {
+                                        window.open(f.file_url, '_blank')
+                                      } else if (type.includes('image') || /\.(jpg|jpeg|png|gif|webp|heic)$/.test(name)) {
                                         setLightbox(f.file_url)
                                       } else if (type.includes('pdf') || name.endsWith('.pdf')) {
                                         window.open(`https://docs.google.com/viewer?url=${encodeURIComponent(f.file_url)}`, '_blank')
                                       } else {
                                         window.open(f.file_url, '_blank')
                                       }
-                                    }} className="text-xs text-blue-600 hover:underline flex-shrink-0">열기</button>
+                                    }} className="text-xs text-green-600 hover:underline flex-shrink-0">열기</button>
                                     <button onClick={() => copyFileUrl(f)}
                                       className={`text-xs flex-shrink-0 ${copiedUrlId === f.id ? 'text-green-600' : 'text-gray-400 hover:text-blue-600'}`}>
                                       {copiedUrlId === f.id ? '✓' : '링크'}
@@ -487,21 +509,41 @@ export default function ProjectDetail() {
             </div>
             <form onSubmit={handleFileUpload} className="px-6 py-5 flex flex-col gap-4">
               <div>
-                <label className="text-sm font-medium text-gray-700 block mb-1.5">파일 선택 * <span className="text-gray-400 font-normal">(여러 장 동시 선택 가능)</span></label>
-                <DropZone files={selectedFiles} onChange={setSelectedFiles} />
-              </div>
-              <div>
                 <label className="text-sm font-medium text-gray-700 block mb-1.5">분류</label>
-                <select value={fileForm.category} onChange={e => setFileForm({...fileForm, category: e.target.value})}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <select value={fileForm.category} onChange={e => setFileForm({...fileForm, category: e.target.value, linkUrl: '', linkTitle: ''})}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500">
                   {CATEGORY_LIST.map(c => <option key={c}>{c}</option>)}
                 </select>
               </div>
+
+              {fileForm.category === '구매링크' ? (
+                <>
+                  <div>
+                    <label className="text-sm font-medium text-gray-700 block mb-1.5">구매 링크 URL *</label>
+                    <input value={fileForm.linkUrl} onChange={e => setFileForm({...fileForm, linkUrl: e.target.value})}
+                      placeholder="https://smartstore.naver.com/..."
+                      type="url"
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-gray-700 block mb-1.5">제목 <span className="text-gray-400 font-normal">(선택)</span></label>
+                    <input value={fileForm.linkTitle} onChange={e => setFileForm({...fileForm, linkTitle: e.target.value})}
+                      placeholder="예) 거실 조명 - 쿠팡"
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
+                  </div>
+                </>
+              ) : (
+                <div>
+                  <label className="text-sm font-medium text-gray-700 block mb-1.5">파일 선택 * <span className="text-gray-400 font-normal">(여러 장 동시 선택 가능)</span></label>
+                  <DropZone files={selectedFiles} onChange={setSelectedFiles} />
+                </div>
+              )}
+
               <div>
                 <label className="text-sm font-medium text-gray-700 block mb-1.5">메모</label>
                 <input value={fileForm.memo} onChange={e => setFileForm({...fileForm, memo: e.target.value})}
                   placeholder="예) 거실 비포사진, 평면도 v2"
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
               </div>
 
               {/* 업로드 진행바 */}
@@ -512,7 +554,7 @@ export default function ProjectDetail() {
                     <span>{uploadProgress}%</span>
                   </div>
                   <div className="w-full bg-gray-100 rounded-full h-2">
-                    <div className="bg-blue-500 h-2 rounded-full transition-all duration-300" style={{ width: `${uploadProgress}%` }} />
+                    <div className="bg-green-500 h-2 rounded-full transition-all duration-300" style={{ width: `${uploadProgress}%` }} />
                   </div>
                 </div>
               )}
@@ -520,8 +562,9 @@ export default function ProjectDetail() {
               <div className="flex gap-3 mt-2">
                 <button type="button" onClick={() => { setShowFileForm(false); setSelectedFiles([]) }}
                   className="flex-1 border border-gray-300 text-gray-700 py-2.5 rounded-lg text-sm font-medium">취소</button>
-                <button type="submit" disabled={uploading || selectedFiles.length === 0}
-                  className="flex-1 bg-blue-600 text-white py-2.5 rounded-lg text-sm font-medium disabled:opacity-50">
+                <button type="submit"
+                  disabled={uploading || (fileForm.category !== '구매링크' && selectedFiles.length === 0) || (fileForm.category === '구매링크' && !fileForm.linkUrl.trim())}
+                  className="flex-1 bg-green-600 text-white py-2.5 rounded-lg text-sm font-medium disabled:opacity-50">
                   {uploading ? `업로드 중...` : selectedFiles.length > 1 ? `${selectedFiles.length}개 업로드` : '업로드'}
                 </button>
               </div>
