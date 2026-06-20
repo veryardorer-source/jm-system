@@ -580,20 +580,23 @@ export default function ProjectDetail() {
           <div className="flex-1 flex gap-2 justify-end">
             <button onClick={async () => {
               const selected = files.filter(f => selectedFileIds.has(f.id))
+              try {
+                const fileObjects = await Promise.all(selected.map(async f => {
+                  const res = await fetch(f.file_url, { mode: 'cors', credentials: 'omit' })
+                  const blob = await res.blob()
+                  return new File([blob], f.file_name, { type: blob.type })
+                }))
+                if (navigator.canShare && navigator.canShare({ files: fileObjects })) {
+                  await navigator.share({ files: fileObjects, title: 'JM 자료' })
+                  return
+                }
+              } catch {}
               for (const f of selected) {
                 await downloadFile(f)
                 await new Promise(r => setTimeout(r, 400))
               }
             }} className="bg-white/10 hover:bg-white/20 text-white text-sm px-3 py-1.5 rounded-lg transition-colors">
-              다운로드
-            </button>
-            <button onClick={async () => {
-              const selected = files.filter(f => selectedFileIds.has(f.id))
-              const text = selected.map(f => `${f.file_name}\n${f.file_url}`).join('\n\n')
-              await navigator.clipboard.writeText(text)
-              alert(`${selected.length}장 링크가 복사됐습니다.`)
-            }} className="bg-white/10 hover:bg-white/20 text-white text-sm px-3 py-1.5 rounded-lg transition-colors">
-              링크복사
+              공유/저장
             </button>
             <button onClick={deleteSelectedFiles}
               className="bg-red-500 hover:bg-red-600 text-white text-sm px-3 py-1.5 rounded-lg transition-colors">

@@ -48,7 +48,7 @@ export default function Sidebar() {
             return (
               <Link key={item.href} href={item.href}
                 className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors ${
-                  active ? 'bg-green-600 text-white' : 'text-gray-400 hover:bg-gray-800 hover:text-white'
+                  active ? 'bg-green-600 text-white' : 'text-green-400 hover:bg-gray-800 hover:text-green-300'
                 }`}>
                 <span>{item.label}</span>
               </Link>
