@@ -10,10 +10,9 @@ const ROLE_OPTIONS: { value: UserRole; label: string; color: string }[] = [
   { value: 'admin', label: '관리자', color: 'bg-red-100 text-red-700' },
   { value: 'designer', label: '디자인팀', color: 'bg-purple-100 text-purple-700' },
   { value: 'field', label: '현장팀', color: 'bg-blue-100 text-blue-700' },
-  { value: 'staff', label: '직원', color: 'bg-gray-100 text-gray-700' },
 ]
 
-const INITIAL_FORM = { name: '', email: '', password: '', role: 'staff' as UserRole }
+const INITIAL_FORM = { name: '', email: '', password: '', role: 'designer' as UserRole }
 
 export default function AdminUsersPage() {
   const router = useRouter()
