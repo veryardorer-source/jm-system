@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef, useCallback } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Sidebar from '@/components/Sidebar'
-import { supabase, Project, ProjectFile, Schedule, ProjectCost, COST_CATEGORY_LIST } from '@/lib/supabase'
+import { supabase, Project, ProjectFile, Schedule, ProjectCost } from '@/lib/supabase'
 
 const TAB_LIST = ['자료', '공정', '비용']
 const CATEGORY_LIST = ['시공전사진', '시공사진', '마감사진', '도면', '3D', '미팅내용', '고객요청', '구매링크', '기타']
@@ -43,7 +43,8 @@ export default function ProjectDetail() {
   const [editingSchedule, setEditingSchedule] = useState<Schedule | null>(null)
 
   const [showCostForm, setShowCostForm] = useState(false)
-  const [cForm, setCForm] = useState({ title: '', amount: '', category: '자재비', cost_date: '', memo: '' })
+  const [cForm, setCForm] = useState({ month: '', amount: '', memo: '' })
+  const [costFile, setCostFile] = useState<File | null>(null)
   const [savingC, setSavingC] = useState(false)
   const [editingCost, setEditingCost] = useState<ProjectCost | null>(null)
 
@@ -55,7 +56,7 @@ export default function ProjectDetail() {
       supabase.from('projects').select('*').eq('id', id).single(),
       supabase.from('project_files').select('*').eq('project_id', id).order('created_at', { ascending: false }),
       supabase.from('schedules').select('*').eq('project_id', id).order('scheduled_date'),
-      supabase.from('project_costs').select('*').eq('project_id', id).order('cost_date', { ascending: false }),
+      supabase.from('project_costs').select('*').eq('project_id', id).order('month', { ascending: false }),
     ])
     setProject(p.data)
     setFiles(f.data || [])
@@ -263,13 +264,27 @@ export default function ProjectDetail() {
 
   async function handleCost(e: React.FormEvent) {
     e.preventDefault()
+    if (!cForm.month) return
     setSavingC(true)
+    let file_url = editingCost?.file_url || ''
+    let file_name = editingCost?.file_name || ''
+    if (costFile) {
+      const ext = costFile.name.split('.').pop() || 'bin'
+      const path = `costs/${id}/${Date.now()}.${ext}`
+      const { error: upErr } = await supabase.storage.from('uploads').upload(path, costFile, {
+        contentType: costFile.type || 'application/octet-stream',
+        upsert: true,
+      })
+      if (upErr) { alert('파일 업로드 실패: ' + upErr.message); setSavingC(false); return }
+      const { data: urlData } = supabase.storage.from('uploads').getPublicUrl(path)
+      file_url = urlData.publicUrl
+      file_name = costFile.name
+    }
     const payload = {
-      title: cForm.title,
+      month: cForm.month + '-01',
       amount: Number(cForm.amount) || 0,
-      category: cForm.category,
-      cost_date: cForm.cost_date || null,
       memo: cForm.memo,
+      file_url, file_name,
     }
     if (editingCost) {
       await supabase.from('project_costs').update(payload).eq('id', editingCost.id)
@@ -277,7 +292,8 @@ export default function ProjectDetail() {
     } else {
       await supabase.from('project_costs').insert([{ project_id: id, ...payload }])
     }
-    setCForm({ title: '', amount: '', category: '자재비', cost_date: '', memo: '' })
+    setCForm({ month: '', amount: '', memo: '' })
+    setCostFile(null)
     setShowCostForm(false)
     setSavingC(false)
     fetchAll()
@@ -285,12 +301,17 @@ export default function ProjectDetail() {
 
   function openEditCost(c: ProjectCost) {
     setEditingCost(c)
-    setCForm({ title: c.title, amount: String(c.amount), category: c.category, cost_date: c.cost_date || '', memo: c.memo || '' })
+    setCForm({ month: c.month ? c.month.slice(0, 7) : '', amount: String(c.amount), memo: c.memo || '' })
+    setCostFile(null)
     setShowCostForm(true)
   }
 
   async function deleteCost(c: ProjectCost) {
-    if (!confirm(`"${c.title}" 비용을 삭제할까요?`)) return
+    if (!confirm(`${c.month?.slice(0,7)} 자료를 삭제할까요?`)) return
+    if (c.file_url) {
+      const path = c.file_url.split('/uploads/')[1]
+      if (path) await supabase.storage.from('uploads').remove([path])
+    }
     await supabase.from('project_costs').delete().eq('id', c.id)
     fetchAll()
   }
@@ -601,68 +622,80 @@ export default function ProjectDetail() {
           {/* 비용 탭 */}
           {tab === '비용' && (
             <div>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
-                {COST_CATEGORY_LIST.map(cat => {
-                  const sum = costs.filter(c => c.category === cat).reduce((s, c) => s + c.amount, 0)
-                  return (
-                    <div key={cat} className="bg-white rounded-xl border border-gray-200 px-4 py-3">
-                      <p className="text-xs text-gray-400">{cat}</p>
-                      <p className="text-base font-bold text-gray-800 mt-0.5">{sum.toLocaleString()}원</p>
-                    </div>
-                  )
-                })}
-              </div>
-              <div className="bg-green-50 border border-green-200 rounded-xl px-4 py-3 mb-4 flex items-center justify-between">
-                <span className="text-sm font-medium text-green-700">총 비용</span>
-                <span className="text-lg font-bold text-green-700">{costs.reduce((s, c) => s + c.amount, 0).toLocaleString()}원</span>
-              </div>
               <div className="flex justify-end mb-4">
                 <button onClick={() => setShowCostForm(true)}
                   className="bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-700">
-                  + 비용 추가
+                  + 월별 자료 추가
                 </button>
               </div>
               {costs.length === 0 ? (
                 <div className="bg-white rounded-xl border border-gray-200 text-center py-16 text-gray-400">
-                  <p className="text-3xl mb-2">💰</p><p>등록된 비용이 없어요</p>
+                  <p className="text-3xl mb-2">💰</p><p>등록된 비용 자료가 없어요</p>
+                  <p className="text-xs mt-1">경리나라에서 정리한 월별 자료를 올려보세요</p>
                 </div>
               ) : (
-                <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-                  <table className="w-full">
-                    <thead>
-                      <tr className="border-b border-gray-100 bg-gray-50">
-                        <th className="text-left text-xs font-semibold text-gray-400 px-6 py-3">항목</th>
-                        <th className="text-left text-xs font-semibold text-gray-400 px-4 py-3">분류</th>
-                        <th className="text-left text-xs font-semibold text-gray-400 px-4 py-3">날짜</th>
-                        <th className="text-right text-xs font-semibold text-gray-400 px-4 py-3">금액</th>
-                        <th className="px-4 py-3"></th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {costs.map(c => (
-                        <tr key={c.id} className="border-b border-gray-50 hover:bg-gray-50">
-                          <td className="px-6 py-3 text-sm font-medium text-gray-800">
-                            {c.title}
-                            {c.memo && <p className="text-xs text-gray-400">{c.memo}</p>}
-                          </td>
-                          <td className="px-4 py-3">
-                            <span className="text-xs px-2 py-1 rounded-full bg-gray-100 text-gray-600">{c.category}</span>
-                          </td>
-                          <td className="px-4 py-3 text-sm text-gray-500">{c.cost_date || '-'}</td>
-                          <td className="px-4 py-3 text-sm text-right font-semibold text-gray-800">{c.amount.toLocaleString()}원</td>
-                          <td className="px-4 py-3">
-                            <div className="flex items-center gap-2 justify-end">
-                              <button onClick={() => openEditCost(c)}
-                                className="text-xs text-green-500 hover:text-green-700 hover:bg-green-50 px-2 py-1 rounded transition-colors">수정</button>
-                              <button onClick={() => deleteCost(c)}
-                                className="text-xs text-red-400 hover:text-red-600 hover:bg-red-50 px-2 py-1 rounded transition-colors">삭제</button>
+                <>
+                  {/* 월별 추이 그래프 */}
+                  <div className="bg-white rounded-xl border border-gray-200 px-4 py-5 mb-4">
+                    <p className="text-sm font-semibold text-gray-700 mb-4">월별 비용 추이</p>
+                    {(() => {
+                      const sorted = [...costs].sort((a, b) => (a.month || '').localeCompare(b.month || ''))
+                      const max = Math.max(...sorted.map(c => c.amount), 1)
+                      return (
+                        <div className="flex items-end gap-2 h-40 overflow-x-auto pb-1">
+                          {sorted.map(c => (
+                            <div key={c.id} className="flex flex-col items-center gap-1 flex-shrink-0" style={{ minWidth: '52px' }}>
+                              <span className="text-[10px] text-gray-500 whitespace-nowrap">{(c.amount/10000).toFixed(0)}만</span>
+                              <div className="w-8 bg-green-500 rounded-t-md transition-all" style={{ height: `${Math.max((c.amount / max) * 110, 4)}px` }} />
+                              <span className="text-[10px] text-gray-400 whitespace-nowrap">{c.month?.slice(2,7).replace('-','.')}</span>
                             </div>
-                          </td>
+                          ))}
+                        </div>
+                      )
+                    })()}
+                  </div>
+
+                  <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+                    <table className="w-full">
+                      <thead>
+                        <tr className="border-b border-gray-100 bg-gray-50">
+                          <th className="text-left text-xs font-semibold text-gray-400 px-6 py-3">월</th>
+                          <th className="text-right text-xs font-semibold text-gray-400 px-4 py-3">금액</th>
+                          <th className="text-left text-xs font-semibold text-gray-400 px-4 py-3">첨부 자료</th>
+                          <th className="text-left text-xs font-semibold text-gray-400 px-4 py-3">메모</th>
+                          <th className="px-4 py-3"></th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                      </thead>
+                      <tbody>
+                        {costs.map(c => (
+                          <tr key={c.id} className="border-b border-gray-50 hover:bg-gray-50">
+                            <td className="px-6 py-3 text-sm font-medium text-gray-800">{c.month?.slice(0,7) || '-'}</td>
+                            <td className="px-4 py-3 text-sm text-right font-semibold text-gray-800">{c.amount.toLocaleString()}원</td>
+                            <td className="px-4 py-3">
+                              {c.file_url ? (
+                                <button onClick={() => {
+                                  const name = c.file_name?.toLowerCase() || ''
+                                  if (name.endsWith('.pdf')) window.open(`https://docs.google.com/viewer?url=${encodeURIComponent(c.file_url)}`, '_blank')
+                                  else if (/\.(jpg|jpeg|png|gif|webp)$/.test(name)) setLightbox(c.file_url)
+                                  else window.open(c.file_url, '_blank')
+                                }} className="text-xs text-green-600 hover:underline truncate max-w-[160px] inline-block">📎 {c.file_name}</button>
+                              ) : <span className="text-xs text-gray-300">-</span>}
+                            </td>
+                            <td className="px-4 py-3 text-xs text-gray-400">{c.memo || '-'}</td>
+                            <td className="px-4 py-3">
+                              <div className="flex items-center gap-2 justify-end">
+                                <button onClick={() => openEditCost(c)}
+                                  className="text-xs text-green-500 hover:text-green-700 hover:bg-green-50 px-2 py-1 rounded transition-colors">수정</button>
+                                <button onClick={() => deleteCost(c)}
+                                  className="text-xs text-red-400 hover:text-red-600 hover:bg-red-50 px-2 py-1 rounded transition-colors">삭제</button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
               )}
             </div>
           )}
@@ -831,44 +864,38 @@ export default function ProjectDetail() {
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl w-full max-w-md shadow-xl">
             <div className="flex items-center justify-between px-6 py-5 border-b border-gray-100">
-              <h2 className="text-lg font-bold">{editingCost ? '비용 수정' : '비용 추가'}</h2>
-              <button onClick={() => { setShowCostForm(false); setEditingCost(null); setCForm({ title: '', amount: '', category: '자재비', cost_date: '', memo: '' }) }} className="text-gray-400 text-2xl">&times;</button>
+              <h2 className="text-lg font-bold">{editingCost ? '비용 자료 수정' : '월별 비용 자료 추가'}</h2>
+              <button onClick={() => { setShowCostForm(false); setEditingCost(null); setCForm({ month: '', amount: '', memo: '' }); setCostFile(null) }} className="text-gray-400 text-2xl">&times;</button>
             </div>
             <form onSubmit={handleCost} className="px-6 py-5 flex flex-col gap-4">
-              <div>
-                <label className="text-sm font-medium text-gray-700 block mb-1.5">항목명 *</label>
-                <input required value={cForm.title} onChange={e => setCForm({...cForm, title: e.target.value})}
-                  placeholder="타일 자재 구입"
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
-              </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-sm font-medium text-gray-700 block mb-1.5">분류</label>
-                  <select value={cForm.category} onChange={e => setCForm({...cForm, category: e.target.value})}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500">
-                    {COST_CATEGORY_LIST.map(c => <option key={c}>{c}</option>)}
-                  </select>
+                  <label className="text-sm font-medium text-gray-700 block mb-1.5">월 *</label>
+                  <input required type="month" value={cForm.month} onChange={e => setCForm({...cForm, month: e.target.value})}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
                 </div>
                 <div>
-                  <label className="text-sm font-medium text-gray-700 block mb-1.5">금액 *</label>
+                  <label className="text-sm font-medium text-gray-700 block mb-1.5">총 금액 *</label>
                   <input required type="number" value={cForm.amount} onChange={e => setCForm({...cForm, amount: e.target.value})}
-                    placeholder="500000"
+                    placeholder="5000000"
                     className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
                 </div>
               </div>
               <div>
-                <label className="text-sm font-medium text-gray-700 block mb-1.5">날짜</label>
-                <input type="date" value={cForm.cost_date} onChange={e => setCForm({...cForm, cost_date: e.target.value})}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
+                <label className="text-sm font-medium text-gray-700 block mb-1.5">
+                  경리나라 자료 첨부 {editingCost?.file_name && <span className="text-gray-400 font-normal">(현재: {editingCost.file_name})</span>}
+                </label>
+                <input type="file" onChange={e => setCostFile(e.target.files?.[0] || null)}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:bg-green-50 file:text-green-700 file:text-xs" />
               </div>
               <div>
                 <label className="text-sm font-medium text-gray-700 block mb-1.5">메모</label>
                 <input value={cForm.memo} onChange={e => setCForm({...cForm, memo: e.target.value})}
-                  placeholder="예) OO업체 결제"
+                  placeholder="예) 자재비+인건비 합산"
                   className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
               </div>
               <div className="flex gap-3 mt-2">
-                <button type="button" onClick={() => { setShowCostForm(false); setEditingCost(null); setCForm({ title: '', amount: '', category: '자재비', cost_date: '', memo: '' }) }}
+                <button type="button" onClick={() => { setShowCostForm(false); setEditingCost(null); setCForm({ month: '', amount: '', memo: '' }); setCostFile(null) }}
                   className="flex-1 border border-gray-300 text-gray-700 py-2.5 rounded-lg text-sm font-medium">취소</button>
                 <button type="submit" disabled={savingC}
                   className="flex-1 bg-green-600 text-white py-2.5 rounded-lg text-sm font-medium disabled:opacity-50">
