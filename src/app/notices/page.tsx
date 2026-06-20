@@ -66,10 +66,10 @@ export default function NoticesPage() {
   const filtered = notices.filter(n => filter === '전체' || n.category === filter)
 
   return (
-    <div className="flex h-screen overflow-hidden">
+    <div className="flex flex-col md:flex-row min-h-screen">
       <Sidebar />
-      <div className="flex-1 flex flex-col overflow-hidden">
-        <header className="bg-white border-b border-gray-200 px-8 py-5 flex items-center justify-between flex-shrink-0">
+      <div className="flex-1 flex flex-col">
+        <header className="bg-white border-b border-gray-200 px-4 md:px-8 py-4 md:py-5 flex items-center justify-between flex-shrink-0">
           <div>
             <h1 className="text-xl font-bold text-gray-900">공지사항</h1>
             <p className="text-sm text-gray-500 mt-0.5">전체 {notices.length}개</p>
@@ -81,7 +81,7 @@ export default function NoticesPage() {
         </header>
 
         {/* 카테고리 필터 */}
-        <div className="bg-white border-b border-gray-200 px-8 py-3 flex gap-2 flex-shrink-0">
+        <div className="bg-white border-b border-gray-200 px-4 md:px-8 py-3 flex gap-2 overflow-x-auto flex-shrink-0">
           {CATEGORIES.map(c => (
             <button key={c} onClick={() => setFilter(c)}
               className={`px-4 py-1.5 rounded-full text-sm font-medium border transition-colors ${
@@ -95,7 +95,7 @@ export default function NoticesPage() {
           ))}
         </div>
 
-        <div className="flex-1 overflow-auto px-8 py-6">
+        <div className="flex-1 overflow-auto px-4 md:px-8 py-4 md:py-6 pb-20 md:pb-6">
           {loading ? (
             <div className="text-center py-16 text-gray-400">불러오는 중...</div>
           ) : filtered.length === 0 ? (

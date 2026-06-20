@@ -186,12 +186,12 @@ export default function ProjectDetail() {
   )
 
   return (
-    <div className="flex h-screen overflow-hidden">
+    <div className="flex flex-col md:flex-row min-h-screen">
       <Sidebar />
 
-      <div className="flex-1 flex flex-col overflow-hidden">
+      <div className="flex-1 flex flex-col">
         {/* 헤더 */}
-        <header className="bg-white border-b border-gray-200 px-8 py-5">
+        <header className="bg-white border-b border-gray-200 px-4 md:px-8 py-4 md:py-5">
           <div className="flex items-center gap-3 mb-1">
             <button onClick={() => router.back()} className="text-gray-400 hover:text-gray-600 text-sm">← 목록</button>
           </div>
@@ -213,7 +213,7 @@ export default function ProjectDetail() {
         </header>
 
         {/* 탭 */}
-        <div className="bg-white border-b border-gray-200 px-8">
+        <div className="bg-white border-b border-gray-200 px-4 md:px-8">
           <div className="flex gap-1">
             {TAB_LIST.map(t => (
               <button key={t} onClick={() => setTab(t)}
@@ -226,7 +226,7 @@ export default function ProjectDetail() {
           </div>
         </div>
 
-        <div className="flex-1 overflow-auto px-8 py-6">
+        <div className="flex-1 overflow-auto px-4 md:px-8 py-4 md:py-6 pb-20 md:pb-6">
 
           {/* 자료 탭 */}
           {tab === '자료' && (

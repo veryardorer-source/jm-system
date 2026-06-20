@@ -63,15 +63,15 @@ const [loading, setLoading] = useState(true)
   })
 
   return (
-    <div className="flex h-screen overflow-hidden">
+    <div className="flex flex-col md:flex-row min-h-screen">
       <Sidebar />
-      <div className="flex-1 flex flex-col overflow-hidden">
+      <div className="flex-1 flex flex-col">
         <header className="bg-white border-b border-gray-200 px-8 py-5 flex-shrink-0">
           <h1 className="text-xl font-bold text-gray-900">대시보드</h1>
           <p className="text-sm text-gray-500 mt-0.5">진행중인 현장과 직원 업무 현황</p>
         </header>
 
-        <div className="flex-1 overflow-auto px-8 py-6">
+        <div className="flex-1 overflow-auto px-4 md:px-8 py-4 md:py-6 pb-20 md:pb-6">
           {loading ? (
             <div className="text-center py-20 text-gray-400">불러오는 중...</div>
           ) : (
