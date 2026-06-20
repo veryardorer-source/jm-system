@@ -136,6 +136,48 @@ export default function ProjectDetail() {
     }
   }
 
+  async function shareFile(file: ProjectFile) {
+    if (navigator.share) {
+      try {
+        const res = await fetch(file.file_url, { mode: 'cors', credentials: 'omit' })
+        const blob = await res.blob()
+        const fileObj = new File([blob], file.file_name, { type: blob.type })
+        if (navigator.canShare({ files: [fileObj] })) {
+          await navigator.share({ files: [fileObj], title: file.file_name })
+          return
+        }
+      } catch (e: unknown) {
+        // 사용자가 취소한 경우(AbortError)는 다운로드 안 함
+        if (e instanceof Error && e.name === 'AbortError') return
+        // 그 외 오류(NotAllowedError 등)는 다운로드로 폴백
+      }
+    }
+    downloadFile(file)
+  }
+
+  async function shareFiles(fileList: ProjectFile[]) {
+    if (navigator.share) {
+      try {
+        const fileObjects = await Promise.all(fileList.map(async f => {
+          const res = await fetch(f.file_url, { mode: 'cors', credentials: 'omit' })
+          const blob = await res.blob()
+          return new File([blob], f.file_name, { type: blob.type })
+        }))
+        if (navigator.canShare({ files: fileObjects })) {
+          await navigator.share({ files: fileObjects, title: 'JM 자료' })
+          return
+        }
+      } catch (e: unknown) {
+        if (e instanceof Error && e.name === 'AbortError') return
+      }
+    }
+    // 폴백: 순차 다운로드
+    for (const f of fileList) {
+      await downloadFile(f)
+      await new Promise(r => setTimeout(r, 300))
+    }
+  }
+
   async function copyFileUrl(file: ProjectFile) {
     await navigator.clipboard.writeText(`${file.file_name}\n${file.file_url}`)
     setCopiedUrlId(file.id)
@@ -370,18 +412,8 @@ export default function ProjectDetail() {
                                       {/* 하단 액션 버튼 (hover시) */}
                                       {isHovered && (
                                         <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent rounded-b-lg flex items-end justify-between p-1.5 gap-1">
-                                          <button onClick={async e => { e.stopPropagation()
-                                            try {
-                                              const res = await fetch(f.file_url, { mode: 'cors', credentials: 'omit' })
-                                              const blob = await res.blob()
-                                              const fileObj = new File([blob], f.file_name, { type: blob.type })
-                                              if (navigator.canShare && navigator.canShare({ files: [fileObj] })) {
-                                                await navigator.share({ files: [fileObj], title: f.file_name })
-                                                return
-                                              }
-                                            } catch {}
-                                            downloadFile(f)
-                                          }} className="text-white bg-black/40 text-xs px-1.5 py-0.5 rounded hover:bg-black/60">
+                                          <button onClick={e => { e.stopPropagation(); shareFile(f) }}
+                                            className="text-white bg-black/40 text-xs px-1.5 py-0.5 rounded hover:bg-black/60">
                                             내보내기
                                           </button>
                                           <button onClick={e => { e.stopPropagation(); downloadFile(f) }}
@@ -428,19 +460,8 @@ export default function ProjectDetail() {
                                     </button>
                                     <span className="text-xs text-gray-400 flex-shrink-0 hidden sm:block">{new Date(f.created_at).toLocaleDateString('ko-KR')}</span>
                                     {f.file_type !== 'link' && (<>
-                                      {/* 내보내기: Web Share API */}
-                                      <button onClick={async () => {
-                                        try {
-                                          const res = await fetch(f.file_url, { mode: 'cors', credentials: 'omit' })
-                                          const blob = await res.blob()
-                                          const fileObj = new File([blob], f.file_name, { type: blob.type })
-                                          if (navigator.canShare && navigator.canShare({ files: [fileObj] })) {
-                                            await navigator.share({ files: [fileObj], title: f.file_name })
-                                            return
-                                          }
-                                        } catch {}
-                                        downloadFile(f)
-                                      }} className="text-xs text-blue-400 hover:text-blue-600 flex-shrink-0">내보내기</button>
+                                      <button onClick={() => shareFile(f)}
+                                        className="text-xs text-blue-400 hover:text-blue-600 flex-shrink-0">내보내기</button>
                                       {/* 저장: 직접 다운로드 */}
                                       <button onClick={() => downloadFile(f)}
                                         className="text-xs text-gray-400 hover:text-green-600 flex-shrink-0">저장</button>
@@ -618,31 +639,14 @@ export default function ProjectDetail() {
         <div className="fixed bottom-20 md:bottom-6 left-1/2 -translate-x-1/2 z-40 bg-gray-900 text-white rounded-2xl shadow-2xl px-4 py-3 flex items-center gap-2 min-w-[300px] max-w-[92vw]">
           <span className="text-sm font-semibold text-green-300 whitespace-nowrap mr-1">{selectedFileIds.size}개 선택</span>
           <div className="flex-1 flex gap-2 justify-end">
-            <button onClick={async () => {
-              const selected = files.filter(f => selectedFileIds.has(f.id))
-              try {
-                const fileObjects = await Promise.all(selected.map(async f => {
-                  const res = await fetch(f.file_url, { mode: 'cors', credentials: 'omit' })
-                  const blob = await res.blob()
-                  return new File([blob], f.file_name, { type: blob.type })
-                }))
-                if (navigator.canShare && navigator.canShare({ files: fileObjects })) {
-                  await navigator.share({ files: fileObjects, title: 'JM 자료' })
-                  return
-                }
-              } catch {}
-              for (const f of selected) {
-                await downloadFile(f)
-                await new Promise(r => setTimeout(r, 400))
-              }
-            }} className="bg-white/10 hover:bg-white/20 text-white text-sm px-3 py-1.5 rounded-lg transition-colors">
+            <button onClick={() => shareFiles(files.filter(f => selectedFileIds.has(f.id)))}
+              className="bg-white/10 hover:bg-white/20 text-white text-sm px-3 py-1.5 rounded-lg transition-colors">
               내보내기
             </button>
             <button onClick={async () => {
-              const selected = files.filter(f => selectedFileIds.has(f.id))
-              for (const f of selected) {
+              for (const f of files.filter(f => selectedFileIds.has(f.id))) {
                 await downloadFile(f)
-                await new Promise(r => setTimeout(r, 400))
+                await new Promise(r => setTimeout(r, 300))
               }
             }} className="bg-white/10 hover:bg-white/20 text-white text-sm px-3 py-1.5 rounded-lg transition-colors">
               저장
