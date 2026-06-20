@@ -360,9 +360,19 @@ export default function ProjectDetail() {
                                       )}
                                       {!anySelected && isHovered && (
                                         <div className="absolute inset-0 bg-black/20 rounded-lg flex items-end justify-between p-1">
-                                          <button onClick={e => { e.stopPropagation(); downloadFile(f) }}
-                                            className="text-white bg-black/50 text-xs px-1.5 py-0.5 rounded">
-                                            저장
+                                          <button onClick={async e => { e.stopPropagation()
+                                            try {
+                                              const res = await fetch(f.file_url, { mode: 'cors', credentials: 'omit' })
+                                              const blob = await res.blob()
+                                              const file = new File([blob], f.file_name, { type: blob.type })
+                                              if (navigator.canShare && navigator.canShare({ files: [file] })) {
+                                                await navigator.share({ files: [file], title: f.file_name })
+                                                return
+                                              }
+                                            } catch {}
+                                            downloadFile(f)
+                                          }} className="text-white bg-black/50 text-xs px-1.5 py-0.5 rounded">
+                                            내보내기
                                           </button>
                                           <button onClick={e => { e.stopPropagation(); deleteFile(f) }}
                                             className="text-white bg-red-500/80 text-xs px-1.5 py-0.5 rounded">삭제</button>
@@ -407,8 +417,18 @@ export default function ProjectDetail() {
                                       }
                                     }} className="text-xs text-green-600 hover:underline flex-shrink-0">열기</button>
                                     {f.file_type !== 'link' && (
-                                      <button onClick={e => { e.stopPropagation(); downloadFile(f) }}
-                                        className="text-xs text-gray-400 hover:text-green-600 flex-shrink-0">저장</button>
+                                      <button onClick={async e => { e.stopPropagation()
+                                        try {
+                                          const res = await fetch(f.file_url, { mode: 'cors', credentials: 'omit' })
+                                          const blob = await res.blob()
+                                          const file = new File([blob], f.file_name, { type: blob.type })
+                                          if (navigator.canShare && navigator.canShare({ files: [file] })) {
+                                            await navigator.share({ files: [file], title: f.file_name })
+                                            return
+                                          }
+                                        } catch {}
+                                        downloadFile(f)
+                                      }} className="text-xs text-gray-400 hover:text-green-600 flex-shrink-0">내보내기</button>
                                     )}
                                     <button onClick={e => { e.stopPropagation(); deleteFile(f) }}
                                       className="text-xs text-red-400 hover:text-red-600 flex-shrink-0">삭제</button>
@@ -601,7 +621,7 @@ export default function ProjectDetail() {
                 await new Promise(r => setTimeout(r, 400))
               }
             }} className="bg-white/10 hover:bg-white/20 text-white text-sm px-3 py-1.5 rounded-lg transition-colors">
-              공유/저장
+              내보내기
             </button>
             <button onClick={deleteSelectedFiles}
               className="bg-red-500 hover:bg-red-600 text-white text-sm px-3 py-1.5 rounded-lg transition-colors">
