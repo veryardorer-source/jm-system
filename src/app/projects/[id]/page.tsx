@@ -339,43 +339,37 @@ export default function ProjectDetail() {
                                     <div key={f.id} className="relative group aspect-square"
                                       onMouseEnter={() => setHoveredFileId(f.id)}
                                       onMouseLeave={() => setHoveredFileId(null)}>
+                                      {/* 사진 — 탭/클릭 = 선택 토글 */}
                                       <img src={f.file_url} alt={f.file_name}
-                                        onClick={() => anySelected ? toggleSelectFile(f.id) : setLightbox(f.file_url)}
+                                        onClick={() => toggleSelectFile(f.id)}
                                         className={`w-full h-full object-cover rounded-lg border cursor-pointer transition-all ${
-                                          isSelected ? 'border-green-500 ring-2 ring-green-500 opacity-90' : 'border-gray-200 hover:opacity-90'
+                                          isSelected ? 'border-green-500 ring-2 ring-green-500 brightness-90' : 'border-gray-200'
                                         }`} />
+                                      {/* 선택 오버레이 */}
                                       {isSelected && (
-                                        <div className="absolute inset-0 bg-green-500/10 rounded-lg pointer-events-none" />
+                                        <div className="absolute inset-0 bg-green-500/15 rounded-lg pointer-events-none" />
                                       )}
-                                      {(isSelected || isHovered || anySelected) && (
-                                        <button
-                                          onClick={e => { e.stopPropagation(); toggleSelectFile(f.id) }}
-                                          className={`absolute top-1.5 left-1.5 w-6 h-6 rounded-full border-2 flex items-center justify-center text-xs font-bold transition-all shadow-sm z-10 ${
-                                            isSelected
-                                              ? 'bg-green-500 border-green-500 text-white'
-                                              : 'bg-white/90 border-gray-300 hover:border-green-400'
-                                          }`}>
-                                          {isSelected ? '✓' : ''}
-                                        </button>
-                                      )}
-                                      {!anySelected && isHovered && (
-                                        <div className="absolute inset-0 bg-black/20 rounded-lg flex items-end justify-between p-1">
-                                          <button onClick={async e => { e.stopPropagation()
-                                            try {
-                                              const res = await fetch(f.file_url, { mode: 'cors', credentials: 'omit' })
-                                              const blob = await res.blob()
-                                              const file = new File([blob], f.file_name, { type: blob.type })
-                                              if (navigator.canShare && navigator.canShare({ files: [file] })) {
-                                                await navigator.share({ files: [file], title: f.file_name })
-                                                return
-                                              }
-                                            } catch {}
-                                            downloadFile(f)
-                                          }} className="text-white bg-black/50 text-xs px-1.5 py-0.5 rounded">
-                                            내보내기
-                                          </button>
-                                          <button onClick={e => { e.stopPropagation(); deleteFile(f) }}
-                                            className="text-white bg-red-500/80 text-xs px-1.5 py-0.5 rounded">삭제</button>
+                                      {/* 체크박스 — 항상 표시 (모바일 포함) */}
+                                      <button
+                                        onClick={e => { e.stopPropagation(); toggleSelectFile(f.id) }}
+                                        className={`absolute top-1.5 left-1.5 w-6 h-6 rounded-full border-2 flex items-center justify-center text-xs font-bold transition-all shadow-sm z-10 ${
+                                          isSelected
+                                            ? 'bg-green-500 border-green-500 text-white'
+                                            : 'bg-white/80 border-gray-300 opacity-0 group-hover:opacity-100'
+                                        }`}>
+                                        {isSelected ? '✓' : ''}
+                                      </button>
+                                      {/* 크게보기 버튼 — 우상단, hover시 표시 */}
+                                      <button
+                                        onClick={e => { e.stopPropagation(); setLightbox(f.file_url) }}
+                                        className="absolute top-1.5 right-1.5 w-6 h-6 rounded-full bg-black/50 text-white flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-opacity z-10"
+                                        title="크게 보기">
+                                        ⛶
+                                      </button>
+                                      {/* 하단 액션 (hover시) */}
+                                      {isHovered && !isSelected && (
+                                        <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/60 to-transparent rounded-b-lg flex items-end justify-end p-1 pointer-events-none">
+                                          <span className="text-white text-xs opacity-70">탭하여 선택</span>
                                         </div>
                                       )}
                                     </div>
@@ -600,8 +594,8 @@ export default function ProjectDetail() {
 
       {/* 선택 플로팅 액션바 */}
       {selectedFileIds.size > 0 && (
-        <div className="fixed bottom-20 md:bottom-6 left-1/2 -translate-x-1/2 z-40 bg-gray-900 text-white rounded-2xl shadow-2xl px-4 py-3 flex items-center gap-3 min-w-[320px] max-w-[90vw]">
-          <span className="text-sm font-semibold text-green-300 whitespace-nowrap">{selectedFileIds.size}개 선택됨</span>
+        <div className="fixed bottom-20 md:bottom-6 left-1/2 -translate-x-1/2 z-40 bg-gray-900 text-white rounded-2xl shadow-2xl px-4 py-3 flex items-center gap-2 min-w-[300px] max-w-[92vw]">
+          <span className="text-sm font-semibold text-green-300 whitespace-nowrap mr-1">{selectedFileIds.size}개 선택</span>
           <div className="flex-1 flex gap-2 justify-end">
             <button onClick={async () => {
               const selected = files.filter(f => selectedFileIds.has(f.id))
