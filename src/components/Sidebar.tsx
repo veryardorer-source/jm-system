@@ -11,6 +11,7 @@ const NAV_ITEMS = [
   { href: '/projects', label: '현장 관리', icon: '🏗️' },
   { href: '/receipts', label: '영수증', icon: '🧾' },
   { href: '/withdrawals', label: '출금 요청', icon: '💸' },
+  { href: '/documents', label: '회사 서류', icon: '🗂️' },
 ]
 
 const ADMIN_ITEMS = [

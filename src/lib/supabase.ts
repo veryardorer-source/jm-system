@@ -126,6 +126,22 @@ export type Employee = {
   created_at: string
 }
 
+export type DocVisibility = '전체공개' | '관리자만'
+
+export type CompanyDocument = {
+  id: string
+  title: string
+  category: string
+  file_url: string
+  file_name: string
+  visibility: DocVisibility
+  memo: string
+  uploaded_by: string
+  created_at: string
+}
+
+export const DOC_CATEGORY_LIST = ['사업자등록', '보험/안전', '계약서 양식', '인사/총무', '기타'] as const
+
 export type FixedCost = {
   id: string
   month: string
