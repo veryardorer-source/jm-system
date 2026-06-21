@@ -75,7 +75,8 @@ export default function DocumentsPage() {
     let file_url = editing?.file_url || ''
     let file_name = editing?.file_name || ''
     if (file) {
-      const path = `documents/${Date.now()}_${file.name}`
+      const ext = file.name.split('.').pop() || 'bin'
+      const path = `documents/${Date.now()}.${ext}`
       const { error: upErr } = await supabase.storage.from('uploads').upload(path, file, {
         contentType: file.type || 'application/octet-stream', upsert: true,
       })
