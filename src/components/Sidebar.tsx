@@ -16,6 +16,7 @@ const NAV_ITEMS = [
 const ADMIN_ITEMS = [
   { href: '/admin/users', label: '직원 관리', icon: '👥' },
   { href: '/admin/employees', label: '직원정보내역', icon: '🔒' },
+  { href: '/admin/finance', label: '재정관리', icon: '📊' },
 ]
 
 const ROLE_LABEL: Record<string, string> = {

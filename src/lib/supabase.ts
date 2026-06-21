@@ -126,6 +126,45 @@ export type Employee = {
   created_at: string
 }
 
+export type FixedCost = {
+  id: string
+  month: string
+  title: string
+  amount: number
+  memo: string
+  created_at: string
+}
+
+export type Payroll = {
+  id: string
+  month: string
+  employee_name: string
+  amount: number
+  memo: string
+  created_at: string
+}
+
+export type ProjectProfit = {
+  id: string
+  project_id: string
+  month: string
+  revenue: number
+  cost: number
+  memo: string
+  created_at: string
+}
+
+export type SalesRecord = {
+  id: string
+  month: string
+  type: '매출' | '매입'
+  amount: number
+  file_url: string
+  file_name: string
+  memo: string
+  created_at: string
+}
+
 export type ProjectCost = {
   id: string
   project_id: string
