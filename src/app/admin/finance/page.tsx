@@ -6,6 +6,7 @@ import Sidebar from '@/components/Sidebar'
 import { useAuth } from '@/lib/auth-context'
 import { createClient } from '@/lib/supabase-browser'
 import { FixedCost, Payroll, ProjectProfit, SalesRecord, Project, supabase } from '@/lib/supabase'
+import { parseExcelRows, parseExcelTotal, ParsedRow } from '@/lib/excel-parse'
 
 const TAB_LIST = ['고정지출', '급여내역', '현장별 이익', '매출매입'] as const
 type Tab = typeof TAB_LIST[number]
@@ -105,9 +106,20 @@ export default function FinancePage() {
 // ───────────── 고정지출 ─────────────
 function FixedCostTab({ list, onRefresh }: { list: FixedCost[]; onRefresh: () => void }) {
   const [showForm, setShowForm] = useState(false)
+  const [showBulk, setShowBulk] = useState(false)
   const [editing, setEditing] = useState<FixedCost | null>(null)
   const [form, setForm] = useState({ month: '', title: '', amount: '', memo: '' })
   const [saving, setSaving] = useState(false)
+
+  async function bulkSave(month: string, rows: ParsedRow[]) {
+    const sb = createClient()
+    const { error } = await sb.from('finance_fixed_costs').insert(
+      rows.map(r => ({ month: month + '-01', title: r.label, amount: r.amount, memo: '' }))
+    )
+    if (error) { alert('저장 실패: ' + error.message); return }
+    setShowBulk(false)
+    onRefresh()
+  }
 
   async function save(e: React.FormEvent) {
     e.preventDefault()
@@ -140,9 +152,11 @@ function FixedCostTab({ list, onRefresh }: { list: FixedCost[]; onRefresh: () =>
 
   return (
     <div>
-      <div className="flex justify-end mb-4">
+      <div className="flex justify-end gap-2 mb-4">
+        <button onClick={() => setShowBulk(true)}
+          className="border border-green-600 text-green-600 px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-50">📊 엑셀로 일괄 추가</button>
         <button onClick={() => { setEditing(null); setForm({ month: '', title: '', amount: '', memo: '' }); setShowForm(true) }}
-          className="bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-700">+ 고정지출 추가</button>
+          className="bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-700">+ 직접 추가</button>
       </div>
       {list.length === 0 ? (
         <EmptyState icon="📋" text="등록된 고정지출이 없어요" />
@@ -165,6 +179,9 @@ function FixedCostTab({ list, onRefresh }: { list: FixedCost[]; onRefresh: () =>
           <TextInput label="메모" value={form.memo} onChange={v => setForm({ ...form, memo: v })} />
         </FormModal>
       )}
+      {showBulk && (
+        <BulkImportModal title="고정지출 엑셀 일괄 추가" labelHeader="항목명" onClose={() => setShowBulk(false)} onSave={bulkSave} />
+      )}
     </div>
   )
 }
@@ -172,9 +189,20 @@ function FixedCostTab({ list, onRefresh }: { list: FixedCost[]; onRefresh: () =>
 // ───────────── 급여내역 ─────────────
 function PayrollTab({ list, onRefresh }: { list: Payroll[]; onRefresh: () => void }) {
   const [showForm, setShowForm] = useState(false)
+  const [showBulk, setShowBulk] = useState(false)
   const [editing, setEditing] = useState<Payroll | null>(null)
   const [form, setForm] = useState({ month: '', employee_name: '', amount: '', memo: '' })
   const [saving, setSaving] = useState(false)
+
+  async function bulkSave(month: string, rows: ParsedRow[]) {
+    const sb = createClient()
+    const { error } = await sb.from('finance_payroll').insert(
+      rows.map(r => ({ month: month + '-01', employee_name: r.label, amount: r.amount, memo: '' }))
+    )
+    if (error) { alert('저장 실패: ' + error.message); return }
+    setShowBulk(false)
+    onRefresh()
+  }
 
   async function save(e: React.FormEvent) {
     e.preventDefault()
@@ -207,9 +235,11 @@ function PayrollTab({ list, onRefresh }: { list: Payroll[]; onRefresh: () => voi
 
   return (
     <div>
-      <div className="flex justify-end mb-4">
+      <div className="flex justify-end gap-2 mb-4">
+        <button onClick={() => setShowBulk(true)}
+          className="border border-green-600 text-green-600 px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-50">📊 엑셀로 일괄 추가</button>
         <button onClick={() => { setEditing(null); setForm({ month: '', employee_name: '', amount: '', memo: '' }); setShowForm(true) }}
-          className="bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-700">+ 급여 추가</button>
+          className="bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-700">+ 직접 추가</button>
       </div>
       {list.length === 0 ? (
         <EmptyState icon="💵" text="등록된 급여내역이 없어요" />
@@ -231,6 +261,9 @@ function PayrollTab({ list, onRefresh }: { list: Payroll[]; onRefresh: () => voi
           <NumberInput label="금액 *" required value={form.amount} onChange={v => setForm({ ...form, amount: v })} />
           <TextInput label="메모" value={form.memo} onChange={v => setForm({ ...form, memo: v })} />
         </FormModal>
+      )}
+      {showBulk && (
+        <BulkImportModal title="급여내역 엑셀 일괄 추가" labelHeader="직원명" onClose={() => setShowBulk(false)} onSave={bulkSave} />
       )}
     </div>
   )
@@ -442,9 +475,15 @@ function SalesTab({ list, onRefresh }: { list: SalesRecord[]; onRefresh: () => v
           <MonthInput value={form.month} onChange={v => setForm({ ...form, month: v })} />
           <NumberInput label="금액 *" required value={form.amount} onChange={v => setForm({ ...form, amount: v })} />
           <div>
-            <label className="text-sm font-medium text-gray-700 block mb-1.5">자료 첨부</label>
-            <input type="file" onChange={e => setFile(e.target.files?.[0] || null)}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:bg-green-50 file:text-green-700 file:text-xs" />
+            <label className="text-sm font-medium text-gray-700 block mb-1.5">자료 첨부 <span className="text-gray-400 font-normal">(엑셀이면 금액 자동 인식)</span></label>
+            <input type="file" onChange={async e => {
+              const f = e.target.files?.[0] || null
+              setFile(f)
+              if (f && /\.(xlsx|xls)$/i.test(f.name)) {
+                const total = await parseExcelTotal(f).catch(() => null)
+                if (total) setForm(prev => ({ ...prev, amount: String(total) }))
+              }
+            }} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:bg-green-50 file:text-green-700 file:text-xs" />
           </div>
           <TextInput label="메모" value={form.memo} onChange={v => setForm({ ...form, memo: v })} />
         </FormModal>
@@ -516,6 +555,108 @@ function FormModal({ title, onClose, onSubmit, saving, children }: { title: stri
             </button>
           </div>
         </form>
+      </div>
+    </div>
+  )
+}
+
+function BulkImportModal({ title, labelHeader, onClose, onSave }: {
+  title: string
+  labelHeader: string
+  onClose: () => void
+  onSave: (month: string, rows: ParsedRow[]) => Promise<void>
+}) {
+  const [month, setMonth] = useState('')
+  const [rows, setRows] = useState<ParsedRow[]>([])
+  const [parsing, setParsing] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+
+  async function handleFile(file: File | null) {
+    if (!file) return
+    setParsing(true); setError(''); setRows([])
+    const parsed = await parseExcelRows(file).catch(() => null)
+    setParsing(false)
+    if (!parsed) { setError('엑셀에서 항목/금액 컬럼을 찾지 못했어요. 파일에 이름·금액 같은 헤더가 있는지 확인해주세요.'); return }
+    setRows(parsed)
+  }
+
+  function updateRow(i: number, field: 'label' | 'amount', value: string) {
+    setRows(prev => prev.map((r, idx) => idx === i ? { ...r, [field]: field === 'amount' ? Number(value) || 0 : value } : r))
+  }
+
+  function removeRow(i: number) {
+    setRows(prev => prev.filter((_, idx) => idx !== i))
+  }
+
+  async function handleSave() {
+    if (!month || rows.length === 0) return
+    setSaving(true)
+    await onSave(month, rows)
+    setSaving(false)
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl w-full max-w-lg shadow-xl max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between px-6 py-5 border-b border-gray-100 sticky top-0 bg-white">
+          <h2 className="text-lg font-bold">{title}</h2>
+          <button onClick={onClose} className="text-gray-400 text-2xl">&times;</button>
+        </div>
+        <div className="px-6 py-5 flex flex-col gap-4">
+          <MonthInput value={month} onChange={setMonth} />
+          <div>
+            <label className="text-sm font-medium text-gray-700 block mb-1.5">엑셀 파일 *</label>
+            <input type="file" accept=".xlsx,.xls" onChange={e => handleFile(e.target.files?.[0] || null)}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:bg-green-50 file:text-green-700 file:text-xs" />
+            <p className="text-xs text-gray-400 mt-1">파일에 &quot;{labelHeader}&quot;와 &quot;금액&quot; 같은 헤더가 있으면 자동으로 인식해요</p>
+          </div>
+          {parsing && <p className="text-sm text-gray-400">분석 중...</p>}
+          {error && <p className="text-sm text-red-500 bg-red-50 px-3 py-2 rounded-lg">{error}</p>}
+          {rows.length > 0 && (
+            <div className="border border-gray-200 rounded-lg overflow-hidden">
+              <div className="max-h-64 overflow-y-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50 sticky top-0">
+                    <tr>
+                      <th className="text-left text-xs font-semibold text-gray-400 px-3 py-2">{labelHeader}</th>
+                      <th className="text-right text-xs font-semibold text-gray-400 px-3 py-2">금액</th>
+                      <th className="px-2 py-2"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rows.map((r, i) => (
+                      <tr key={i} className="border-t border-gray-100">
+                        <td className="px-3 py-1.5">
+                          <input value={r.label} onChange={e => updateRow(i, 'label', e.target.value)}
+                            className="w-full border-0 focus:ring-1 focus:ring-green-400 rounded px-1 text-sm" />
+                        </td>
+                        <td className="px-3 py-1.5">
+                          <input type="number" value={r.amount} onChange={e => updateRow(i, 'amount', e.target.value)}
+                            className="w-full text-right border-0 focus:ring-1 focus:ring-green-400 rounded px-1 text-sm" />
+                        </td>
+                        <td className="px-2 py-1.5">
+                          <button onClick={() => removeRow(i)} className="text-red-400 hover:text-red-600 text-xs">×</button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="bg-gray-50 px-3 py-2 text-xs text-gray-500 flex justify-between border-t border-gray-200">
+                <span>{rows.length}건 인식됨</span>
+                <span className="font-semibold text-gray-700">합계 {rows.reduce((s, r) => s + r.amount, 0).toLocaleString()}원</span>
+              </div>
+            </div>
+          )}
+          <div className="flex gap-3 mt-2">
+            <button onClick={onClose} className="flex-1 border border-gray-300 text-gray-700 py-2.5 rounded-lg text-sm font-medium">취소</button>
+            <button onClick={handleSave} disabled={saving || rows.length === 0 || !month}
+              className="flex-1 bg-green-600 text-white py-2.5 rounded-lg text-sm font-medium disabled:opacity-50">
+              {saving ? '저장 중...' : `${rows.length}건 일괄 저장`}
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   )
