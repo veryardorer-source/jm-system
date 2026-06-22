@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef, useCallback } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Sidebar from '@/components/Sidebar'
-import { supabase, Project, ProjectFile, Schedule, ProjectCost } from '@/lib/supabase'
+import { supabase, Project, ProjectFile, Schedule, ProjectCost, ProjectAssignment } from '@/lib/supabase'
 import { useAuth } from '@/lib/auth-context'
 
 const TAB_LIST = ['현황', '자료', '공정', '비용']
@@ -25,6 +25,7 @@ export default function ProjectDetail() {
   const [files, setFiles] = useState<ProjectFile[]>([])
   const [schedules, setSchedules] = useState<Schedule[]>([])
   const [costs, setCosts] = useState<ProjectCost[]>([])
+  const [assignments, setAssignments] = useState<ProjectAssignment[]>([])
   const [loading, setLoading] = useState(true)
 
   const [showFileForm, setShowFileForm] = useState(false)
@@ -55,16 +56,18 @@ export default function ProjectDetail() {
 
   async function fetchAll() {
     setLoading(true)
-    const [p, f, s, c] = await Promise.all([
+    const [p, f, s, c, a] = await Promise.all([
       supabase.from('projects').select('*').eq('id', id).single(),
       supabase.from('project_files').select('*').eq('project_id', id).order('created_at', { ascending: false }),
       supabase.from('schedules').select('*').eq('project_id', id).order('scheduled_date'),
       supabase.from('project_costs').select('*').eq('project_id', id).order('month', { ascending: false }),
+      supabase.from('project_assignments').select('*').eq('project_id', id),
     ])
     setProject(p.data)
     setFiles(f.data || [])
     setSchedules(s.data || [])
     setCosts(c.data || [])
+    setAssignments(a.data || [])
     setLoading(false)
   }
 
@@ -327,6 +330,7 @@ export default function ProjectDetail() {
   const photos = files.filter(f => PHOTO_CATS.includes(f.category))
   const recentPhotos = photos.slice(0, 8)
   const totalCost = costs.reduce((sum, c) => sum + (c.amount || 0), 0)
+  const staff = Array.from(new Set(assignments.map(a => a.employee_name).filter(Boolean)))
 
   if (loading) return (
     <div className="flex h-screen">
@@ -485,34 +489,50 @@ export default function ProjectDetail() {
                   </div>
                 </div>
 
-                {canSeeMoney ? (
-                  <div className="bg-white rounded-xl border border-gray-200 p-4 md:p-5">
-                    <div className="flex items-center justify-between mb-3">
-                      <h3 className="text-sm font-semibold text-gray-700">비용 요약</h3>
-                      <button onClick={() => setTab('비용')} className="text-xs text-green-600 hover:text-green-700">비용 자세히 →</button>
+                <div className="bg-white rounded-xl border border-gray-200 p-4 md:p-5">
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-sm font-semibold text-gray-700">배정 직원 · 비용</h3>
+                    {canSeeMoney && <button onClick={() => setTab('비용')} className="text-xs text-green-600 hover:text-green-700">비용 자세히 →</button>}
+                  </div>
+
+                  {/* 배정 직원 */}
+                  {staff.length === 0 && !project.manager ? (
+                    <p className="text-sm text-gray-400 mb-3">배정된 직원이 없어요</p>
+                  ) : (
+                    <div className="flex flex-wrap gap-1.5 mb-3">
+                      {project.manager && (
+                        <span className="inline-flex items-center gap-1.5 bg-green-50 border border-green-200 rounded-full px-2.5 py-1 text-sm text-green-700">
+                          <span className="w-5 h-5 rounded-full bg-green-200 text-green-800 flex items-center justify-center text-xs">{project.manager.slice(0, 1)}</span>
+                          {project.manager} <span className="text-green-500 text-xs">담당</span>
+                        </span>
+                      )}
+                      {staff.filter(n => n !== project.manager).map(name => (
+                        <span key={name} className="inline-flex items-center gap-1.5 bg-gray-50 border border-gray-200 rounded-full px-2.5 py-1 text-sm text-gray-700">
+                          <span className="w-5 h-5 rounded-full bg-gray-200 text-gray-600 flex items-center justify-center text-xs">{name.slice(0, 1)}</span>
+                          {name}
+                        </span>
+                      ))}
                     </div>
-                    {costs.length === 0 ? (
-                      <p className="text-sm text-gray-400 py-6 text-center">등록된 비용이 없어요</p>
-                    ) : (
-                      <>
-                        <p className="text-xs text-gray-400">누적 비용</p>
-                        <p className="text-2xl font-bold text-gray-900 mb-3">{totalCost.toLocaleString()}원</p>
-                        <div className="flex flex-col gap-1.5">
-                          {costs.slice(0, 4).map(c => (
-                            <div key={c.id} className="flex items-center justify-between text-sm">
-                              <span className="text-gray-500">{c.month?.slice(0, 7) || '-'}</span>
-                              <span className="font-medium text-gray-800">{c.amount.toLocaleString()}원</span>
-                            </div>
-                          ))}
+                  )}
+
+                  {/* 비용 */}
+                  {canSeeMoney ? (
+                    <div className="border-t border-gray-100 pt-3">
+                      <div className="flex items-center justify-between mb-1.5">
+                        <span className="text-sm text-gray-500">누적 원가</span>
+                        <span className="text-lg font-bold text-gray-900">{totalCost.toLocaleString()}원</span>
+                      </div>
+                      {costs.slice(0, 3).map(c => (
+                        <div key={c.id} className="flex items-center justify-between text-sm mt-1">
+                          <span className="text-gray-400">{c.month?.slice(0, 7) || '-'}</span>
+                          <span className="text-gray-700">{c.amount.toLocaleString()}원</span>
                         </div>
-                      </>
-                    )}
-                  </div>
-                ) : (
-                  <div className="bg-white rounded-xl border border-gray-200 p-4 md:p-5 flex items-center justify-center text-sm text-gray-300">
-                    비용 정보는 관리자만 볼 수 있어요
-                  </div>
-                )}
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="border-t border-gray-100 pt-3 text-sm text-gray-300">비용 정보는 관리자만 볼 수 있어요</div>
+                  )}
+                </div>
               </div>
             </div>
           )}
