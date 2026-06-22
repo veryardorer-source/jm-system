@@ -514,8 +514,20 @@ export default function ProjectDetail() {
                   ) : (
                     <div className="grid grid-cols-4 gap-1.5">
                       {recentPhotos.map(f => (
-                        <img key={f.id} src={f.file_url} alt={f.file_name} onClick={() => setLightbox(f.file_url)}
-                          className="w-full aspect-square object-cover rounded-lg border border-gray-200 cursor-pointer hover:brightness-95" />
+                        <div key={f.id} className="relative aspect-square cursor-pointer" onClick={() => setLightbox(f.file_url)}>
+                          {isVideoFile(f) ? (
+                            <video src={f.file_url} muted playsInline preload="metadata"
+                              className="w-full h-full object-cover rounded-lg border border-gray-200" />
+                          ) : (
+                            <img src={f.file_url} alt={f.file_name}
+                              className="w-full h-full object-cover rounded-lg border border-gray-200 hover:brightness-95" />
+                          )}
+                          {isVideoFile(f) && (
+                            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                              <span className="bg-black/55 text-white rounded-full w-7 h-7 flex items-center justify-center text-sm">▶</span>
+                            </div>
+                          )}
+                        </div>
                       ))}
                     </div>
                   )}
