@@ -3,11 +3,13 @@
 import { useEffect, useState, useRef, useCallback } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Sidebar from '@/components/Sidebar'
-import { supabase, Project, ProjectFile, Schedule, ProjectCost, ProjectAssignment } from '@/lib/supabase'
+import { supabase, Project, ProjectFile, Schedule, ProjectCost, ProjectAssignment, STATUS_LIST } from '@/lib/supabase'
 import { useAuth } from '@/lib/auth-context'
 
 const TAB_LIST = ['현황', '자료', '공정', '비용']
 const PHOTO_CATS = ['시공전사진', '시공사진', '마감사진']
+const isVideoUrl = (url: string) => /\.(mp4|mov|webm|m4v|ogg|avi|mkv)$/i.test((url || '').split('?')[0])
+const isVideoFile = (f: ProjectFile) => (f.file_type || '').startsWith('video') || isVideoUrl(f.file_url)
 const CATEGORY_LIST = ['시공전사진', '시공사진', '마감사진', '도면', '3D', '미팅내용', '고객요청', '구매링크', '기타']
 const STATUS_COLOR: Record<string, string> = {
   '디자인진행중': 'bg-purple-100 text-purple-700',
@@ -27,6 +29,10 @@ export default function ProjectDetail() {
   const [costs, setCosts] = useState<ProjectCost[]>([])
   const [assignments, setAssignments] = useState<ProjectAssignment[]>([])
   const [loading, setLoading] = useState(true)
+
+  const [showEditForm, setShowEditForm] = useState(false)
+  const [editForm, setEditForm] = useState({ name: '', client_name: '', manager: '', address: '', status: '상담중', start_date: '', end_date: '', memo: '' })
+  const [savingEdit, setSavingEdit] = useState(false)
 
   const [showFileForm, setShowFileForm] = useState(false)
   const [fileForm, setFileForm] = useState({ category: '시공전사진', memo: '', linkUrl: '', linkTitle: '' })
@@ -69,6 +75,35 @@ export default function ProjectDetail() {
     setCosts(c.data || [])
     setAssignments(a.data || [])
     setLoading(false)
+  }
+
+  function openEditProject() {
+    if (!project) return
+    setEditForm({
+      name: project.name || '',
+      client_name: project.client_name || '',
+      manager: project.manager || '',
+      address: project.address || '',
+      status: project.status || '상담중',
+      start_date: project.start_date || '',
+      end_date: project.end_date || '',
+      memo: project.memo || '',
+    })
+    setShowEditForm(true)
+  }
+
+  async function handleUpdateProject(e: React.FormEvent) {
+    e.preventDefault()
+    setSavingEdit(true)
+    const { error } = await supabase.from('projects').update({
+      ...editForm,
+      start_date: editForm.start_date || null,
+      end_date: editForm.end_date || null,
+    }).eq('id', id)
+    setSavingEdit(false)
+    if (error) { alert('수정 실패: ' + error.message); return }
+    setShowEditForm(false)
+    fetchAll()
   }
 
   async function handleFileUpload(e: React.FormEvent) {
@@ -363,12 +398,16 @@ export default function ProjectDetail() {
                   {project.status}
                 </span>
               </div>
-              <div className="flex gap-4 mt-1">
+              <div className="flex flex-wrap gap-x-4 gap-y-1 mt-1">
                 {project.client_name && <p className="text-sm text-gray-500">고객: {project.client_name}</p>}
                 {project.manager && <p className="text-sm text-gray-500">담당: {project.manager}</p>}
-                {project.address && <p className="text-sm text-gray-500">{project.address}</p>}
+                <p className="text-sm text-gray-500">{project.address || <span className="text-gray-300">주소 미입력</span>}</p>
               </div>
             </div>
+            <button onClick={openEditProject}
+              className="flex-shrink-0 border border-gray-300 text-gray-600 px-3 py-1.5 rounded-lg text-sm hover:bg-gray-50">
+              현장 수정
+            </button>
           </div>
         </header>
 
@@ -607,12 +646,26 @@ export default function ProjectDetail() {
                                     <div key={f.id} className="relative group aspect-square"
                                       onMouseEnter={() => setHoveredFileId(f.id)}
                                       onMouseLeave={() => setHoveredFileId(null)}>
-                                      {/* 사진 — 탭/클릭 = 선택 토글 */}
-                                      <img src={f.file_url} alt={f.file_name}
-                                        onClick={() => toggleSelectFile(f.id)}
-                                        className={`w-full h-full object-cover rounded-lg border cursor-pointer transition-all ${
-                                          isSelected ? 'border-green-500 ring-2 ring-green-500 brightness-90' : 'border-gray-200'
-                                        }`} />
+                                      {/* 사진/영상 — 탭/클릭 = 선택 토글 */}
+                                      {isVideoFile(f) ? (
+                                        <video src={f.file_url} muted playsInline preload="metadata"
+                                          onClick={() => toggleSelectFile(f.id)}
+                                          className={`w-full h-full object-cover rounded-lg border cursor-pointer transition-all ${
+                                            isSelected ? 'border-green-500 ring-2 ring-green-500 brightness-90' : 'border-gray-200'
+                                          }`} />
+                                      ) : (
+                                        <img src={f.file_url} alt={f.file_name}
+                                          onClick={() => toggleSelectFile(f.id)}
+                                          className={`w-full h-full object-cover rounded-lg border cursor-pointer transition-all ${
+                                            isSelected ? 'border-green-500 ring-2 ring-green-500 brightness-90' : 'border-gray-200'
+                                          }`} />
+                                      )}
+                                      {/* 영상 표시 ▶ */}
+                                      {isVideoFile(f) && (
+                                        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                                          <span className="bg-black/55 text-white rounded-full w-9 h-9 flex items-center justify-center text-base">▶</span>
+                                        </div>
+                                      )}
                                       {/* 선택 오버레이 */}
                                       {isSelected && (
                                         <div className="absolute inset-0 bg-green-500/15 rounded-lg pointer-events-none" />
@@ -673,6 +726,8 @@ export default function ProjectDetail() {
                                       const name = f.file_name?.toLowerCase() || ''
                                       if (type === 'link') {
                                         window.open(f.file_url, '_blank')
+                                      } else if (type.startsWith('video') || /\.(mp4|mov|webm|m4v|ogg)$/.test(name)) {
+                                        setLightbox(f.file_url)
                                       } else if (type.includes('image') || /\.(jpg|jpeg|png|gif|webp|heic)$/.test(name)) {
                                         setLightbox(f.file_url)
                                       } else if (type.includes('pdf') || name.endsWith('.pdf')) {
@@ -972,8 +1027,84 @@ export default function ProjectDetail() {
       {lightbox && (
         <div className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-4"
           onClick={() => setLightbox(null)}>
-          <img src={lightbox} alt="" className="max-w-full max-h-full object-contain rounded-lg" />
+          {isVideoUrl(lightbox) ? (
+            <video src={lightbox} controls autoPlay playsInline
+              onClick={e => e.stopPropagation()}
+              className="max-w-full max-h-full rounded-lg" />
+          ) : (
+            <img src={lightbox} alt="" className="max-w-full max-h-full object-contain rounded-lg" />
+          )}
           <button className="absolute top-4 right-4 text-white text-3xl leading-none">&times;</button>
+        </div>
+      )}
+
+      {/* 현장 수정 모달 */}
+      {showEditForm && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl w-full max-w-lg shadow-xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between px-6 py-5 border-b border-gray-100 sticky top-0 bg-white">
+              <h2 className="text-lg font-bold text-gray-900">현장 수정</h2>
+              <button onClick={() => setShowEditForm(false)} className="text-gray-400 hover:text-gray-600 text-2xl leading-none">&times;</button>
+            </div>
+            <form onSubmit={handleUpdateProject} className="px-6 py-5 flex flex-col gap-4">
+              <div>
+                <label className="text-sm font-medium text-gray-700 block mb-1.5">현장명 <span className="text-red-500">*</span></label>
+                <input required value={editForm.name} onChange={e => setEditForm({...editForm, name: e.target.value})}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-sm font-medium text-gray-700 block mb-1.5">고객명</label>
+                  <input value={editForm.client_name} onChange={e => setEditForm({...editForm, client_name: e.target.value})}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
+                </div>
+                <div>
+                  <label className="text-sm font-medium text-gray-700 block mb-1.5">담당자</label>
+                  <input value={editForm.manager} onChange={e => setEditForm({...editForm, manager: e.target.value})}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
+                </div>
+              </div>
+              <div>
+                <label className="text-sm font-medium text-gray-700 block mb-1.5">주소</label>
+                <input value={editForm.address} onChange={e => setEditForm({...editForm, address: e.target.value})}
+                  placeholder="서울시 강남구 ..."
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
+              </div>
+              <div>
+                <label className="text-sm font-medium text-gray-700 block mb-1.5">현재 단계</label>
+                <select value={editForm.status} onChange={e => setEditForm({...editForm, status: e.target.value})}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500">
+                  {STATUS_LIST.map(s => <option key={s}>{s}</option>)}
+                </select>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-sm font-medium text-gray-700 block mb-1.5">시작일</label>
+                  <input type="date" value={editForm.start_date} onChange={e => setEditForm({...editForm, start_date: e.target.value})}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
+                </div>
+                <div>
+                  <label className="text-sm font-medium text-gray-700 block mb-1.5">완료 예정일</label>
+                  <input type="date" value={editForm.end_date} onChange={e => setEditForm({...editForm, end_date: e.target.value})}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
+                </div>
+              </div>
+              <div>
+                <label className="text-sm font-medium text-gray-700 block mb-1.5">메모</label>
+                <textarea value={editForm.memo} onChange={e => setEditForm({...editForm, memo: e.target.value})}
+                  rows={2}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 resize-none" />
+              </div>
+              <div className="flex gap-3 mt-2">
+                <button type="button" onClick={() => setShowEditForm(false)}
+                  className="flex-1 border border-gray-300 text-gray-700 py-2.5 rounded-lg text-sm font-medium hover:bg-gray-50">취소</button>
+                <button type="submit" disabled={savingEdit}
+                  className="flex-1 bg-green-600 text-white py-2.5 rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-50">
+                  {savingEdit ? '저장 중...' : '저장'}
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
       )}
 
