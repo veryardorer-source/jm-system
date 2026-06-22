@@ -4,8 +4,10 @@ import { useEffect, useState, useRef, useCallback } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Sidebar from '@/components/Sidebar'
 import { supabase, Project, ProjectFile, Schedule, ProjectCost } from '@/lib/supabase'
+import { useAuth } from '@/lib/auth-context'
 
-const TAB_LIST = ['자료', '공정', '비용']
+const TAB_LIST = ['현황', '자료', '공정', '비용']
+const PHOTO_CATS = ['시공전사진', '시공사진', '마감사진']
 const CATEGORY_LIST = ['시공전사진', '시공사진', '마감사진', '도면', '3D', '미팅내용', '고객요청', '구매링크', '기타']
 const STATUS_COLOR: Record<string, string> = {
   '디자인진행중': 'bg-purple-100 text-purple-700',
@@ -17,8 +19,9 @@ const STATUS_COLOR: Record<string, string> = {
 export default function ProjectDetail() {
   const { id } = useParams<{ id: string }>()
   const router = useRouter()
+  const { profile } = useAuth()
   const [project, setProject] = useState<Project | null>(null)
-  const [tab, setTab] = useState('자료')
+  const [tab, setTab] = useState('현황')
   const [files, setFiles] = useState<ProjectFile[]>([])
   const [schedules, setSchedules] = useState<Schedule[]>([])
   const [costs, setCosts] = useState<ProjectCost[]>([])
@@ -317,6 +320,14 @@ export default function ProjectDetail() {
   }
 
 
+  const canSeeMoney = profile?.role !== 'field'
+  const doneCount = schedules.filter(s => (s.phase_status || '예정') === '완료').length
+  const inProgressCount = schedules.filter(s => s.phase_status === '진행중').length
+  const progressPct = schedules.length ? Math.round((doneCount / schedules.length) * 100) : 0
+  const photos = files.filter(f => PHOTO_CATS.includes(f.category))
+  const recentPhotos = photos.slice(0, 8)
+  const totalCost = costs.reduce((sum, c) => sum + (c.amount || 0), 0)
+
   if (loading) return (
     <div className="flex h-screen">
       <Sidebar />
@@ -372,6 +383,139 @@ export default function ProjectDetail() {
         </div>
 
         <div className="flex-1 overflow-auto px-4 md:px-8 py-4 md:py-6 pb-20 md:pb-6">
+
+          {/* 현황(대시보드) 탭 */}
+          {tab === '현황' && (
+            <div className="flex flex-col gap-4">
+              {/* 요약 카드 */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <button onClick={() => setTab('공정')}
+                  className="bg-white rounded-xl border border-gray-200 p-4 text-left hover:border-green-400 transition-colors">
+                  <p className="text-xs text-gray-400 mb-1">공정 진행률</p>
+                  <p className="text-2xl font-bold text-gray-900">{progressPct}%</p>
+                  <p className="text-xs text-gray-400 mt-0.5">{doneCount}/{schedules.length} 완료 · 진행 {inProgressCount}</p>
+                </button>
+                <button onClick={() => setTab('자료')}
+                  className="bg-white rounded-xl border border-gray-200 p-4 text-left hover:border-green-400 transition-colors">
+                  <p className="text-xs text-gray-400 mb-1">등록 자료</p>
+                  <p className="text-2xl font-bold text-gray-900">{files.length}<span className="text-sm font-normal text-gray-400">개</span></p>
+                  <p className="text-xs text-gray-400 mt-0.5">사진 {photos.length} · 기타 {files.length - photos.length}</p>
+                </button>
+                <button onClick={() => setTab('자료')}
+                  className="bg-white rounded-xl border border-gray-200 p-4 text-left hover:border-green-400 transition-colors">
+                  <p className="text-xs text-gray-400 mb-1">사진</p>
+                  <p className="text-2xl font-bold text-gray-900">{photos.length}<span className="text-sm font-normal text-gray-400">장</span></p>
+                </button>
+                {canSeeMoney ? (
+                  <button onClick={() => setTab('비용')}
+                    className="bg-white rounded-xl border border-gray-200 p-4 text-left hover:border-green-400 transition-colors">
+                    <p className="text-xs text-gray-400 mb-1">누적 비용</p>
+                    <p className="text-2xl font-bold text-gray-900">{Math.round(totalCost / 10000).toLocaleString()}<span className="text-sm font-normal text-gray-400">만원</span></p>
+                  </button>
+                ) : (
+                  <div className="bg-white rounded-xl border border-gray-200 p-4">
+                    <p className="text-xs text-gray-400 mb-1">누적 비용</p>
+                    <p className="text-sm text-gray-300 mt-2">관리자만 열람</p>
+                  </div>
+                )}
+              </div>
+
+              {/* 공정 현황 */}
+              <div className="bg-white rounded-xl border border-gray-200 p-4 md:p-5">
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="text-sm font-semibold text-gray-700">공정 현황</h3>
+                  <button onClick={() => setTab('공정')} className="text-xs text-green-600 hover:text-green-700">공정 자세히 →</button>
+                </div>
+                {schedules.length === 0 ? (
+                  <p className="text-sm text-gray-400 py-6 text-center">등록된 공정이 없어요</p>
+                ) : (
+                  <>
+                    <div className="mb-4">
+                      <div className="flex justify-between text-xs text-gray-500 mb-1">
+                        <span>전체 진행</span><span>{progressPct}%</span>
+                      </div>
+                      <div className="w-full bg-gray-100 rounded-full h-2.5">
+                        <div className="bg-green-500 h-2.5 rounded-full transition-all" style={{ width: `${progressPct}%` }} />
+                      </div>
+                    </div>
+                    <div className="flex flex-col gap-2.5">
+                      {schedules.map(s => {
+                        const ps = s.phase_status || '예정'
+                        const barW = ps === '완료' ? 100 : ps === '진행중' ? 50 : 0
+                        const barColor = ps === '완료' ? 'bg-green-500' : ps === '진행중' ? 'bg-amber-400' : 'bg-gray-200'
+                        const labelColor = ps === '완료' ? 'text-green-600' : ps === '진행중' ? 'text-amber-600' : 'text-gray-400'
+                        return (
+                          <div key={s.id} className="flex items-center gap-3">
+                            <span className="w-20 md:w-28 text-sm text-gray-700 truncate flex-shrink-0">{s.task_name}</span>
+                            <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden">
+                              <div className={`h-full rounded-full ${barColor}`} style={{ width: `${barW}%` }} />
+                            </div>
+                            <span className={`w-12 text-right text-xs font-medium flex-shrink-0 ${labelColor}`}>{ps}</span>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </>
+                )}
+              </div>
+
+              {/* 자료 미리보기 + 비용 요약 */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <div className="bg-white rounded-xl border border-gray-200 p-4 md:p-5">
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-sm font-semibold text-gray-700">현장 자료</h3>
+                    <button onClick={() => setTab('자료')} className="text-xs text-green-600 hover:text-green-700">자료 자세히 →</button>
+                  </div>
+                  {recentPhotos.length === 0 ? (
+                    <p className="text-sm text-gray-400 py-6 text-center">등록된 사진이 없어요</p>
+                  ) : (
+                    <div className="grid grid-cols-4 gap-1.5">
+                      {recentPhotos.map(f => (
+                        <img key={f.id} src={f.file_url} alt={f.file_name} onClick={() => setLightbox(f.file_url)}
+                          className="w-full aspect-square object-cover rounded-lg border border-gray-200 cursor-pointer hover:brightness-95" />
+                      ))}
+                    </div>
+                  )}
+                  <div className="flex flex-wrap gap-1.5 mt-3">
+                    {CATEGORY_LIST.map(cat => {
+                      const n = files.filter(f => f.category === cat).length
+                      if (!n) return null
+                      return <span key={cat} className="text-xs bg-gray-50 text-gray-500 border border-gray-200 rounded-full px-2 py-0.5">{cat} {n}</span>
+                    })}
+                  </div>
+                </div>
+
+                {canSeeMoney ? (
+                  <div className="bg-white rounded-xl border border-gray-200 p-4 md:p-5">
+                    <div className="flex items-center justify-between mb-3">
+                      <h3 className="text-sm font-semibold text-gray-700">비용 요약</h3>
+                      <button onClick={() => setTab('비용')} className="text-xs text-green-600 hover:text-green-700">비용 자세히 →</button>
+                    </div>
+                    {costs.length === 0 ? (
+                      <p className="text-sm text-gray-400 py-6 text-center">등록된 비용이 없어요</p>
+                    ) : (
+                      <>
+                        <p className="text-xs text-gray-400">누적 비용</p>
+                        <p className="text-2xl font-bold text-gray-900 mb-3">{totalCost.toLocaleString()}원</p>
+                        <div className="flex flex-col gap-1.5">
+                          {costs.slice(0, 4).map(c => (
+                            <div key={c.id} className="flex items-center justify-between text-sm">
+                              <span className="text-gray-500">{c.month?.slice(0, 7) || '-'}</span>
+                              <span className="font-medium text-gray-800">{c.amount.toLocaleString()}원</span>
+                            </div>
+                          ))}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                ) : (
+                  <div className="bg-white rounded-xl border border-gray-200 p-4 md:p-5 flex items-center justify-center text-sm text-gray-300">
+                    비용 정보는 관리자만 볼 수 있어요
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* 자료 탭 */}
           {tab === '자료' && (
