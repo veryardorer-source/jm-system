@@ -44,6 +44,7 @@ export default function ProjectDetail() {
   const [lightbox, setLightbox] = useState<string | null>(null)
 
   const [collapsedCats, setCollapsedCats] = useState<Record<string, boolean>>({})
+  const [collapsedZones, setCollapsedZones] = useState<Record<string, boolean>>({})
   const [selectedFileIds, setSelectedFileIds] = useState<Set<string>>(new Set())
   const [hoveredFileId, setHoveredFileId] = useState<string | null>(null)
 
@@ -358,6 +359,63 @@ export default function ProjectDetail() {
   }
 
 
+  const zoneOf = (f: ProjectFile) => (f.memo || '').trim() || '미분류'
+  const groupByZone = (arr: ProjectFile[]): [string, ProjectFile[]][] => {
+    const m = new Map<string, ProjectFile[]>()
+    arr.forEach(f => { const z = zoneOf(f); if (!m.has(z)) m.set(z, []); m.get(z)!.push(f) })
+    return Array.from(m.entries()).sort((a, b) =>
+      a[0] === '미분류' ? 1 : b[0] === '미분류' ? -1 : a[0].localeCompare(b[0], 'ko'))
+  }
+
+  function renderPhotoTile(f: ProjectFile) {
+    const isSelected = selectedFileIds.has(f.id)
+    const isHovered = hoveredFileId === f.id
+    return (
+      <div key={f.id} className="relative group aspect-square"
+        onMouseEnter={() => setHoveredFileId(f.id)}
+        onMouseLeave={() => setHoveredFileId(null)}>
+        {isVideoFile(f) ? (
+          <video src={f.file_url} muted playsInline preload="metadata"
+            onClick={() => toggleSelectFile(f.id)}
+            className={`w-full h-full object-cover rounded-lg border cursor-pointer transition-all ${
+              isSelected ? 'border-green-500 ring-2 ring-green-500 brightness-90' : 'border-gray-200'
+            }`} />
+        ) : (
+          <img src={f.file_url} alt={f.file_name}
+            onClick={() => toggleSelectFile(f.id)}
+            className={`w-full h-full object-cover rounded-lg border cursor-pointer transition-all ${
+              isSelected ? 'border-green-500 ring-2 ring-green-500 brightness-90' : 'border-gray-200'
+            }`} />
+        )}
+        {isVideoFile(f) && (
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+            <span className="bg-black/55 text-white rounded-full w-9 h-9 flex items-center justify-center text-base">▶</span>
+          </div>
+        )}
+        {isSelected && (<div className="absolute inset-0 bg-green-500/15 rounded-lg pointer-events-none" />)}
+        <button
+          onClick={e => { e.stopPropagation(); toggleSelectFile(f.id) }}
+          className={`absolute top-1.5 left-1.5 w-6 h-6 rounded-full border-2 flex items-center justify-center text-xs font-bold transition-all shadow-sm z-10 ${
+            isSelected ? 'bg-green-500 border-green-500 text-white' : 'bg-white/80 border-gray-300 opacity-0 group-hover:opacity-100'
+          }`}>
+          {isSelected ? '✓' : ''}
+        </button>
+        <button
+          onClick={e => { e.stopPropagation(); setLightbox(f.file_url) }}
+          className="absolute top-1.5 right-1.5 w-6 h-6 rounded-full bg-black/50 text-white flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-opacity z-10"
+          title="크게 보기">⛶</button>
+        {isHovered && (
+          <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent rounded-b-lg flex items-end justify-between p-1.5 gap-1">
+            <button onClick={e => { e.stopPropagation(); shareFile(f) }}
+              className="text-white bg-black/40 text-xs px-1.5 py-0.5 rounded hover:bg-black/60">내보내기</button>
+            <button onClick={e => { e.stopPropagation(); downloadFile(f) }}
+              className="text-white bg-black/40 text-xs px-1.5 py-0.5 rounded hover:bg-black/60">저장</button>
+          </div>
+        )}
+      </div>
+    )
+  }
+
   const canSeeMoney = profile?.role !== 'field'
   const doneCount = schedules.filter(s => (s.phase_status || '예정') === '완료').length
   const inProgressCount = schedules.filter(s => s.phase_status === '진행중').length
@@ -650,73 +708,39 @@ export default function ProjectDetail() {
                         {!isCollapsed && (
                           <div className="border-t border-gray-100 p-3">
                             {isPhoto ? (
-                              <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-2">
-                                {catFiles.map(f => {
-                                  const isSelected = selectedFileIds.has(f.id)
-                                  const isHovered = hoveredFileId === f.id
+                              (() => {
+                                const zones = groupByZone(catFiles)
+                                if (zones.length === 1 && zones[0][0] === '미분류') {
                                   return (
-                                    <div key={f.id} className="relative group aspect-square"
-                                      onMouseEnter={() => setHoveredFileId(f.id)}
-                                      onMouseLeave={() => setHoveredFileId(null)}>
-                                      {/* 사진/영상 — 탭/클릭 = 선택 토글 */}
-                                      {isVideoFile(f) ? (
-                                        <video src={f.file_url} muted playsInline preload="metadata"
-                                          onClick={() => toggleSelectFile(f.id)}
-                                          className={`w-full h-full object-cover rounded-lg border cursor-pointer transition-all ${
-                                            isSelected ? 'border-green-500 ring-2 ring-green-500 brightness-90' : 'border-gray-200'
-                                          }`} />
-                                      ) : (
-                                        <img src={f.file_url} alt={f.file_name}
-                                          onClick={() => toggleSelectFile(f.id)}
-                                          className={`w-full h-full object-cover rounded-lg border cursor-pointer transition-all ${
-                                            isSelected ? 'border-green-500 ring-2 ring-green-500 brightness-90' : 'border-gray-200'
-                                          }`} />
-                                      )}
-                                      {/* 영상 표시 ▶ */}
-                                      {isVideoFile(f) && (
-                                        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                                          <span className="bg-black/55 text-white rounded-full w-9 h-9 flex items-center justify-center text-base">▶</span>
-                                        </div>
-                                      )}
-                                      {/* 선택 오버레이 */}
-                                      {isSelected && (
-                                        <div className="absolute inset-0 bg-green-500/15 rounded-lg pointer-events-none" />
-                                      )}
-                                      {/* 체크박스 — 항상 표시 (모바일 포함) */}
-                                      <button
-                                        onClick={e => { e.stopPropagation(); toggleSelectFile(f.id) }}
-                                        className={`absolute top-1.5 left-1.5 w-6 h-6 rounded-full border-2 flex items-center justify-center text-xs font-bold transition-all shadow-sm z-10 ${
-                                          isSelected
-                                            ? 'bg-green-500 border-green-500 text-white'
-                                            : 'bg-white/80 border-gray-300 opacity-0 group-hover:opacity-100'
-                                        }`}>
-                                        {isSelected ? '✓' : ''}
-                                      </button>
-                                      {/* 크게보기 버튼 — 우상단, hover시 표시 */}
-                                      <button
-                                        onClick={e => { e.stopPropagation(); setLightbox(f.file_url) }}
-                                        className="absolute top-1.5 right-1.5 w-6 h-6 rounded-full bg-black/50 text-white flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-opacity z-10"
-                                        title="크게 보기">
-                                        ⛶
-                                      </button>
-                                      {/* 하단 액션 (hover시) */}
-                                      {/* 하단 액션 버튼 (hover시) */}
-                                      {isHovered && (
-                                        <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent rounded-b-lg flex items-end justify-between p-1.5 gap-1">
-                                          <button onClick={e => { e.stopPropagation(); shareFile(f) }}
-                                            className="text-white bg-black/40 text-xs px-1.5 py-0.5 rounded hover:bg-black/60">
-                                            내보내기
-                                          </button>
-                                          <button onClick={e => { e.stopPropagation(); downloadFile(f) }}
-                                            className="text-white bg-black/40 text-xs px-1.5 py-0.5 rounded hover:bg-black/60">
-                                            저장
-                                          </button>
-                                        </div>
-                                      )}
+                                    <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-2">
+                                      {catFiles.map(f => renderPhotoTile(f))}
                                     </div>
                                   )
-                                })}
-                              </div>
+                                }
+                                return (
+                                  <div className="flex flex-col gap-4">
+                                    {zones.map(([zone, zFiles]) => {
+                                      const zKey = `${cat}::${zone}`
+                                      const zCollapsed = collapsedZones[zKey] === true
+                                      return (
+                                        <div key={zKey}>
+                                          <button onClick={() => setCollapsedZones(p => ({ ...p, [zKey]: !zCollapsed }))}
+                                            className="flex items-center gap-2 mb-2 text-left w-full">
+                                            <span className="text-xs font-semibold text-gray-600">📁 {zone}</span>
+                                            <span className="text-xs text-gray-400">({zFiles.length})</span>
+                                            <span className="text-gray-400 text-xs ml-auto">{zCollapsed ? '▼ 펼치기' : '▲ 접기'}</span>
+                                          </button>
+                                          {!zCollapsed && (
+                                            <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-2">
+                                              {zFiles.map(f => renderPhotoTile(f))}
+                                            </div>
+                                          )}
+                                        </div>
+                                      )
+                                    })}
+                                  </div>
+                                )
+                              })()
                             ) : (
                               <div>
                                 {catFiles.map((f, i) => {
@@ -975,9 +999,12 @@ export default function ProjectDetail() {
               )}
 
               <div>
-                <label className="text-sm font-medium text-gray-700 block mb-1.5">메모</label>
+                <label className="text-sm font-medium text-gray-700 block mb-1.5">
+                  {PHOTO_CATS.includes(fileForm.category) ? '구역/공간' : '메모'}
+                  {PHOTO_CATS.includes(fileForm.category) && <span className="text-gray-400 font-normal ml-1">(같은 이름끼리 묶여요)</span>}
+                </label>
                 <input value={fileForm.memo} onChange={e => setFileForm({...fileForm, memo: e.target.value})}
-                  placeholder="예) 거실 비포사진, 평면도 v2"
+                  placeholder={PHOTO_CATS.includes(fileForm.category) ? '예) 거실, 주방, 화장실, 1층' : '예) 평면도 v2'}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
               </div>
 
