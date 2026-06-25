@@ -232,6 +232,41 @@ export default function ProjectDetail() {
     }
   }
 
+  // 폴더를 한 번만 고르면 그 안에 전부 저장 (PC 크롬 등). 미지원 시 기존 방식으로.
+  async function saveAll(fileList: ProjectFile[]) {
+    if (fileList.length === 0) return
+    const w = window as unknown as { showDirectoryPicker?: () => Promise<FileSystemDirectoryHandle> }
+    if (typeof w.showDirectoryPicker === 'function') {
+      let dir: FileSystemDirectoryHandle
+      try { dir = await w.showDirectoryPicker() } catch { return } // 사용자가 취소
+      const used = new Set<string>()
+      let ok = 0
+      for (let i = 0; i < fileList.length; i++) {
+        const f = fileList[i]
+        try {
+          const res = await fetch(f.file_url, { mode: 'cors', credentials: 'omit' })
+          if (!res.ok) continue
+          const blob = await res.blob()
+          let name = f.file_name || `file_${i}`
+          if (used.has(name)) {
+            const dot = name.lastIndexOf('.')
+            name = dot > 0 ? `${name.slice(0, dot)}_${i}${name.slice(dot)}` : `${name}_${i}`
+          }
+          used.add(name)
+          const fh = await dir.getFileHandle(name, { create: true })
+          const ws = await fh.createWritable()
+          await ws.write(blob)
+          await ws.close()
+          ok++
+        } catch { /* 개별 실패는 건너뜀 */ }
+      }
+      alert(`${ok}개 저장 완료!`)
+      return
+    }
+    // 폴더 선택 미지원(모바일/사파리) → 공유 또는 개별 다운로드
+    await shareFiles(fileList)
+  }
+
   async function copyFileUrl(file: ProjectFile) {
     await navigator.clipboard.writeText(`${file.file_name}\n${file.file_url}`)
     setCopiedUrlId(file.id)
@@ -697,7 +732,7 @@ export default function ProjectDetail() {
                             <span className="text-gray-400 text-xs">{isCollapsed ? '▼ 펼치기' : '▲ 접기'}</span>
                           </button>
                           <div className="flex items-center gap-2 flex-shrink-0">
-                            <button onClick={() => shareFiles(catFiles)}
+                            <button onClick={() => saveAll(catFiles)}
                               className="text-xs px-3 py-1 rounded-lg border border-gray-300 text-gray-600 hover:border-green-400 hover:text-green-600 whitespace-nowrap">
                               ⤓ 전체 저장
                             </button>
@@ -1065,12 +1100,8 @@ export default function ProjectDetail() {
               className="bg-white/10 hover:bg-white/20 text-white text-sm px-3 py-1.5 rounded-lg transition-colors">
               내보내기
             </button>
-            <button onClick={async () => {
-              for (const f of files.filter(f => selectedFileIds.has(f.id))) {
-                await downloadFile(f)
-                await new Promise(r => setTimeout(r, 300))
-              }
-            }} className="bg-white/10 hover:bg-white/20 text-white text-sm px-3 py-1.5 rounded-lg transition-colors">
+            <button onClick={() => saveAll(files.filter(f => selectedFileIds.has(f.id)))}
+              className="bg-white/10 hover:bg-white/20 text-white text-sm px-3 py-1.5 rounded-lg transition-colors">
               저장
             </button>
             <button onClick={deleteSelectedFiles}
