@@ -1,9 +1,11 @@
-﻿import { createClient } from '@supabase/supabase-js'
+﻿import { createBrowserClient } from '@supabase/ssr'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 
-export const supabase = createClient(supabaseUrl, supabaseKey)
+// 쿠키 기반 브라우저 클라이언트 — 로그인 세션(쿠키)을 공유하므로
+// 데이터 요청이 "로그인한 사용자"로 전송된다. (RLS 적용을 위해 필수)
+export const supabase = createBrowserClient(supabaseUrl, supabaseKey)
 
 export const STATUS_LIST = [
   '상담중', '현장실측', '디자인중', '디자인확정',
