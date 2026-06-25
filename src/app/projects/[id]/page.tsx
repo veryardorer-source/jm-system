@@ -696,23 +696,29 @@ export default function ProjectDetail() {
                             </span>
                             <span className="text-gray-400 text-xs">{isCollapsed ? '▼ 펼치기' : '▲ 접기'}</span>
                           </button>
-                          <button onClick={() => {
-                            if (allSelected) {
-                              setSelectedFileIds(prev => {
-                                const next = new Set(prev)
-                                catFiles.forEach(f => next.delete(f.id))
-                                return next
-                              })
-                            } else {
-                              setSelectedFileIds(prev => {
-                                const next = new Set(prev)
-                                catFiles.forEach(f => next.add(f.id))
-                                return next
-                              })
-                            }
-                          }} className={`text-xs px-3 py-1 rounded-lg border transition-colors ${allSelected ? 'border-green-500 text-green-600 bg-green-50' : 'border-gray-300 text-gray-500 hover:border-green-400 hover:text-green-600'}`}>
-                            {allSelected ? '전체해제' : '전체선택'}
-                          </button>
+                          <div className="flex items-center gap-2 flex-shrink-0">
+                            <button onClick={() => shareFiles(catFiles)}
+                              className="text-xs px-3 py-1 rounded-lg border border-gray-300 text-gray-600 hover:border-green-400 hover:text-green-600 whitespace-nowrap">
+                              ⤓ 전체 저장
+                            </button>
+                            <button onClick={() => {
+                              if (allSelected) {
+                                setSelectedFileIds(prev => {
+                                  const next = new Set(prev)
+                                  catFiles.forEach(f => next.delete(f.id))
+                                  return next
+                                })
+                              } else {
+                                setSelectedFileIds(prev => {
+                                  const next = new Set(prev)
+                                  catFiles.forEach(f => next.add(f.id))
+                                  return next
+                                })
+                              }
+                            }} className={`text-xs px-3 py-1 rounded-lg border transition-colors whitespace-nowrap ${allSelected ? 'border-green-500 text-green-600 bg-green-50' : 'border-gray-300 text-gray-500 hover:border-green-400 hover:text-green-600'}`}>
+                              {allSelected ? '전체해제' : '전체선택'}
+                            </button>
+                          </div>
                         </div>
                         {!isCollapsed && (
                           <div className="border-t border-gray-100 p-3">
