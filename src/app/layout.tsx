@@ -1,6 +1,7 @@
 ﻿import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { AuthProvider } from "@/lib/auth-context";
+import SWRegister from "@/components/SWRegister";
 
 export const metadata: Metadata = {
   title: "JM 관리 시스템",
@@ -31,6 +32,7 @@ export default function RootLayout({
   return (
     <html lang="ko" className="h-full">
       <body className="h-full bg-gray-50">
+        <SWRegister />
         <AuthProvider>{children}</AuthProvider>
       </body>
     </html>
