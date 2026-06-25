@@ -153,7 +153,7 @@ export default function ProjectDetail() {
         file_name: file.name,
         file_url: urlData.publicUrl,
         file_type: file.type || '',
-        category: fileForm.category,
+        category: fileForm.category.trim() || '기타',
         memo: fileForm.memo || '',
         uploaded_by: '',
       }])
@@ -427,6 +427,8 @@ export default function ProjectDetail() {
   const recentPhotos = photos.slice(0, 8)
   const totalCost = costs.reduce((sum, c) => sum + (c.amount || 0), 0)
   const staff = Array.from(new Set(assignments.map(a => a.employee_name).filter(Boolean)))
+  // 기본 분류 + 직접 추가된(파일에 존재하는) 분류
+  const allCategories = Array.from(new Set([...CATEGORY_LIST, ...files.map(f => f.category).filter(Boolean)]))
 
   if (loading) return (
     <div className="flex h-screen">
@@ -593,7 +595,7 @@ export default function ProjectDetail() {
                     </div>
                   )}
                   <div className="flex flex-wrap gap-1.5 mt-3">
-                    {CATEGORY_LIST.map(cat => {
+                    {allCategories.map(cat => {
                       const n = files.filter(f => f.category === cat).length
                       if (!n) return null
                       return <span key={cat} className="text-xs bg-gray-50 text-gray-500 border border-gray-200 rounded-full px-2 py-0.5">{cat} {n}</span>
@@ -672,7 +674,7 @@ export default function ProjectDetail() {
                 </div>
               ) : (
                 <div className="flex flex-col gap-3">
-                  {CATEGORY_LIST.map(cat => {
+                  {allCategories.map(cat => {
                     const catFiles = files.filter(f => f.category === cat)
                     if (catFiles.length === 0) return null
                     const isPhoto = ['시공전사진','시공사진','마감사진'].includes(cat)
@@ -972,11 +974,16 @@ export default function ProjectDetail() {
             </div>
             <form onSubmit={handleFileUpload} className="px-6 py-5 flex flex-col gap-4">
               <div>
-                <label className="text-sm font-medium text-gray-700 block mb-1.5">분류</label>
-                <select value={fileForm.category} onChange={e => setFileForm({...fileForm, category: e.target.value, linkUrl: '', linkTitle: ''})}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500">
-                  {CATEGORY_LIST.map(c => <option key={c}>{c}</option>)}
-                </select>
+                <label className="text-sm font-medium text-gray-700 block mb-1.5">
+                  분류 <span className="text-gray-400 font-normal">(선택하거나 직접 입력 — 예: 제안서)</span>
+                </label>
+                <input list="category-options" value={fileForm.category}
+                  onChange={e => setFileForm({...fileForm, category: e.target.value, linkUrl: '', linkTitle: ''})}
+                  placeholder="분류를 고르거나 새로 입력하세요"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
+                <datalist id="category-options">
+                  {allCategories.map(c => <option key={c} value={c} />)}
+                </datalist>
               </div>
 
               {fileForm.category === '구매링크' ? (
