@@ -713,7 +713,7 @@ export default function ProjectDetail() {
                             {isPhoto ? (
                               (() => {
                                 const zones = groupByZone(catFiles)
-                                if (zones.length === 1 && zones[0][0] === '미분류') {
+                                if (zones.length === 1) {
                                   return (
                                     <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-2">
                                       {catFiles.map(f => renderPhotoTile(f))}
@@ -724,17 +724,18 @@ export default function ProjectDetail() {
                                   <div className="flex flex-col gap-4">
                                     {zones.map(([zone, zFiles]) => {
                                       const zKey = `${cat}::${zone}`
-                                      const zCollapsed = collapsedZones[zKey] === true
+                                      const zCollapsed = collapsedZones[zKey] !== false
                                       return (
                                         <div key={zKey}>
                                           <button onClick={() => setCollapsedZones(p => ({ ...p, [zKey]: !zCollapsed }))}
-                                            className="flex items-center gap-2 mb-2 text-left w-full">
-                                            <span className="text-xs font-semibold text-gray-600">📁 {zone}</span>
-                                            <span className="text-xs text-gray-400">({zFiles.length})</span>
+                                            className="flex items-center gap-2 w-full text-left px-3 py-2.5 rounded-lg bg-gray-50 hover:bg-gray-100 border border-gray-200">
+                                            <span>📁</span>
+                                            <span className="text-sm font-medium text-gray-700">{zone}</span>
+                                            <span className="text-xs text-gray-400">{zFiles.length}장</span>
                                             <span className="text-gray-400 text-xs ml-auto">{zCollapsed ? '▼ 펼치기' : '▲ 접기'}</span>
                                           </button>
                                           {!zCollapsed && (
-                                            <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-2">
+                                            <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-2 mt-2">
                                               {zFiles.map(f => renderPhotoTile(f))}
                                             </div>
                                           )}
