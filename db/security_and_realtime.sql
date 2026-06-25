@@ -53,5 +53,22 @@ create policy auth_all on public.notifications for all to authenticated using (t
 alter publication supabase_realtime add table public.messages;
 alter publication supabase_realtime add table public.notifications;
 
+-- ③ 채팅 1:1 + 채팅방(그룹) — 추가 적용됨
+alter table public.messages add column if not exists recipient_id uuid;  -- 1:1 (null=전체/방)
+create index if not exists idx_messages_recipient on public.messages(recipient_id);
+alter table public.messages add column if not exists room_id uuid;        -- 채팅방
+create index if not exists idx_messages_room on public.messages(room_id);
+create table if not exists public.chat_rooms (
+  id uuid primary key default gen_random_uuid(), name text not null, created_by uuid, created_at timestamptz not null default now());
+create table if not exists public.chat_room_members (
+  room_id uuid references public.chat_rooms(id) on delete cascade, user_id uuid not null,
+  created_at timestamptz not null default now(), primary key (room_id, user_id));
+alter table public.chat_rooms enable row level security;
+drop policy if exists auth_all on public.chat_rooms;
+create policy auth_all on public.chat_rooms for all to authenticated using (true) with check (true);
+alter table public.chat_room_members enable row level security;
+drop policy if exists auth_all on public.chat_room_members;
+create policy auth_all on public.chat_room_members for all to authenticated using (true) with check (true);
+
 -- 참고(향후): 역할별 세부 제한(현장팀은 employees 주민번호/계좌·finance_* 차단 등)은
 --           authenticated 단일 정책을 role 기반으로 세분화하여 적용 예정.
