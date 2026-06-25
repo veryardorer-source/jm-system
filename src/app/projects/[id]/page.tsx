@@ -6,8 +6,9 @@ import Sidebar from '@/components/Sidebar'
 import { supabase, Project, ProjectFile, Schedule, ProjectCost, ProjectAssignment, STATUS_LIST } from '@/lib/supabase'
 import { useAuth } from '@/lib/auth-context'
 import { notifyOthers } from '@/lib/notify'
+import SnsTab from '@/components/SnsTab'
 
-const TAB_LIST = ['현황', '자료', '공정', '비용']
+const TAB_LIST = ['현황', '자료', '공정', '비용', 'SNS']
 const PHOTO_CATS = ['시공전사진', '시공사진', '마감사진']
 const isVideoUrl = (url: string) => /\.(mp4|mov|webm|m4v|ogg|avi|mkv)$/i.test((url || '').split('?')[0])
 const isVideoFile = (f: ProjectFile) => (f.file_type || '').startsWith('video') || isVideoUrl(f.file_url)
@@ -489,6 +490,9 @@ export default function ProjectDetail() {
         </div>
 
         <div className="flex-1 overflow-auto px-4 md:px-8 py-4 md:py-6 pb-20 md:pb-6">
+
+          {/* SNS 탭 */}
+          {tab === 'SNS' && <SnsTab projectId={id} />}
 
           {/* 현황(대시보드) 탭 */}
           {tab === '현황' && (
