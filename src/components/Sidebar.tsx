@@ -2,8 +2,10 @@
 
 import Link from 'next/link'
 import Image from 'next/image'
+import { useEffect, useState } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 import { useAuth } from '@/lib/auth-context'
+import { supabase } from '@/lib/supabase'
 
 const NAV_ITEMS = [
   { href: '/', label: '대시보드', icon: '🏠' },
@@ -12,6 +14,8 @@ const NAV_ITEMS = [
   { href: '/receipts', label: '영수증', icon: '🧾' },
   { href: '/withdrawals', label: '출금 요청', icon: '💸' },
   { href: '/documents', label: '회사 서류', icon: '🗂️' },
+  { href: '/chat', label: '채팅', icon: '💬' },
+  { href: '/notifications', label: '알림', icon: '🔔' },
 ]
 
 const ADMIN_ITEMS = [
@@ -32,6 +36,23 @@ export default function Sidebar() {
   const router = useRouter()
   const { profile, signOut } = useAuth()
   const isAdmin = profile?.role === 'admin'
+  const [unread, setUnread] = useState(0)
+
+  useEffect(() => {
+    if (!profile?.id) return
+    let active = true
+    const load = async () => {
+      const { count } = await supabase.from('notifications')
+        .select('id', { count: 'exact', head: true })
+        .eq('user_id', profile.id).eq('is_read', false)
+      if (active) setUnread(count || 0)
+    }
+    load()
+    const ch = supabase.channel('notif-' + profile.id)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications', filter: `user_id=eq.${profile.id}` }, load)
+      .subscribe()
+    return () => { active = false; supabase.removeChannel(ch) }
+  }, [profile?.id, pathname])
 
   async function handleSignOut() {
     await signOut()
@@ -54,6 +75,11 @@ export default function Sidebar() {
                   active ? 'bg-green-600 text-white' : 'text-green-100 hover:bg-green-700 hover:text-white'
                 }`}>
                 <span>{item.label}</span>
+                {item.href === '/notifications' && unread > 0 && (
+                  <span className="ml-auto bg-red-500 text-white text-xs rounded-full min-w-[20px] h-5 px-1.5 flex items-center justify-center">
+                    {unread > 99 ? '99+' : unread}
+                  </span>
+                )}
               </Link>
             )
           })}
@@ -95,11 +121,16 @@ export default function Sidebar() {
           const active = pathname === item.href || (item.href !== '/' && pathname.startsWith(item.href))
           return (
             <Link key={item.href} href={item.href}
-              className={`flex-1 flex flex-col items-center justify-center py-2 text-xs transition-colors ${
+              className={`relative flex-1 flex flex-col items-center justify-center py-2 text-xs transition-colors ${
                 active ? 'text-green-400' : 'text-gray-500'
               }`}>
               <span className="text-lg mb-0.5">{item.icon}</span>
-              <span className="leading-none">{item.label.replace(' 관리', '').replace('사항', '')}</span>
+              <span className="leading-none">{item.label.replace(' 관리', '').replace('사항', '').replace(' 요청', '').replace(' 서류', '')}</span>
+              {item.href === '/notifications' && unread > 0 && (
+                <span className="absolute top-1 right-[22%] bg-red-500 text-white text-[10px] rounded-full min-w-[16px] h-4 px-1 flex items-center justify-center">
+                  {unread > 99 ? '99+' : unread}
+                </span>
+              )}
             </Link>
           )
         })}

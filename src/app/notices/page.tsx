@@ -3,6 +3,8 @@
 import { useEffect, useState } from 'react'
 import Sidebar from '@/components/Sidebar'
 import { supabase } from '@/lib/supabase'
+import { useAuth } from '@/lib/auth-context'
+import { notifyOthers } from '@/lib/notify'
 
 type Notice = {
   id: string
@@ -24,6 +26,7 @@ const CATEGORY_COLOR: Record<string, string> = {
 const EMPTY_FORM = { title: '', content: '', category: '전체', author: '' }
 
 export default function NoticesPage() {
+  const { profile } = useAuth()
   const [notices, setNotices] = useState<Notice[]>([])
   const [filter, setFilter] = useState('전체')
   const [loading, setLoading] = useState(true)
@@ -50,6 +53,7 @@ export default function NoticesPage() {
       setSaving(false)
       return
     }
+    notifyOthers(profile?.id, { type: 'notice', title: `새 공지 · ${form.title}`, body: form.category, link: '/notices' })
     setForm(EMPTY_FORM)
     setShowForm(false)
     setSaving(false)

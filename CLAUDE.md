@@ -37,7 +37,7 @@ npx vercel --prod  # 배포 (jm-system 폴더에서 실행)
 - 미들웨어에서 인증 처리, public paths: `/login`, `/signup`
 - 직원 가입은 관리자가 `/admin/users`에서 직접 생성
 - 역할: `admin`, `designer`, `field`
-- profiles 테이블 RLS 비활성화
+- **RLS 활성화됨(2026-06-22)**: 전체 public 테이블 RLS ON + `authenticated`만 허용(anon 차단). 데이터 클라이언트는 `lib/supabase.ts`의 `createBrowserClient`(쿠키 세션 공유)라 로그인 사용자로 요청됨. 적용 SQL: `db/security_and_realtime.sql`
 
 ### 색상 테마
 - **전체 테마: 초록(green)**

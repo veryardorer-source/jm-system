@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation'
 import Sidebar from '@/components/Sidebar'
 import { supabase, Project, ProjectFile, Schedule, ProjectCost, ProjectAssignment, STATUS_LIST } from '@/lib/supabase'
 import { useAuth } from '@/lib/auth-context'
+import { notifyOthers } from '@/lib/notify'
 
 const TAB_LIST = ['현황', '자료', '공정', '비용']
 const PHOTO_CATS = ['시공전사진', '시공사진', '마감사진']
@@ -123,6 +124,7 @@ export default function ProjectDetail() {
         uploaded_by: '',
       }])
       if (error) { alert('저장 실패: ' + error.message); return }
+      notifyOthers(profile?.id, { type: 'file', title: `${project?.name || '현장'} · 새 구매링크`, body: fileForm.linkTitle.trim() || '구매링크가 추가되었습니다', link: `/projects/${id}` })
       setFileForm({ category: '구매링크', memo: '', linkUrl: '', linkTitle: '' })
       setShowFileForm(false)
       fetchAll()
@@ -160,6 +162,7 @@ export default function ProjectDetail() {
       }
     }
     setUploadProgress(100)
+    notifyOthers(profile?.id, { type: 'file', title: `${project?.name || '현장'} · 새 자료 ${selectedFiles.length}건`, body: `${fileForm.category} 자료가 업로드되었습니다`, link: `/projects/${id}` })
     setFileForm({ category: '시공전사진', memo: '', linkUrl: '', linkTitle: '' })
     setSelectedFiles([])
     setShowFileForm(false)
