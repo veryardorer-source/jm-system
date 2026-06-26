@@ -140,7 +140,27 @@ export default function ProjectDetail() {
       if (ok.length === 0) return
       setSelectedFiles(ok)
     }
-    const uploadList = selectedFiles.filter(f => f.size <= 500 * 1024 * 1024)
+    let uploadList = selectedFiles.filter(f => f.size <= 500 * 1024 * 1024)
+
+    // 같은 이름의 파일이 이미 있으면 덮어쓸지 건너뛸지 확인
+    const existingNames = new Set(files.map(f => f.file_name))
+    const dupes = uploadList.filter(f => existingNames.has(f.name))
+    if (dupes.length > 0) {
+      const overwrite = confirm(
+        `같은 이름의 자료 ${dupes.length}개가 이미 있어요:\n${dupes.slice(0, 5).map(f => '· ' + f.name).join('\n')}${dupes.length > 5 ? `\n외 ${dupes.length - 5}개` : ''}\n\n[확인] = 덮어쓰기 (기존을 지우고 새로 올림)\n[취소] = 건너뛰기 (기존은 두고 중복은 안 올림)`
+      )
+      if (overwrite) {
+        const toRemove = files.filter(f => dupes.some(d => d.name === f.file_name))
+        const paths = toRemove.map(f => f.file_url.split('/uploads/')[1]).filter(Boolean)
+        if (paths.length) await supabase.storage.from('uploads').remove(paths)
+        const ids = toRemove.map(f => f.id)
+        if (ids.length) await supabase.from('project_files').delete().in('id', ids)
+      } else {
+        uploadList = uploadList.filter(f => !existingNames.has(f.name))
+        if (uploadList.length === 0) { setShowFileForm(false); setSelectedFiles([]); return }
+      }
+    }
+
     setUploading(true)
     for (let i = 0; i < uploadList.length; i++) {
       const file = uploadList[i]
