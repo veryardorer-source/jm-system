@@ -12,6 +12,7 @@ type Message = {
   recipient_id: string | null
   room_id: string | null
   content: string
+  image_url?: string | null
   created_at: string
 }
 type Person = { id: string; name: string }
@@ -87,6 +88,17 @@ export default function ChatPage() {
 
   useEffect(() => { scrollToBottom() }, [messages, scrollToBottom])
 
+  async function pushNotif(body: string) {
+    if (!active) return
+    if (active.kind === 'dm') {
+      await supabase.from('notifications').insert([{ user_id: active.id, type: 'chat', title: `${profile?.name || '직원'} 님의 메시지`, body, link: '/chat' }])
+    } else if (active.kind === 'room') {
+      const { data: mem } = await supabase.from('chat_room_members').select('user_id').eq('room_id', active.id)
+      const rows = (mem || []).filter(x => x.user_id !== me).map(x => ({ user_id: x.user_id, type: 'chat', title: `${active.name} · ${profile?.name || '직원'}`, body, link: '/chat' }))
+      if (rows.length) await supabase.from('notifications').insert(rows)
+    }
+  }
+
   async function send(e: React.FormEvent) {
     e.preventDefault()
     const content = text.trim()
@@ -95,20 +107,26 @@ export default function ChatPage() {
     const recipient_id = active.kind === 'dm' ? active.id : null
     const room_id = active.kind === 'room' ? active.id : null
     const { error } = await supabase.from('messages').insert([{ sender_id: me ?? null, sender_name: profile?.name ?? '직원', recipient_id, room_id, content }])
-    if (!error) {
-      const title = `${profile?.name || '직원'} 님의 메시지`
-      const body = content.slice(0, 40)
-      if (active.kind === 'dm') {
-        await supabase.from('notifications').insert([{ user_id: active.id, type: 'chat', title, body, link: '/chat' }])
-      } else if (active.kind === 'room') {
-        const { data: mem } = await supabase.from('chat_room_members').select('user_id').eq('room_id', active.id)
-        const rows = (mem || []).filter(x => x.user_id !== me).map(x => ({ user_id: x.user_id, type: 'chat', title: `${active.name} · ${profile?.name || '직원'}`, body, link: '/chat' }))
-        if (rows.length) await supabase.from('notifications').insert(rows)
-      }
-    }
+    if (!error) await pushNotif(content.slice(0, 40))
     setSending(false)
     if (error) { alert('전송 실패: ' + error.message); return }
     setText('')
+  }
+
+  async function sendImage(file: File) {
+    if (!file || !active) return
+    setSending(true)
+    const ext = file.name.split('.').pop() || 'jpg'
+    const path = `chat/${Date.now()}.${ext}`
+    const { error: upErr } = await supabase.storage.from('uploads').upload(path, file, { contentType: file.type || 'image/jpeg', upsert: true })
+    if (upErr) { setSending(false); alert('이미지 업로드 실패: ' + upErr.message); return }
+    const { data: urlData } = supabase.storage.from('uploads').getPublicUrl(path)
+    const recipient_id = active.kind === 'dm' ? active.id : null
+    const room_id = active.kind === 'room' ? active.id : null
+    const { error } = await supabase.from('messages').insert([{ sender_id: me ?? null, sender_name: profile?.name ?? '직원', recipient_id, room_id, content: '', image_url: urlData.publicUrl }])
+    if (!error) await pushNotif('📷 사진')
+    setSending(false)
+    if (error) alert('전송 실패: ' + error.message)
   }
 
   async function createRoom(e: React.FormEvent) {
@@ -132,6 +150,12 @@ export default function ChatPage() {
   const activeName = !active ? '' : active.kind === 'all' ? '전체 채팅방' : active.name
   const showSenderName = active?.kind === 'all' || active?.kind === 'room'
   const fmtTime = (iso: string) => new Date(iso).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })
+  function renderContent(t: string, mine: boolean) {
+    return t.split(/(https?:\/\/[^\s]+)/g).map((p, i) =>
+      /^https?:\/\//.test(p)
+        ? <a key={i} href={p} target="_blank" rel="noreferrer" className={`underline break-all ${mine ? 'text-white' : 'text-green-700'}`}>{p}</a>
+        : <span key={i}>{p}</span>)
+  }
 
   return (
     <div className="flex flex-col md:flex-row min-h-screen">
@@ -195,9 +219,17 @@ export default function ChatPage() {
                             {!mine && showSenderName && <span className="text-xs text-gray-500 mb-0.5 ml-1">{m.sender_name || '직원'}</span>}
                             <div className="flex items-end gap-1.5">
                               {mine && <span className="text-[10px] text-gray-400">{fmtTime(m.created_at)}</span>}
-                              <div className={`px-3 py-2 rounded-2xl text-sm max-w-[75vw] md:max-w-md whitespace-pre-wrap break-words ${
-                                mine ? 'bg-green-600 text-white rounded-br-sm' : 'bg-white border border-gray-200 text-gray-800 rounded-bl-sm'
-                              }`}>{m.content}</div>
+                              <div className={`max-w-[75vw] md:max-w-md flex flex-col gap-1 ${mine ? 'items-end' : 'items-start'}`}>
+                                {m.image_url && (
+                                  <img src={m.image_url} alt="" onClick={() => window.open(m.image_url!, '_blank')}
+                                    className="rounded-2xl max-w-[220px] max-h-[260px] object-cover cursor-pointer border border-gray-200" />
+                                )}
+                                {m.content && (
+                                  <div className={`px-3 py-2 rounded-2xl text-sm whitespace-pre-wrap break-words ${
+                                    mine ? 'bg-green-600 text-white rounded-br-sm' : 'bg-white border border-gray-200 text-gray-800 rounded-bl-sm'
+                                  }`}>{renderContent(m.content, mine)}</div>
+                                )}
+                              </div>
                               {!mine && <span className="text-[10px] text-gray-400">{fmtTime(m.created_at)}</span>}
                             </div>
                           </div>
@@ -208,7 +240,12 @@ export default function ChatPage() {
                   )}
                 </div>
                 <form onSubmit={send}
-                  className="fixed bottom-14 md:bottom-0 left-0 md:left-[calc(14rem+16rem)] right-0 bg-white border-t border-gray-200 px-4 py-3 flex gap-2">
+                  className="fixed bottom-14 md:bottom-0 left-0 md:left-[calc(14rem+16rem)] right-0 bg-white border-t border-gray-200 px-4 py-3 flex gap-2 items-center">
+                  <label className="flex-shrink-0 flex items-center justify-center w-10 h-10 rounded-full border border-gray-300 text-lg cursor-pointer hover:bg-gray-50" title="사진 보내기">
+                    🖼️
+                    <input type="file" accept="image/*" className="hidden"
+                      onChange={e => { const f = e.target.files?.[0]; if (f) sendImage(f); e.currentTarget.value = '' }} />
+                  </label>
                   <input value={text} onChange={e => setText(e.target.value)}
                     placeholder="메시지를 입력하세요..."
                     className="flex-1 border border-gray-300 rounded-full px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
