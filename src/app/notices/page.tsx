@@ -15,10 +15,11 @@ type Notice = {
   created_at: string
 }
 
-const CATEGORIES = ['전체', '디자인팀', '현장팀']
+const CATEGORIES = ['전체', '사용법', '디자인팀', '현장팀']
 
 const CATEGORY_COLOR: Record<string, string> = {
   '전체':    'bg-gray-100 text-gray-700 border-gray-200',
+  '사용법':  'bg-amber-100 text-amber-700 border-amber-200',
   '디자인팀': 'bg-purple-100 text-purple-700 border-purple-200',
   '현장팀':  'bg-green-100 text-green-700 border-blue-200',
 }
