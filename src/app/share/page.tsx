@@ -115,8 +115,10 @@ export default function SharePage() {
                     <div key={i} className="aspect-square bg-gray-100 rounded-lg flex items-center justify-center overflow-hidden">
                       {f.type.startsWith('image') ? (
                         <img src={URL.createObjectURL(f)} alt="" className="w-full h-full object-cover" />
-                      ) : (
+                      ) : f.type.startsWith('video') ? (
                         <span className="text-2xl">🎬</span>
+                      ) : (
+                        <span className="text-2xl">📄</span>
                       )}
                     </div>
                   ))}
