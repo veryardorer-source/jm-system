@@ -743,6 +743,7 @@ export default function ProjectDetail() {
                 <div className="flex flex-col gap-3">
                   {allCategories.map(cat => {
                     const catFiles = files.filter(f => f.category === cat)
+                      .sort((a, b) => (a.file_name || '').localeCompare(b.file_name || '', undefined, { numeric: true }))
                     if (catFiles.length === 0) return null
                     const isPhoto = ['시공전사진','시공사진','마감사진'].includes(cat)
                     const isCollapsed = collapsedCats[cat] !== false
