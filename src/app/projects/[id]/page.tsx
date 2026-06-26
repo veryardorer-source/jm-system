@@ -13,6 +13,26 @@ const PHOTO_CATS = ['시공전사진', '시공사진', '마감사진']
 const isVideoUrl = (url: string) => /\.(mp4|mov|webm|m4v|ogg|avi|mkv)$/i.test((url || '').split('?')[0])
 const isVideoFile = (f: ProjectFile) => (f.file_type || '').startsWith('video') || isVideoUrl(f.file_url)
 const CATEGORY_LIST = ['시공전사진', '시공사진', '마감사진', '도면', '3D', '미팅내용', '고객요청', '구매링크', '기타']
+
+function isHeic(file: File) {
+  return /\.(heic|heif)$/i.test(file.name) || /^image\/hei(c|f)/i.test(file.type)
+}
+
+// 아이폰/일부 갤럭시가 찍는 HEIC는 브라우저 <img>로 표시가 안 되므로 업로드 전에 JPEG로 변환
+async function toBrowserSafeImage(file: File): Promise<{ file: File; ext: string }> {
+  const ext = file.name.split('.').pop() || 'bin'
+  if (!isHeic(file)) return { file, ext }
+  try {
+    const heic2any = (await import('heic2any')).default
+    const result = await heic2any({ blob: file, toType: 'image/jpeg', quality: 0.85 })
+    const blob = Array.isArray(result) ? result[0] : result
+    const newName = file.name.replace(/\.(heic|heif)$/i, '.jpg')
+    return { file: new File([blob], newName, { type: 'image/jpeg' }), ext: 'jpg' }
+  } catch {
+    return { file, ext } // 변환 실패 시 원본 그대로 업로드 (다운로드는 가능)
+  }
+}
+
 const STATUS_COLOR: Record<string, string> = {
   '디자인진행중': 'bg-purple-100 text-purple-700',
   '견적진행중': 'bg-yellow-100 text-yellow-700',
@@ -163,12 +183,11 @@ export default function ProjectDetail() {
 
     setUploading(true)
     for (let i = 0; i < uploadList.length; i++) {
-      const file = uploadList[i]
       setUploadCurrent(i + 1)
       setUploadProgress(Math.round((i / uploadList.length) * 100))
-      const ext = file.name.split('.').pop() || 'bin'
+      const { file, ext } = await toBrowserSafeImage(uploadList[i])
       const path = `files/${id}/${Date.now()}_${i}.${ext}`
-      const { data: uploadData, error: uploadError } = await supabase.storage.from('uploads').upload(path, file, {
+      const { error: uploadError } = await supabase.storage.from('uploads').upload(path, file, {
         contentType: file.type || 'application/octet-stream',
         upsert: true,
       })
