@@ -133,14 +133,14 @@ export default function ProjectDetail() {
     }
 
     if (selectedFiles.length === 0) return
-    const tooBig = selectedFiles.filter(f => f.size > 50 * 1024 * 1024)
+    const tooBig = selectedFiles.filter(f => f.size > 500 * 1024 * 1024)
     if (tooBig.length > 0) {
-      alert(`아래 파일은 50MB가 넘어 올릴 수 없어요 (무료 요금제 제한):\n\n${tooBig.map(f => `· ${f.name} (${Math.round(f.size / 1024 / 1024)}MB)`).join('\n')}\n\n동영상은 짧게 자르거나, 유튜브에 올린 뒤 '구매링크'에 주소를 넣어주세요.`)
-      const ok = selectedFiles.filter(f => f.size <= 50 * 1024 * 1024)
+      alert(`아래 파일은 500MB가 넘어 올릴 수 없어요:\n\n${tooBig.map(f => `· ${f.name} (${Math.round(f.size / 1024 / 1024)}MB)`).join('\n')}\n\n동영상은 짧게 자르거나, 유튜브에 올린 뒤 '구매링크'에 주소를 넣어주세요.`)
+      const ok = selectedFiles.filter(f => f.size <= 500 * 1024 * 1024)
       if (ok.length === 0) return
       setSelectedFiles(ok)
     }
-    const uploadList = selectedFiles.filter(f => f.size <= 50 * 1024 * 1024)
+    const uploadList = selectedFiles.filter(f => f.size <= 500 * 1024 * 1024)
     setUploading(true)
     for (let i = 0; i < uploadList.length; i++) {
       const file = uploadList[i]
