@@ -1018,18 +1018,34 @@ export default function ProjectDetail() {
               <button onClick={() => { setShowFileForm(false); setSelectedFiles([]) }} className="text-gray-400 text-2xl">&times;</button>
             </div>
             <form onSubmit={handleFileUpload} className="px-6 py-5 flex flex-col gap-4">
-              <div>
-                <label className="text-sm font-medium text-gray-700 block mb-1.5">
-                  분류 <span className="text-gray-400 font-normal">(선택하거나 직접 입력 — 예: 제안서)</span>
-                </label>
-                <input list="category-options" value={fileForm.category}
-                  onChange={e => setFileForm({...fileForm, category: e.target.value, linkUrl: '', linkTitle: ''})}
-                  placeholder="분류를 고르거나 새로 입력하세요"
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
-                <datalist id="category-options">
-                  {allCategories.map(c => <option key={c} value={c} />)}
-                </datalist>
+              {/* 자료 종류 선택 */}
+              <div className="flex gap-2">
+                <button type="button"
+                  onClick={() => { if (fileForm.category === '구매링크') setFileForm({ ...fileForm, category: '시공전사진' }) }}
+                  className={`flex-1 py-2.5 rounded-lg text-sm font-medium border ${fileForm.category !== '구매링크' ? 'bg-green-600 text-white border-green-600' : 'bg-white text-gray-600 border-gray-300'}`}>
+                  📎 파일/사진
+                </button>
+                <button type="button"
+                  onClick={() => setFileForm({ ...fileForm, category: '구매링크', linkUrl: '', linkTitle: '' })}
+                  className={`flex-1 py-2.5 rounded-lg text-sm font-medium border ${fileForm.category === '구매링크' ? 'bg-green-600 text-white border-green-600' : 'bg-white text-gray-600 border-gray-300'}`}>
+                  🔗 구매링크
+                </button>
               </div>
+
+              {fileForm.category !== '구매링크' && (
+                <div>
+                  <label className="text-sm font-medium text-gray-700 block mb-1.5">
+                    분류 <span className="text-gray-400 font-normal">(선택하거나 직접 입력 — 예: 제안서)</span>
+                  </label>
+                  <input list="category-options" value={fileForm.category}
+                    onChange={e => setFileForm({...fileForm, category: e.target.value})}
+                    placeholder="분류를 고르거나 새로 입력하세요"
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
+                  <datalist id="category-options">
+                    {allCategories.filter(c => c !== '구매링크').map(c => <option key={c} value={c} />)}
+                  </datalist>
+                </div>
+              )}
 
               {fileForm.category === '구매링크' ? (
                 <>
