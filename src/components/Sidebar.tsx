@@ -91,7 +91,7 @@ export default function Sidebar() {
                 return (
                   <Link key={item.href} href={item.href}
                     className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors ${
-                      active ? 'bg-green-600 text-white' : 'text-gray-400 hover:bg-green-700 hover:text-white'
+                      active ? 'bg-green-600 text-white' : 'text-green-100 hover:bg-green-700 hover:text-white'
                     }`}>
                     <span>{item.icon}</span>
                     <span>{item.label}</span>
@@ -122,7 +122,7 @@ export default function Sidebar() {
           return (
             <Link key={item.href} href={item.href}
               className={`relative flex-1 flex flex-col items-center justify-center py-2 text-xs transition-colors ${
-                active ? 'text-green-400' : 'text-gray-500'
+                active ? 'text-white font-semibold' : 'text-green-100'
               }`}>
               <span className="text-lg mb-0.5">{item.icon}</span>
               <span className="leading-none">{item.label.replace(' 관리', '').replace('사항', '').replace(' 요청', '').replace(' 서류', '')}</span>
