@@ -133,11 +133,19 @@ export default function ProjectDetail() {
     }
 
     if (selectedFiles.length === 0) return
+    const tooBig = selectedFiles.filter(f => f.size > 50 * 1024 * 1024)
+    if (tooBig.length > 0) {
+      alert(`아래 파일은 50MB가 넘어 올릴 수 없어요 (무료 요금제 제한):\n\n${tooBig.map(f => `· ${f.name} (${Math.round(f.size / 1024 / 1024)}MB)`).join('\n')}\n\n동영상은 짧게 자르거나, 유튜브에 올린 뒤 '구매링크'에 주소를 넣어주세요.`)
+      const ok = selectedFiles.filter(f => f.size <= 50 * 1024 * 1024)
+      if (ok.length === 0) return
+      setSelectedFiles(ok)
+    }
+    const uploadList = selectedFiles.filter(f => f.size <= 50 * 1024 * 1024)
     setUploading(true)
-    for (let i = 0; i < selectedFiles.length; i++) {
-      const file = selectedFiles[i]
+    for (let i = 0; i < uploadList.length; i++) {
+      const file = uploadList[i]
       setUploadCurrent(i + 1)
-      setUploadProgress(Math.round((i / selectedFiles.length) * 100))
+      setUploadProgress(Math.round((i / uploadList.length) * 100))
       const ext = file.name.split('.').pop() || 'bin'
       const path = `files/${id}/${Date.now()}_${i}.${ext}`
       const { data: uploadData, error: uploadError } = await supabase.storage.from('uploads').upload(path, file, {
@@ -163,7 +171,7 @@ export default function ProjectDetail() {
       }
     }
     setUploadProgress(100)
-    notifyOthers(profile?.id, { type: 'file', title: `${project?.name || '현장'} · 새 자료 ${selectedFiles.length}건`, body: `${fileForm.category} 자료가 업로드되었습니다`, link: `/projects/${id}` })
+    notifyOthers(profile?.id, { type: 'file', title: `${project?.name || '현장'} · 새 자료 ${uploadList.length}건`, body: `${fileForm.category} 자료가 업로드되었습니다`, link: `/projects/${id}` })
     setFileForm({ category: '시공전사진', memo: '', linkUrl: '', linkTitle: '' })
     setSelectedFiles([])
     setShowFileForm(false)
