@@ -23,12 +23,6 @@ export default function ProjectsPage() {
   const [editingStatusId, setEditingStatusId] = useState<string | null>(null)
 
   useEffect(() => { fetchProjects() }, [])
-  useEffect(() => {
-    if (!editingStatusId) return
-    const close = () => setEditingStatusId(null)
-    document.addEventListener('click', close)
-    return () => document.removeEventListener('click', close)
-  }, [editingStatusId])
 
   async function fetchProjects() {
     setLoading(true)
@@ -126,22 +120,10 @@ export default function ProjectsPage() {
                     <div key={p.id} className="bg-white rounded-xl border border-gray-200 p-4">
                       <div className="flex items-start justify-between gap-2 mb-2">
                         <Link href={`/projects/${p.id}`} className="font-semibold text-gray-900 flex-1">{p.name}</Link>
-                        <div className="relative flex-shrink-0">
-                          <button onClick={e => { e.stopPropagation(); e.preventDefault(); setEditingStatusId(editingStatusId === p.id ? null : p.id) }}
-                            className={`text-xs px-2 py-1 rounded-full font-medium border ${STATUS_COLOR[p.status]}`}>
-                            {p.status} ▾
-                          </button>
-                          {editingStatusId === p.id && (
-                            <div className="absolute right-0 bottom-7 z-50 bg-white border border-gray-200 rounded-xl shadow-xl w-36 py-1 max-h-72 overflow-y-auto">
-                              {STATUS_LIST.map(s => (
-                                <button key={s} onClick={() => updateStatus(p.id, s as Project['status'])}
-                                  className={`w-full text-left px-3 py-2 text-xs hover:bg-gray-50 ${p.status === s ? 'font-bold text-green-600' : 'text-gray-700'}`}>
-                                  {s}
-                                </button>
-                              ))}
-                            </div>
-                          )}
-                        </div>
+                        <button onClick={e => { e.stopPropagation(); e.preventDefault(); setEditingStatusId(p.id) }}
+                          className={`flex-shrink-0 text-xs px-2 py-1 rounded-full font-medium border ${STATUS_COLOR[p.status]}`}>
+                          {p.status} ▾
+                        </button>
                       </div>
                       <Link href={`/projects/${p.id}`} className="block">
                         <div className="flex items-center gap-3 text-xs text-gray-500">
@@ -178,22 +160,10 @@ export default function ProjectsPage() {
                           <td className="px-4 py-3.5 text-sm text-gray-600">{p.client_name || '-'}</td>
                           <td className="px-4 py-3.5 text-sm text-gray-600">{p.manager || '-'}</td>
                           <td className="px-4 py-3.5">
-                            <div className="relative inline-block">
-                              <button onClick={e => { e.stopPropagation(); e.preventDefault(); setEditingStatusId(editingStatusId === p.id ? null : p.id) }}
-                                className={`text-xs px-2.5 py-1 rounded-full font-medium border hover:opacity-80 transition-opacity ${STATUS_COLOR[p.status]}`}>
-                                {p.status} ▾
-                              </button>
-                              {editingStatusId === p.id && (
-                                <div className="absolute left-0 bottom-8 z-50 bg-white border border-gray-200 rounded-xl shadow-xl w-36 py-1 max-h-72 overflow-y-auto">
-                                  {STATUS_LIST.map(s => (
-                                    <button key={s} onClick={() => updateStatus(p.id, s as Project['status'])}
-                                      className={`w-full text-left px-3 py-2 text-xs hover:bg-gray-50 ${p.status === s ? 'font-bold text-green-600' : 'text-gray-700'}`}>
-                                      {s}
-                                    </button>
-                                  ))}
-                                </div>
-                              )}
-                            </div>
+                            <button onClick={e => { e.stopPropagation(); e.preventDefault(); setEditingStatusId(p.id) }}
+                              className={`text-xs px-2.5 py-1 rounded-full font-medium border hover:opacity-80 transition-opacity ${STATUS_COLOR[p.status]}`}>
+                              {p.status} ▾
+                            </button>
                           </td>
                           <td className="px-4 py-3.5 text-sm text-gray-500">
                             {p.start_date && p.end_date ? `${p.start_date} ~ ${p.end_date}` : p.start_date ? `${p.start_date} ~` : '-'}
@@ -211,6 +181,34 @@ export default function ProjectsPage() {
           </div>
         </div>
       </div>
+
+      {/* 진행단계 변경 팝업 */}
+      {editingStatusId && (() => {
+        const ep = projects.find(p => p.id === editingStatusId)
+        return (
+          <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={() => setEditingStatusId(null)}>
+            <div className="bg-white rounded-2xl w-full max-w-sm shadow-xl" onClick={e => e.stopPropagation()}>
+              <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+                <div>
+                  <h2 className="text-base font-bold text-gray-900">진행단계 변경</h2>
+                  {ep && <p className="text-xs text-gray-500 mt-0.5">{ep.name}</p>}
+                </div>
+                <button onClick={() => setEditingStatusId(null)} className="text-gray-400 text-2xl leading-none">&times;</button>
+              </div>
+              <div className="p-3 grid grid-cols-2 gap-2 max-h-[70vh] overflow-y-auto">
+                {STATUS_LIST.map(s => (
+                  <button key={s} onClick={() => updateStatus(editingStatusId, s as Project['status'])}
+                    className={`px-3 py-2.5 rounded-lg text-sm border text-center transition-colors ${
+                      ep?.status === s ? 'border-green-500 bg-green-50 text-green-700 font-bold' : 'border-gray-200 text-gray-700 hover:border-green-400 hover:bg-green-50'
+                    }`}>
+                    {s}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        )
+      })()}
 
       {/* 현장 등록 모달 */}
       {showForm && (
