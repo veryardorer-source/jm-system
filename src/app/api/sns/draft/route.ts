@@ -5,8 +5,8 @@ import { cookies } from 'next/headers'
 import Anthropic from '@anthropic-ai/sdk'
 
 const CATEGORY_BY_TYPE: Record<string, string[]> = {
-  '디자인': ['도면', '3D'],
-  '시공': ['시공전사진', '시공사진'],
+  '디자인': ['시공전사진', '도면', '3D'],
+  '시공': ['시공사진'],
   '마감': ['마감사진'],
 }
 const MAX_PHOTOS = 4
@@ -40,7 +40,7 @@ export async function POST(req: NextRequest) {
   if (!project) return NextResponse.json({ error: '현장을 찾을 수 없어요' }, { status: 404 })
 
   const categories = CATEGORY_BY_TYPE[postType]
-  const { data: files } = await adminClient
+  const { data: primaryFiles } = await adminClient
     .from('project_files')
     .select('file_name, file_url, file_type, created_at')
     .eq('project_id', projectId)
@@ -48,8 +48,21 @@ export async function POST(req: NextRequest) {
     .order('created_at', { ascending: false })
     .limit(MAX_PHOTOS)
 
-  if (!files || files.length === 0) {
+  if (!primaryFiles || primaryFiles.length === 0) {
     return NextResponse.json({ error: `${categories.join('/')} 카테고리에 사진이 없어요. 먼저 사진을 올려주세요.` }, { status: 400 })
+  }
+
+  let files = primaryFiles
+  // 내용이 풍성해지도록 — 해당 카테고리 사진이 부족하면 같은 현장의 다른 자료로 보충
+  if (files.length < MAX_PHOTOS) {
+    const { data: extraFiles } = await adminClient
+      .from('project_files')
+      .select('file_name, file_url, file_type, created_at')
+      .eq('project_id', projectId)
+      .not('category', 'in', `(${categories.join(',')})`)
+      .order('created_at', { ascending: false })
+      .limit(MAX_PHOTOS - files.length)
+    if (extraFiles?.length) files = [...files, ...extraFiles]
   }
 
   const imageBlocks = []
@@ -81,7 +94,7 @@ export async function POST(req: NextRequest) {
 
 현장명: ${project.name}
 주소: ${project.address || '비공개'}
-포스팅 단계: ${postType} (사진은 이 단계의 실제 시공 사진들)
+포스팅 단계: ${postType} (사진/이미지는 이 현장의 실제 자료들 — ${categories.join('/')} 위주, 부족하면 같은 현장의 다른 자료로 보충됨)
 채널: ${channelGuide}
 
 작성 규칙:

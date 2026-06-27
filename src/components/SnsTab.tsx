@@ -122,7 +122,7 @@ export default function SnsTab({ projectId }: { projectId: string }) {
           </div>
         </div>
       ))}
-      <p className="text-xs text-gray-400">※ AI 초안은 디자인=도면/3D, 시공=시공전·시공사진, 마감=마감사진 카테고리의 최근 사진을 보고 작성돼요. 해당 사진이 없으면 먼저 자료 탭에서 올려주세요.</p>
+      <p className="text-xs text-gray-400">※ AI 초안은 디자인=현장사진·도면·3D, 시공=시공사진, 마감=마감사진 카테고리의 최근 자료를 보고 작성돼요. 부족하면 같은 현장의 다른 자료로 보충돼요. 해당 자료가 없으면 먼저 자료 탭에서 올려주세요.</p>
     </div>
   )
 }
