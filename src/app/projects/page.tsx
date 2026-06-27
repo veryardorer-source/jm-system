@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import Sidebar from '@/components/Sidebar'
-import { supabase, Project, STATUS_LIST, STATUS_COLOR, STATUS_GROUPS } from '@/lib/supabase'
+import { supabase, Project, STATUS_LIST, STATUS_COLOR, HIDDEN_STATUSES } from '@/lib/supabase'
 
 const EMPTY_FORM = {
   name: '', client_name: '', address: '', manager: '',
@@ -21,6 +21,7 @@ export default function ProjectsPage() {
   const [error, setError] = useState('')
   const [search, setSearch] = useState('')
   const [editingStatusId, setEditingStatusId] = useState<string | null>(null)
+  const [showClosed, setShowClosed] = useState(false)
 
   useEffect(() => { fetchProjects() }, [])
 
@@ -55,7 +56,11 @@ export default function ProjectsPage() {
     fetchProjects()
   }
 
-  const filtered = projects
+  const visibleProjects = showClosed
+    ? projects
+    : projects.filter(p => !HIDDEN_STATUSES.includes(p.status as typeof HIDDEN_STATUSES[number]))
+
+  const filtered = visibleProjects
     .filter(p => filter === '전체' || p.status === filter)
     .filter(p => !search || p.name.includes(search) || p.client_name?.includes(search) || p.manager?.includes(search))
 
@@ -66,7 +71,7 @@ export default function ProjectsPage() {
         <header className="bg-white border-b border-gray-200 px-4 md:px-8 py-4 md:py-5 flex items-center justify-between flex-shrink-0">
           <div>
             <h1 className="text-xl font-bold text-gray-900">현장 관리</h1>
-            <p className="text-sm text-gray-500 mt-0.5">총 {projects.length}개 현장 · 진행중 {projects.filter(p => p.status !== '완료').length}개</p>
+            <p className="text-sm text-gray-500 mt-0.5">총 {projects.length}개 현장 · 진행중 {projects.filter(p => !HIDDEN_STATUSES.includes(p.status as typeof HIDDEN_STATUSES[number])).length}개</p>
           </div>
           <button onClick={() => setShowForm(true)}
             className="bg-green-600 text-white px-4 py-2.5 rounded-lg text-sm font-medium hover:bg-green-700">
@@ -83,25 +88,27 @@ export default function ProjectsPage() {
             <div className="flex gap-1 overflow-x-auto">
               <button onClick={() => setFilter('전체')}
                 className={`px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap ${filter === '전체' ? 'bg-gray-800 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
-                전체 ({projects.length})
+                전체 ({visibleProjects.length})
               </button>
-              {STATUS_GROUPS.map(group => (
-                <div key={group.label} className="flex gap-1">
-                  {group.statuses.map(s => {
-                    const count = projects.filter(p => p.status === s).length
-                    if (count === 0) return null
-                    return (
-                      <button key={s} onClick={() => setFilter(s)}
-                        className={`px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap border transition-colors ${
-                          filter === s ? STATUS_COLOR[s] : 'bg-white text-gray-500 border-gray-200 hover:border-gray-300'
-                        }`}>
-                        {s} ({count})
-                      </button>
-                    )
-                  })}
-                </div>
-              ))}
+              {STATUS_LIST.filter(s => showClosed || !HIDDEN_STATUSES.includes(s as typeof HIDDEN_STATUSES[number])).map(s => {
+                const count = visibleProjects.filter(p => p.status === s).length
+                if (count === 0) return null
+                return (
+                  <button key={s} onClick={() => setFilter(s)}
+                    className={`px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap border transition-colors ${
+                      filter === s ? STATUS_COLOR[s] : 'bg-white text-gray-500 border-gray-200 hover:border-gray-300'
+                    }`}>
+                    {s} ({count})
+                  </button>
+                )
+              })}
             </div>
+            <button onClick={() => { setShowClosed(v => !v); setFilter('전체') }}
+              className={`ml-auto flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap border transition-colors ${
+                showClosed ? 'bg-gray-700 text-white border-gray-700' : 'bg-white text-gray-500 border-gray-200 hover:border-gray-300'
+              }`}>
+              {showClosed ? '☑' : '☐'} 완료·중단 현장 보기
+            </button>
           </div>
 
           <div className="px-4 md:px-8 py-4 md:py-6 pb-20 md:pb-6">

@@ -287,6 +287,7 @@ public/
 - [ ] 견적서 관리
 - [ ] 고객 연락처 관리
 - [ ] 알림 기능 (공정 마감 임박)
+- [ ] SNS AI 초안 작성 (`/api/sns/draft`) — 코드는 구현 완료, Anthropic API 결제(크레딧) 등록 후 활성화 예정. 현재 무료 플랜 크레딧 부족으로 호출 실패 중. 결제 등록 후: ① `.env.local` / Vercel의 `ANTHROPIC_API_KEY` 그대로 사용 가능 ② `SnsTab.tsx`의 "✨ AI 초안 작성" 버튼 동작 테스트만 하면 됨
 
 ## 9. 알려진 이슈 / 주의사항
 

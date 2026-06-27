@@ -8,46 +8,22 @@ const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 export const supabase = createBrowserClient(supabaseUrl, supabaseKey)
 
 export const STATUS_LIST = [
-  '상담중', '현장실측', '디자인중', '디자인확정',
-  '견적작성중', '견적확정', '계약완료',
-  '시공준비', '철거', '목공', '전기/설비', '타일',
-  '도배/마루', '가구/조명', '입주청소', '완료'
+  '상담중', '디자인중', '견적중', '계약완료', '시공중', '완료', '중단'
 ] as const
 
 export type ProjectStatus = typeof STATUS_LIST[number]
 
-// 단계 그룹
-export const STATUS_GROUPS = [
-  { label: '디자인', color: 'purple', statuses: ['상담중', '현장실측', '디자인중', '디자인확정'] },
-  { label: '견적/계약', color: 'yellow', statuses: ['견적작성중', '견적확정', '계약완료'] },
-  { label: '시공', color: 'blue', statuses: ['시공준비', '철거', '목공', '전기/설비', '타일', '도배/마루', '가구/조명', '입주청소'] },
-  { label: '완료', color: 'green', statuses: ['완료'] },
-]
+// 목록에서 기본적으로 숨기는 단계 (완료/중단된 현장) — 별도로 선택해야 보임
+export const HIDDEN_STATUSES = ['완료', '중단'] as const
 
 export const STATUS_COLOR: Record<string, string> = {
-  '상담중':    'bg-purple-50 text-purple-600 border-purple-200',
-  '현장실측':  'bg-purple-100 text-purple-700 border-purple-200',
-  '디자인중':  'bg-purple-200 text-purple-800 border-purple-300',
-  '디자인확정':'bg-purple-300 text-purple-900 border-purple-400',
-  '견적작성중':'bg-yellow-100 text-yellow-700 border-yellow-200',
-  '견적확정':  'bg-yellow-200 text-yellow-800 border-yellow-300',
-  '계약완료':  'bg-yellow-300 text-yellow-900 border-yellow-400',
-  '시공준비':  'bg-green-50 text-green-600 border-blue-200',
-  '철거':      'bg-green-100 text-green-700 border-blue-200',
-  '목공':      'bg-blue-200 text-green-800 border-green-300',
-  '전기/설비': 'bg-green-300 text-blue-900 border-green-300',
-  '타일':      'bg-cyan-200 text-cyan-800 border-cyan-300',
-  '도배/마루': 'bg-cyan-300 text-cyan-900 border-cyan-300',
-  '가구/조명': 'bg-teal-200 text-teal-800 border-teal-300',
-  '입주청소':  'bg-teal-300 text-teal-900 border-teal-300',
-  '완료':      'bg-green-100 text-green-700 border-green-200',
-}
-
-export const GROUP_BG: Record<string, string> = {
-  'purple': 'bg-purple-50 border-purple-200',
-  'yellow': 'bg-yellow-50 border-yellow-200',
-  'blue':   'bg-green-50 border-blue-200',
-  'green':  'bg-green-50 border-green-200',
+  '상담중':   'bg-purple-50 text-purple-600 border-purple-200',
+  '디자인중': 'bg-purple-200 text-purple-800 border-purple-300',
+  '견적중':   'bg-yellow-100 text-yellow-700 border-yellow-200',
+  '계약완료': 'bg-yellow-300 text-yellow-900 border-yellow-400',
+  '시공중':   'bg-green-200 text-green-800 border-green-300',
+  '완료':     'bg-green-100 text-green-700 border-green-200',
+  '중단':     'bg-red-50 text-red-500 border-red-200',
 }
 
 export type Project = {

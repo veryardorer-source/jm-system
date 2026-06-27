@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef, useCallback } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Sidebar from '@/components/Sidebar'
-import { supabase, Project, ProjectFile, Schedule, ProjectCost, ProjectAssignment, STATUS_LIST } from '@/lib/supabase'
+import { supabase, Project, ProjectFile, Schedule, ProjectCost, ProjectAssignment, STATUS_LIST, STATUS_COLOR } from '@/lib/supabase'
 import { useAuth } from '@/lib/auth-context'
 import { notifyOthers } from '@/lib/notify'
 import SnsTab from '@/components/SnsTab'
@@ -31,13 +31,6 @@ async function toBrowserSafeImage(file: File): Promise<{ file: File; ext: string
   } catch {
     return { file, ext } // 변환 실패 시 원본 그대로 업로드 (다운로드는 가능)
   }
-}
-
-const STATUS_COLOR: Record<string, string> = {
-  '디자인진행중': 'bg-purple-100 text-purple-700',
-  '견적진행중': 'bg-yellow-100 text-yellow-700',
-  '시공진행중': 'bg-blue-100 text-blue-700',
-  '완료': 'bg-green-100 text-green-700',
 }
 
 export default function ProjectDetail() {

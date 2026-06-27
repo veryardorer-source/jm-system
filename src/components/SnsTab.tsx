@@ -15,7 +15,7 @@ const STATUS_STYLE: Record<string, string> = {
   '발행완료': 'bg-green-100 text-green-700 border-green-300',
 }
 
-type Slot = { status: string; content: string; link: string; saving?: boolean; saved?: boolean }
+type Slot = { status: string; content: string; link: string; saving?: boolean; saved?: boolean; drafting?: boolean }
 
 export default function SnsTab({ projectId }: { projectId: string }) {
   const [slots, setSlots] = useState<Record<string, Slot>>({})
@@ -56,6 +56,25 @@ export default function SnsTab({ projectId }: { projectId: string }) {
     if (error) alert('저장 실패: ' + error.message)
   }
 
+  async function generateDraft(ch: string, t: string) {
+    const k = keyOf(ch, t)
+    update(k, { drafting: true })
+    try {
+      const res = await fetch('/api/sns/draft', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ projectId, channel: ch, postType: t }),
+      })
+      const data = await res.json()
+      if (!res.ok) { alert(data.error || 'AI 초안 작성 실패'); return }
+      update(k, { content: data.content, status: slots[k].status === '계획중' ? '작성중' : slots[k].status })
+    } catch {
+      alert('AI 초안 작성 중 오류가 발생했어요')
+    } finally {
+      update(k, { drafting: false })
+    }
+  }
+
   if (loading) return <div className="text-center text-gray-400 py-16">불러오는 중...</div>
 
   return (
@@ -77,8 +96,14 @@ export default function SnsTab({ projectId }: { projectId: string }) {
                       {STATUSES.map(st => <option key={st} value={st}>{st}</option>)}
                     </select>
                   </div>
+                  <div className="flex justify-end">
+                    <button onClick={() => generateDraft(ch.key, t)} disabled={s.drafting}
+                      className="text-xs border border-green-300 text-green-700 bg-green-50 px-3 py-1.5 rounded-lg hover:bg-green-100 disabled:opacity-50">
+                      {s.drafting ? 'AI 작성 중...' : '✨ AI 초안 작성'}
+                    </button>
+                  </div>
                   <textarea value={s.content} onChange={e => update(k, { content: e.target.value })}
-                    placeholder="초안 내용 (제목/본문)을 적어두세요"
+                    placeholder="초안 내용 (제목/본문)을 적어두세요. 위 'AI 초안 작성'을 누르면 해당 단계 사진을 보고 자동으로 채워줘요."
                     rows={4}
                     className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 resize-none" />
                   <input value={s.link} onChange={e => update(k, { link: e.target.value })}
@@ -97,7 +122,7 @@ export default function SnsTab({ projectId }: { projectId: string }) {
           </div>
         </div>
       ))}
-      <p className="text-xs text-gray-400">※ 다음 단계: 현장 사진을 골라 AI가 초안을 자동 작성하는 기능을 추가할 수 있어요.</p>
+      <p className="text-xs text-gray-400">※ AI 초안은 디자인=도면/3D, 시공=시공전·시공사진, 마감=마감사진 카테고리의 최근 사진을 보고 작성돼요. 해당 사진이 없으면 먼저 자료 탭에서 올려주세요.</p>
     </div>
   )
 }

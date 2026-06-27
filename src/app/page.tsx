@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import Sidebar from '@/components/Sidebar'
-import { supabase, Project, ProjectAssignment, Schedule, STATUS_COLOR, STATUS_GROUPS } from '@/lib/supabase'
+import { supabase, Project, ProjectAssignment, Schedule, STATUS_COLOR, STATUS_LIST, HIDDEN_STATUSES } from '@/lib/supabase'
 
 type ViewMode = 'card' | 'timeline'
 
@@ -29,7 +29,7 @@ const [loading, setLoading] = useState(true)
     setLoading(false)
   }
 
-  const activeProjects = projects.filter(p => p.status !== '완료')
+  const activeProjects = projects.filter(p => !HIDDEN_STATUSES.includes(p.status as typeof HIDDEN_STATUSES[number]))
   const completedProjects = projects.filter(p => p.status === '완료')
 
   // 직원별 업무 정리
@@ -38,7 +38,7 @@ const [loading, setLoading] = useState(true)
   // project_assignments 에서
   assignments.forEach(a => {
     const project = projects.find(p => p.id === a.project_id)
-    if (!project || project.status === '완료') return
+    if (!project || HIDDEN_STATUSES.includes(project.status as typeof HIDDEN_STATUSES[number])) return
     if (!employeeMap[a.employee_name]) employeeMap[a.employee_name] = []
     employeeMap[a.employee_name].push({ project, task: a.task, role: a.role })
   })
@@ -121,12 +121,12 @@ const [loading, setLoading] = useState(true)
                   <TimelineView projects={activeProjects} schedules={schedules} onRefresh={fetchAll} />
                 ) : (
                   <div className="grid grid-cols-1 gap-3">
-                    {STATUS_GROUPS.filter(g => g.label !== '완료').map(group => {
-                      const groupProjects = activeProjects.filter(p => group.statuses.includes(p.status))
+                    {STATUS_LIST.filter(s => !HIDDEN_STATUSES.includes(s as typeof HIDDEN_STATUSES[number])).map(status => {
+                      const groupProjects = activeProjects.filter(p => p.status === status)
                       if (groupProjects.length === 0) return null
                       return (
-                        <div key={group.label}>
-                          <p className="text-xs font-semibold text-gray-400 uppercase mb-2">{group.label} 단계</p>
+                        <div key={status}>
+                          <p className="text-xs font-semibold text-gray-400 uppercase mb-2">{status} 단계</p>
                           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 mb-4">
                             {groupProjects.map(p => (
                               <Link key={p.id} href={`/projects/${p.id}`}>
@@ -211,14 +211,6 @@ const [loading, setLoading] = useState(true)
     </div>
   )
 }
-
-// 공정 진행바 컴포넌트
-const ALL_STATUSES = [
-  '상담중','현장실측','디자인중','디자인확정',
-  '견적작성중','견적확정','계약완료',
-  '시공준비','철거','목공','전기/설비','타일',
-  '도배/마루','가구/조명','입주청소','완료'
-]
 
 // 상태별 색상
 const PHASE_STATUS_COLOR: Record<string, string> = {
@@ -455,13 +447,12 @@ function TimelineView({ projects, schedules, onRefresh }: {
 }
 
 function ProgressBar({ status }: { status: string }) {
-  const currentIndex = ALL_STATUSES.indexOf(status)
-  const progress = Math.round(((currentIndex + 1) / ALL_STATUSES.length) * 100)
+  const currentIndex = STATUS_LIST.indexOf(status as typeof STATUS_LIST[number])
+  const progress = Math.round(((currentIndex + 1) / STATUS_LIST.length) * 100)
 
   const color =
-    currentIndex <= 3 ? 'bg-purple-400' :
-    currentIndex <= 6 ? 'bg-yellow-400' :
-    currentIndex === 15 ? 'bg-green-400' :
+    currentIndex <= 1 ? 'bg-purple-400' :
+    currentIndex <= 3 ? 'bg-yellow-400' :
     'bg-green-400'
 
   return (
