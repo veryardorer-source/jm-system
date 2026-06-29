@@ -29,6 +29,7 @@ export default function ChatPage() {
   const { profile } = useAuth()
   const me = profile?.id
   const readOnly = !canEdit(profile)
+  const [dragOver, setDragOver] = useState(false)
   const [people, setPeople] = useState<Person[]>([])
   const [rooms, setRooms] = useState<Room[]>([])
   const [active, setActive] = useState<Active>(null)
@@ -228,9 +229,21 @@ export default function ChatPage() {
                   <button onClick={() => setActive(null)} className="md:hidden text-gray-400 text-sm">←</button>
                   <span className="font-bold text-gray-900">{active.kind === 'room' ? '# ' : ''}{activeName}</span>
                 </header>
-                <div className="flex-1 overflow-auto px-4 py-4 pb-24 md:pb-4 bg-gray-50">
+                <div className="relative flex-1 overflow-auto px-4 py-4 pb-24 md:pb-4 bg-gray-50"
+                  onDragOver={e => { if (readOnly) return; e.preventDefault(); setDragOver(true) }}
+                  onDragLeave={e => { e.preventDefault(); setDragOver(false) }}
+                  onDrop={e => {
+                    e.preventDefault(); setDragOver(false)
+                    if (readOnly) return
+                    Array.from(e.dataTransfer.files).forEach(f => sendFile(f))
+                  }}>
+                  {dragOver && !readOnly && (
+                    <div className="absolute inset-2 z-10 border-2 border-dashed border-green-500 bg-green-50/80 rounded-xl flex items-center justify-center pointer-events-none">
+                      <p className="text-green-700 font-medium text-sm">여기에 놓으면 파일이 전송돼요 📎</p>
+                    </div>
+                  )}
                   {messages.length === 0 ? (
-                    <div className="text-center text-gray-400 py-10 text-sm">아직 대화가 없어요. 첫 메시지를 남겨보세요!</div>
+                    <div className="text-center text-gray-400 py-10 text-sm">아직 대화가 없어요. 첫 메시지를 남겨보세요!<br/><span className="text-xs">파일을 끌어다 놓아도 전송됩니다</span></div>
                   ) : (
                     <div className="flex flex-col gap-2 max-w-2xl mx-auto">
                       {messages.map(m => {
