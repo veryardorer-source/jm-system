@@ -7,6 +7,7 @@ import { supabase } from '@/lib/supabase'
 type Photo = {
   id: string
   image_url: string
+  images?: string[] | null
   reason: string
   requested_by: string
   created_at: string
@@ -21,6 +22,7 @@ export default function WithdrawalsPage() {
   const [requestedBy, setRequestedBy] = useState('')
   const [uploading, setUploading] = useState(false)
   const [uploadCurrent, setUploadCurrent] = useState(0)
+  const [viewer, setViewer] = useState<{ images: string[]; reason: string } | null>(null)
 
   useEffect(() => { fetchPhotos() }, [])
 
@@ -35,6 +37,7 @@ export default function WithdrawalsPage() {
     e.preventDefault()
     if (selectedFiles.length === 0) return
     setUploading(true)
+    const urls: string[] = []
     for (let i = 0; i < selectedFiles.length; i++) {
       setUploadCurrent(i + 1)
       const file = selectedFiles[i]
@@ -43,17 +46,12 @@ export default function WithdrawalsPage() {
       const { data: uploadData } = await supabase.storage.from('uploads').upload(path, file, {
         contentType: file.type || 'image/jpeg',
       })
-      if (uploadData) {
-        const { data: urlData } = supabase.storage.from('uploads').getPublicUrl(path)
-        await supabase.from('withdrawal_requests').insert([{
-          image_url: urlData.publicUrl,
-          reason,
-          requested_by: requestedBy,
-          status: '요청',
-          amount: 0,
-          recipient: '',
-        }])
-      }
+      if (uploadData) urls.push(supabase.storage.from('uploads').getPublicUrl(path).data.publicUrl)
+    }
+    if (urls.length > 0) {
+      await supabase.from('withdrawal_requests').insert([{
+        image_url: urls[0], images: urls, reason, requested_by: requestedBy, status: '요청', amount: 0, recipient: '',
+      }])
     }
     setSelectedFiles([])
     setReason('')
@@ -66,8 +64,9 @@ export default function WithdrawalsPage() {
 
   async function deletePhoto(photo: Photo) {
     if (!confirm('삭제할까요?')) return
-    const path = photo.image_url.split('/uploads/')[1]
-    if (path) await supabase.storage.from('uploads').remove([path])
+    const imgs = (photo.images && photo.images.length ? photo.images : [photo.image_url]).filter(Boolean)
+    const paths = imgs.map(u => u.split('/uploads/')[1]).filter(Boolean)
+    if (paths.length) await supabase.storage.from('uploads').remove(paths)
     await supabase.from('withdrawal_requests').delete().eq('id', photo.id)
     fetchPhotos()
   }
@@ -97,13 +96,18 @@ export default function WithdrawalsPage() {
             </div>
           ) : (
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-              {photos.map(p => (
+              {photos.map(p => {
+                const imgs = (p.images && p.images.length ? p.images : [p.image_url]).filter(Boolean)
+                return (
                 <div key={p.id} className="bg-white rounded-xl border border-gray-200 overflow-hidden group">
-                  <a href={p.image_url} target="_blank" rel="noopener noreferrer">
-                    <img src={p.image_url} alt="출금요청" className="w-full aspect-square object-cover" />
-                  </a>
+                  <button onClick={() => setViewer({ images: imgs, reason: p.reason || '' })} className="relative block w-full">
+                    <img src={imgs[0]} alt="출금요청" className="w-full aspect-square object-cover" />
+                    {imgs.length > 1 && (
+                      <span className="absolute top-1.5 right-1.5 bg-black/60 text-white text-xs px-2 py-0.5 rounded-full">📷 {imgs.length}장</span>
+                    )}
+                  </button>
                   <div className="px-3 py-2">
-                    {p.reason && <p className="text-xs text-gray-700 truncate">{p.reason}</p>}
+                    {p.reason && <p className="text-xs text-gray-700 line-clamp-2 whitespace-pre-wrap">{p.reason}</p>}
                     <div className="flex items-center justify-between mt-1">
                       <span className="text-xs text-gray-400">{p.requested_by || ''} {new Date(p.created_at).toLocaleDateString('ko-KR', { month: 'numeric', day: 'numeric' })}</span>
                       <button onClick={() => deletePhoto(p)}
@@ -111,11 +115,25 @@ export default function WithdrawalsPage() {
                     </div>
                   </div>
                 </div>
-              ))}
+              )})}
             </div>
           )}
         </div>
       </div>
+
+      {viewer && (
+        <div className="fixed inset-0 bg-black/80 z-50 overflow-auto p-4" onClick={() => setViewer(null)}>
+          <button onClick={() => setViewer(null)} className="fixed top-4 right-4 text-white text-3xl leading-none z-10">&times;</button>
+          <div className="max-w-2xl mx-auto flex flex-col gap-3 py-2" onClick={e => e.stopPropagation()}>
+            {viewer.reason && (
+              <div className="bg-white rounded-xl px-4 py-3 text-sm whitespace-pre-wrap">{viewer.reason}</div>
+            )}
+            {viewer.images.map((u, i) => (
+              <img key={i} src={u} alt="" className="w-full rounded-lg" />
+            ))}
+          </div>
+        </div>
+      )}
 
       {showForm && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
