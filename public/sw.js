@@ -1,5 +1,6 @@
 // JM관리 서비스워커 — Web Share Target(공유 대상) 처리 전용.
 // 앱 자산 캐싱은 하지 않는다(POST /share-target 외에는 전부 네트워크로 통과 → 앱 동작에 영향 없음).
+// v3 (2026-06-29): 공유 텍스트 수신 지원 — 폰에서 강제 갱신용 버전 표기
 
 self.addEventListener('install', () => self.skipWaiting())
 self.addEventListener('activate', (event) => event.waitUntil(self.clients.claim()))

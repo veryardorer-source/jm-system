@@ -35,7 +35,8 @@ export default function WithdrawalsPage() {
 
   async function handleUpload(e: React.FormEvent) {
     e.preventDefault()
-    if (selectedFiles.length === 0) return
+    // 사진이 없어도 글(사유)만 있으면 저장 가능
+    if (selectedFiles.length === 0 && !reason.trim()) return
     setUploading(true)
     const urls: string[] = []
     for (let i = 0; i < selectedFiles.length; i++) {
@@ -48,9 +49,9 @@ export default function WithdrawalsPage() {
       })
       if (uploadData) urls.push(supabase.storage.from('uploads').getPublicUrl(path).data.publicUrl)
     }
-    if (urls.length > 0) {
+    if (urls.length > 0 || reason.trim()) {
       await supabase.from('withdrawal_requests').insert([{
-        image_url: urls[0], images: urls, reason, requested_by: requestedBy, status: '요청', amount: 0, recipient: '',
+        image_url: urls[0] || '', images: urls, reason, requested_by: requestedBy, status: '요청', amount: 0, recipient: '',
       }])
     }
     setSelectedFiles([])
@@ -151,26 +152,30 @@ export default function WithdrawalsPage() {
               <button onClick={() => { setShowForm(false); setSelectedFiles([]) }} className="text-gray-400 text-2xl">&times;</button>
             </div>
             <form onSubmit={handleUpload} className="px-6 py-5 flex flex-col gap-4">
-              <MultiFileZone files={selectedFiles} onChange={setSelectedFiles} />
               <div>
-                <label className="text-sm font-medium text-gray-700 block mb-1.5">사유</label>
-                <input value={reason} onChange={e => setReason(e.target.value)} placeholder="일당, 자재비 등"
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
+                <label className="text-sm font-medium text-gray-700 block mb-1.5">사진 <span className="text-gray-400 font-normal">(선택 · 글만 저장도 가능)</span></label>
+                <MultiFileZone files={selectedFiles} onChange={setSelectedFiles} />
               </div>
               <div>
-                <label className="text-sm font-medium text-gray-700 block mb-1.5">요청자</label>
+                <label className="text-sm font-medium text-gray-700 block mb-1.5">사유 / 내용</label>
+                <textarea value={reason} onChange={e => setReason(e.target.value)} rows={4}
+                  placeholder="카톡 내용을 붙여넣거나 입력 (일당, 자재비, 송금내역 등)"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 resize-y leading-relaxed" />
+              </div>
+              <div>
+                <label className="text-sm font-medium text-gray-700 block mb-1.5">요청자 <span className="text-gray-400 font-normal">(선택)</span></label>
                 <input value={requestedBy} onChange={e => setRequestedBy(e.target.value)} placeholder="이름"
                   className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
               </div>
-              {uploading && (
+              {uploading && selectedFiles.length > 0 && (
                 <p className="text-sm text-green-600 text-center">{uploadCurrent}/{selectedFiles.length} 업로드 중...</p>
               )}
               <div className="flex gap-3">
                 <button type="button" onClick={() => { setShowForm(false); setSelectedFiles([]) }}
                   className="flex-1 border border-gray-300 text-gray-700 py-2.5 rounded-lg text-sm">취소</button>
-                <button type="submit" disabled={uploading || selectedFiles.length === 0}
+                <button type="submit" disabled={uploading || (selectedFiles.length === 0 && !reason.trim())}
                   className="flex-1 bg-green-600 text-white py-2.5 rounded-lg text-sm font-medium disabled:opacity-50">
-                  {uploading ? '업로드 중...' : `${selectedFiles.length > 1 ? `${selectedFiles.length}장 ` : ''}업로드`}
+                  {uploading ? '저장 중...' : selectedFiles.length > 0 ? `${selectedFiles.length > 1 ? `${selectedFiles.length}장 ` : ''}업로드` : '글 저장'}
                 </button>
               </div>
             </form>
