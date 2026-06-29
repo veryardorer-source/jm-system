@@ -95,11 +95,11 @@ export default function WithdrawalsPage() {
         <header className="bg-white border-b border-gray-200 px-4 md:px-8 py-4 md:py-5 flex items-center justify-between flex-shrink-0">
           <div>
             <h1 className="text-xl font-bold text-gray-900">출금 요청</h1>
-            <p className="text-sm text-gray-500 mt-0.5">총 {photos.length}장</p>
+            <p className="text-sm text-gray-500 mt-0.5">총 {photos.length}건 · 사진과 글을 한 번에 등록</p>
           </div>
           <button onClick={() => setShowForm(true)}
             className="bg-green-600 text-white px-4 py-2.5 rounded-lg text-sm font-medium hover:bg-green-700">
-            + 사진 업로드
+            + 출금 추가
           </button>
         </header>
 
@@ -110,6 +110,7 @@ export default function WithdrawalsPage() {
             <div className="bg-white rounded-xl border border-gray-200 text-center py-16 text-gray-400">
               <p className="text-4xl mb-3">💸</p>
               <p className="font-medium">등록된 출금 요청이 없어요</p>
+              <p className="text-xs mt-2 text-gray-400">우측 상단 <span className="text-green-600 font-medium">+ 출금 추가</span> → 사진 선택 + 글 붙여넣기 → 저장<br/>(아이폰·안드로이드 모두 동일)</p>
             </div>
           ) : (
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
@@ -179,7 +180,7 @@ export default function WithdrawalsPage() {
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl w-full max-w-sm shadow-xl">
             <div className="flex items-center justify-between px-6 py-5 border-b border-gray-100">
-              <h2 className="text-lg font-bold">출금 요청 업로드</h2>
+              <h2 className="text-lg font-bold">출금 요청 추가</h2>
               <button onClick={() => { setShowForm(false); setSelectedFiles([]) }} className="text-gray-400 text-2xl">&times;</button>
             </div>
             <form onSubmit={handleUpload} className="px-6 py-5 flex flex-col gap-4">
