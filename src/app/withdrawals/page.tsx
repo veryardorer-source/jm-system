@@ -22,9 +22,25 @@ export default function WithdrawalsPage() {
   const [requestedBy, setRequestedBy] = useState('')
   const [uploading, setUploading] = useState(false)
   const [uploadCurrent, setUploadCurrent] = useState(0)
-  const [viewer, setViewer] = useState<{ images: string[]; reason: string } | null>(null)
+  const [viewer, setViewer] = useState<Photo | null>(null)
+  const [viewerReason, setViewerReason] = useState('')
+  const [savingReason, setSavingReason] = useState(false)
 
   useEffect(() => { fetchPhotos() }, [])
+
+  function openViewer(p: Photo) {
+    setViewer(p)
+    setViewerReason(p.reason || '')
+  }
+
+  async function saveViewerReason() {
+    if (!viewer) return
+    setSavingReason(true)
+    await supabase.from('withdrawal_requests').update({ reason: viewerReason }).eq('id', viewer.id)
+    setPhotos(ps => ps.map(x => x.id === viewer.id ? { ...x, reason: viewerReason } : x))
+    setSavingReason(false)
+    setViewer(null)
+  }
 
   async function fetchPhotos() {
     setLoading(true)
@@ -101,7 +117,7 @@ export default function WithdrawalsPage() {
                 const imgs = (p.images && p.images.length ? p.images : [p.image_url]).filter(Boolean)
                 return (
                 <div key={p.id} className="bg-white rounded-xl border border-gray-200 overflow-hidden group">
-                  <button onClick={() => setViewer({ images: imgs, reason: p.reason || '' })} className="relative block w-full">
+                  <button onClick={() => openViewer(p)} className="relative block w-full">
                     {imgs.length > 0 ? (
                       <>
                         <img src={imgs[0]} alt="출금요청" className="w-full aspect-square object-cover" />
@@ -120,7 +136,7 @@ export default function WithdrawalsPage() {
                     <div className="flex items-center justify-between mt-1">
                       <span className="text-xs text-gray-400">{p.requested_by || ''} {new Date(p.created_at).toLocaleDateString('ko-KR', { month: 'numeric', day: 'numeric' })}</span>
                       <button onClick={() => deletePhoto(p)}
-                        className="text-xs text-red-400 hover:text-red-600 opacity-0 group-hover:opacity-100 transition-opacity">삭제</button>
+                        className="text-xs text-red-500 hover:text-red-700 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity px-2 py-0.5">삭제</button>
                     </div>
                   </div>
                 </div>
@@ -130,19 +146,34 @@ export default function WithdrawalsPage() {
         </div>
       </div>
 
-      {viewer && (
+      {viewer && (() => {
+        const vImgs = (viewer.images && viewer.images.length ? viewer.images : [viewer.image_url]).filter(Boolean)
+        return (
         <div className="fixed inset-0 bg-black/80 z-50 overflow-auto p-4" onClick={() => setViewer(null)}>
           <button onClick={() => setViewer(null)} className="fixed top-4 right-4 text-white text-3xl leading-none z-10">&times;</button>
           <div className="max-w-2xl mx-auto flex flex-col gap-3 py-2" onClick={e => e.stopPropagation()}>
-            {viewer.reason && (
-              <div className="bg-white rounded-xl px-4 py-3 text-sm whitespace-pre-wrap">{viewer.reason}</div>
-            )}
-            {viewer.images.map((u, i) => (
+            {/* 글 추가/수정 */}
+            <div className="bg-white rounded-xl px-4 py-3">
+              <label className="text-sm font-semibold text-gray-700 block mb-1.5">사유 / 내용</label>
+              <textarea value={viewerReason} onChange={e => setViewerReason(e.target.value)} rows={4}
+                placeholder="카톡 내용을 붙여넣거나 입력하세요"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 resize-y leading-relaxed" />
+              <div className="flex gap-2 mt-2">
+                <button onClick={saveViewerReason} disabled={savingReason}
+                  className="flex-1 bg-green-600 text-white py-2 rounded-lg text-sm font-medium disabled:opacity-50">
+                  {savingReason ? '저장 중...' : '글 저장'}
+                </button>
+                <button onClick={() => { const v = viewer; setViewer(null); deletePhoto(v) }}
+                  className="px-4 border border-red-200 text-red-500 py-2 rounded-lg text-sm font-medium hover:bg-red-50">삭제</button>
+              </div>
+            </div>
+            {vImgs.map((u, i) => (
               <img key={i} src={u} alt="" className="w-full rounded-lg" />
             ))}
           </div>
         </div>
-      )}
+        )
+      })()}
 
       {showForm && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
