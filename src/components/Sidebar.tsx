@@ -13,6 +13,7 @@ const NAV_ITEMS = [
   { href: '/projects', label: '현장 관리', icon: '🏗️' },
   { href: '/receipts', label: '영수증', icon: '🧾' },
   { href: '/withdrawals', label: '출금 요청', icon: '💸' },
+  { href: '/payments', label: '수금 관리', icon: '💰' },
   { href: '/documents', label: '회사 서류', icon: '🗂️' },
   { href: '/chat', label: '채팅', icon: '💬' },
   { href: '/notifications', label: '알림', icon: '🔔' },
