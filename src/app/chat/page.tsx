@@ -13,6 +13,8 @@ type Message = {
   room_id: string | null
   content: string
   image_url?: string | null
+  file_url?: string | null
+  file_name?: string | null
   created_at: string
 }
 type Person = { id: string; name: string }
@@ -130,6 +132,24 @@ export default function ChatPage() {
     if (error) alert('전송 실패: ' + error.message)
   }
 
+  async function sendFile(file: File) {
+    if (!file || !active) return
+    // 이미지는 미리보기되도록 기존 이미지 전송으로
+    if ((file.type || '').startsWith('image/')) { sendImage(file); return }
+    setSending(true)
+    const ext = file.name.split('.').pop() || 'bin'
+    const path = `chat/${Date.now()}.${ext}`
+    const { error: upErr } = await supabase.storage.from('uploads').upload(path, file, { contentType: file.type || 'application/octet-stream', upsert: true })
+    if (upErr) { setSending(false); alert('파일 업로드 실패: ' + upErr.message); return }
+    const { data: urlData } = supabase.storage.from('uploads').getPublicUrl(path)
+    const recipient_id = active.kind === 'dm' ? active.id : null
+    const room_id = active.kind === 'room' ? active.id : null
+    const { error } = await supabase.from('messages').insert([{ sender_id: me ?? null, sender_name: profile?.name ?? '직원', recipient_id, room_id, content: '', file_url: urlData.publicUrl, file_name: file.name }])
+    if (!error) await pushNotif('📎 ' + file.name)
+    setSending(false)
+    if (error) alert('전송 실패: ' + error.message)
+  }
+
   async function createRoom(e: React.FormEvent) {
     e.preventDefault()
     if (!me || !roomName.trim() || picked.size === 0) return
@@ -225,6 +245,15 @@ export default function ChatPage() {
                                   <img src={m.image_url} alt="" onClick={() => window.open(m.image_url!, '_blank')}
                                     className="rounded-2xl max-w-[220px] max-h-[260px] object-cover cursor-pointer border border-gray-200" />
                                 )}
+                                {m.file_url && (
+                                  <a href={m.file_url} target="_blank" rel="noreferrer" download={m.file_name || true}
+                                    className={`flex items-center gap-2 px-3 py-2.5 rounded-2xl text-sm border max-w-[260px] ${
+                                      mine ? 'bg-green-600 text-white border-green-600' : 'bg-white border-gray-200 text-gray-800'
+                                    }`}>
+                                    <span className="text-lg flex-shrink-0">📎</span>
+                                    <span className="truncate underline">{m.file_name || '파일'}</span>
+                                  </a>
+                                )}
                                 {m.content && (
                                   <div className={`px-3 py-2 rounded-2xl text-sm whitespace-pre-wrap break-words ${
                                     mine ? 'bg-green-600 text-white rounded-br-sm' : 'bg-white border border-gray-200 text-gray-800 rounded-bl-sm'
@@ -251,6 +280,11 @@ export default function ChatPage() {
                       🖼️
                       <input type="file" accept="image/*" className="hidden"
                         onChange={e => { const f = e.target.files?.[0]; if (f) sendImage(f); e.currentTarget.value = '' }} />
+                    </label>
+                    <label className="flex-shrink-0 flex items-center justify-center w-10 h-10 rounded-full border border-gray-300 text-lg cursor-pointer hover:bg-gray-50" title="파일 보내기">
+                      📎
+                      <input type="file" className="hidden"
+                        onChange={e => { const f = e.target.files?.[0]; if (f) sendFile(f); e.currentTarget.value = '' }} />
                     </label>
                     <input value={text} onChange={e => setText(e.target.value)}
                       placeholder="메시지를 입력하세요..."
