@@ -247,9 +247,9 @@ export default function SharePage() {
                   <label className="text-sm font-medium text-gray-700 block mb-1.5">
                     {dest === 'withdrawal' ? '사유 / 메모' : '메모'} <span className="text-gray-400 font-normal">(선택)</span>
                   </label>
-                  <input value={reason} onChange={e => setReason(e.target.value)}
+                  <textarea value={reason} onChange={e => setReason(e.target.value)} rows={4}
                     placeholder={dest === 'withdrawal' ? '예) OO현장 자재대금 송금' : '예) OO현장 자재 영수증'}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 resize-y leading-relaxed" />
                 </div>
               )}
 
