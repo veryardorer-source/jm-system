@@ -10,6 +10,7 @@ import { notifyOthers } from '@/lib/notify'
 const CATEGORY_LIST = ['시공전사진', '시공사진', '마감사진', '도면', '3D', '미팅내용', '고객요청', '기타']
 
 type Proj = { id: string; name: string }
+type Dest = 'project' | 'receipt' | 'withdrawal'
 
 async function readSharedFiles(): Promise<File[]> {
   if (typeof caches === 'undefined') return []
@@ -38,9 +39,11 @@ export default function SharePage() {
   const router = useRouter()
   const [files, setFiles] = useState<File[]>([])
   const [projects, setProjects] = useState<Proj[]>([])
+  const [dest, setDest] = useState<Dest>('project')
   const [projectId, setProjectId] = useState('')
   const [category, setCategory] = useState('시공전사진')
   const [memo, setMemo] = useState('')
+  const [reason, setReason] = useState('')
   const [loading, setLoading] = useState(true)
   const [uploading, setUploading] = useState(false)
   const [progress, setProgress] = useState(0)
@@ -62,31 +65,60 @@ export default function SharePage() {
     return () => { active = false }
   }, [])
 
+  async function uploadOne(file: File, i: number, folder: string) {
+    const ext = file.name.split('.').pop() || 'bin'
+    const path = `${folder}/${Date.now()}_${i}.${ext}`
+    const { error } = await supabase.storage.from('uploads').upload(path, file, {
+      contentType: file.type || 'application/octet-stream', upsert: true,
+    })
+    if (error) { alert('업로드 실패: ' + error.message); return null }
+    return supabase.storage.from('uploads').getPublicUrl(path).data.publicUrl
+  }
+
   async function handleUpload() {
-    if (!projectId || files.length === 0) return
+    if (files.length === 0) return
+    if (dest === 'project' && !projectId) return
     setUploading(true)
+    const who = profile?.name || ''
     for (let i = 0; i < files.length; i++) {
       setProgress(Math.round((i / files.length) * 100))
       const file = files[i]
-      const ext = file.name.split('.').pop() || 'bin'
-      const path = `files/${projectId}/${Date.now()}_${i}.${ext}`
-      const { error: upErr } = await supabase.storage.from('uploads').upload(path, file, {
-        contentType: file.type || 'application/octet-stream', upsert: true,
-      })
-      if (upErr) { alert('업로드 실패: ' + upErr.message); continue }
-      const { data: urlData } = supabase.storage.from('uploads').getPublicUrl(path)
-      await supabase.from('project_files').insert([{
-        project_id: projectId, file_name: file.name, file_url: urlData.publicUrl,
-        file_type: file.type || '', category, memo: memo || '', uploaded_by: '',
-      }])
+      if (dest === 'project') {
+        const url = await uploadOne(file, i, `files/${projectId}`)
+        if (url) await supabase.from('project_files').insert([{
+          project_id: projectId, file_name: file.name, file_url: url,
+          file_type: file.type || '', category, memo: memo || '', uploaded_by: '',
+        }])
+      } else if (dest === 'receipt') {
+        const url = await uploadOne(file, i, 'receipts')
+        if (url) await supabase.from('receipts').insert([{ image_url: url, memo: reason || '', uploaded_by: who }])
+      } else {
+        const url = await uploadOne(file, i, 'withdrawals')
+        if (url) await supabase.from('withdrawal_requests').insert([{
+          image_url: url, reason: reason || '', requested_by: who, status: '요청', amount: 0, recipient: '',
+        }])
+      }
     }
     setProgress(100)
-    const proj = projects.find(p => p.id === projectId)
-    notifyOthers(profile?.id, { type: 'file', title: `${proj?.name || '현장'} · 공유 자료 ${files.length}건`, body: `${category} 자료가 추가되었습니다`, link: `/projects/${projectId}` })
+    if (dest === 'project') {
+      const proj = projects.find(p => p.id === projectId)
+      notifyOthers(profile?.id, { type: 'file', title: `${proj?.name || '현장'} · 공유 자료 ${files.length}건`, body: `${category} 자료가 추가되었습니다`, link: `/projects/${projectId}` })
+    } else if (dest === 'receipt') {
+      notifyOthers(profile?.id, { type: 'receipt', title: `새 영수증 ${files.length}건`, body: reason || '영수증이 등록되었습니다', link: '/receipts' })
+    } else {
+      notifyOthers(profile?.id, { type: 'withdrawal', title: `새 출금요청 ${files.length}건`, body: reason || '출금요청이 등록되었습니다', link: '/withdrawals' })
+    }
     await clearShared()
     setUploading(false)
-    router.push(`/projects/${projectId}`)
+    router.push(dest === 'project' ? `/projects/${projectId}` : dest === 'receipt' ? '/receipts' : '/withdrawals')
   }
+
+  const destBtn = (d: Dest, label: string) => (
+    <button type="button" onClick={() => setDest(d)}
+      className={`flex-1 py-2.5 rounded-lg text-sm font-medium border ${dest === d ? 'bg-green-600 text-white border-green-600' : 'bg-white text-gray-600 border-gray-300'}`}>
+      {label}
+    </button>
+  )
 
   return (
     <div className="flex flex-col md:flex-row min-h-screen">
@@ -94,7 +126,7 @@ export default function SharePage() {
       <div className="flex-1 flex flex-col">
         <header className="bg-white border-b border-gray-200 px-4 md:px-8 py-4 md:py-5 flex-shrink-0">
           <h1 className="text-xl font-bold text-gray-900">공유 자료 저장</h1>
-          <p className="text-sm text-gray-500 mt-0.5">다른 앱에서 공유한 사진/영상을 현장에 바로 저장</p>
+          <p className="text-sm text-gray-500 mt-0.5">다른 앱에서 공유한 사진/영상을 바로 저장</p>
         </header>
 
         <div className="flex-1 overflow-auto px-4 md:px-8 py-4 md:py-6 pb-20 md:pb-6">
@@ -128,31 +160,52 @@ export default function SharePage() {
                 </div>
               </div>
 
+              {/* 어디에 저장할지 */}
               <div>
-                <label className="text-sm font-medium text-gray-700 block mb-1.5">저장할 현장 *</label>
-                <select value={projectId} onChange={e => setProjectId(e.target.value)}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500">
-                  {projects.length === 0 && <option value="">현장이 없습니다</option>}
-                  {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                </select>
+                <label className="text-sm font-medium text-gray-700 block mb-1.5">어디에 저장할까요?</label>
+                <div className="flex gap-2">
+                  {destBtn('project', '현장 자료')}
+                  {destBtn('receipt', '영수증')}
+                  {destBtn('withdrawal', '출금요청')}
+                </div>
               </div>
 
-              <div>
-                <label className="text-sm font-medium text-gray-700 block mb-1.5">분류</label>
-                <select value={category} onChange={e => setCategory(e.target.value)}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500">
-                  {CATEGORY_LIST.map(c => <option key={c}>{c}</option>)}
-                </select>
-              </div>
-
-              <div>
-                <label className="text-sm font-medium text-gray-700 block mb-1.5">
-                  구역/공간 <span className="text-gray-400 font-normal">(선택 · 같은 이름끼리 묶여요)</span>
-                </label>
-                <input value={memo} onChange={e => setMemo(e.target.value)}
-                  placeholder="예) 거실, 화장실, 1층"
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
-              </div>
+              {dest === 'project' ? (
+                <>
+                  <div>
+                    <label className="text-sm font-medium text-gray-700 block mb-1.5">저장할 현장 *</label>
+                    <select value={projectId} onChange={e => setProjectId(e.target.value)}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500">
+                      {projects.length === 0 && <option value="">현장이 없습니다</option>}
+                      {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-gray-700 block mb-1.5">분류</label>
+                    <select value={category} onChange={e => setCategory(e.target.value)}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500">
+                      {CATEGORY_LIST.map(c => <option key={c}>{c}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-gray-700 block mb-1.5">
+                      구역/공간 <span className="text-gray-400 font-normal">(선택 · 같은 이름끼리 묶여요)</span>
+                    </label>
+                    <input value={memo} onChange={e => setMemo(e.target.value)}
+                      placeholder="예) 거실, 화장실, 1층"
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
+                  </div>
+                </>
+              ) : (
+                <div>
+                  <label className="text-sm font-medium text-gray-700 block mb-1.5">
+                    {dest === 'withdrawal' ? '사유 / 메모' : '메모'} <span className="text-gray-400 font-normal">(선택)</span>
+                  </label>
+                  <input value={reason} onChange={e => setReason(e.target.value)}
+                    placeholder={dest === 'withdrawal' ? '예) OO현장 자재대금 송금' : '예) OO현장 자재 영수증'}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
+                </div>
+              )}
 
               {uploading && (
                 <div className="w-full bg-gray-100 rounded-full h-2">
@@ -160,7 +213,7 @@ export default function SharePage() {
                 </div>
               )}
 
-              <button onClick={handleUpload} disabled={uploading || !projectId}
+              <button onClick={handleUpload} disabled={uploading || (dest === 'project' && !projectId)}
                 className="bg-green-600 text-white py-3 rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-50">
                 {uploading ? `업로드 중... ${progress}%` : `${files.length}개 저장하기`}
               </button>

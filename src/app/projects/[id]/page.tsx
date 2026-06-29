@@ -57,6 +57,7 @@ export default function ProjectDetail() {
   const [uploadCurrent, setUploadCurrent] = useState(0)
   const [copiedUrlId, setCopiedUrlId] = useState<string | null>(null)
   const [lightbox, setLightbox] = useState<string | null>(null)
+  const touchStartX = useRef(0)
 
   const [collapsedCats, setCollapsedCats] = useState<Record<string, boolean>>({})
   const [collapsedZones, setCollapsedZones] = useState<Record<string, boolean>>({})
@@ -1174,20 +1175,42 @@ export default function ProjectDetail() {
         </div>
       )}
 
-      {/* 사진 크게 보기 */}
-      {lightbox && (
-        <div className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-4"
-          onClick={() => setLightbox(null)}>
-          {isVideoUrl(lightbox) ? (
-            <video src={lightbox} controls autoPlay playsInline
-              onClick={e => e.stopPropagation()}
-              className="max-w-full max-h-full rounded-lg" />
-          ) : (
-            <img src={lightbox} alt="" className="max-w-full max-h-full object-contain rounded-lg" />
-          )}
-          <button className="absolute top-4 right-4 text-white text-3xl leading-none">&times;</button>
-        </div>
-      )}
+      {/* 사진 크게 보기 (좌우 넘기기) */}
+      {lightbox && (() => {
+        const cur = files.find(f => f.file_url === lightbox)
+        const gallery = (cur ? files.filter(f => f.category === cur.category) : [])
+          .filter(f => (f.file_type || '') !== 'link' && (isVideoFile(f) || (f.file_type || '').startsWith('image') || PHOTO_CATS.includes(f.category)))
+          .sort((a, b) => (a.file_name || '').localeCompare(b.file_name || '', undefined, { numeric: true }))
+          .map(f => f.file_url)
+        const idx = gallery.indexOf(lightbox)
+        const go = (d: number) => { const n = idx + d; if (n >= 0 && n < gallery.length) setLightbox(gallery[n]) }
+        return (
+          <div className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-4"
+            onClick={() => setLightbox(null)}
+            onTouchStart={e => { touchStartX.current = e.touches[0].clientX }}
+            onTouchEnd={e => { const dx = e.changedTouches[0].clientX - touchStartX.current; if (Math.abs(dx) > 50) go(dx < 0 ? 1 : -1) }}>
+            {isVideoUrl(lightbox) ? (
+              <video src={lightbox} controls autoPlay playsInline
+                onClick={e => e.stopPropagation()}
+                className="max-w-full max-h-full rounded-lg" />
+            ) : (
+              <img src={lightbox} alt="" onClick={e => e.stopPropagation()} className="max-w-full max-h-full object-contain rounded-lg" />
+            )}
+            {idx > 0 && (
+              <button onClick={e => { e.stopPropagation(); go(-1) }}
+                className="absolute left-2 md:left-6 top-1/2 -translate-y-1/2 w-11 h-11 rounded-full bg-white/20 hover:bg-white/30 text-white text-2xl flex items-center justify-center">‹</button>
+            )}
+            {idx < gallery.length - 1 && (
+              <button onClick={e => { e.stopPropagation(); go(1) }}
+                className="absolute right-2 md:right-6 top-1/2 -translate-y-1/2 w-11 h-11 rounded-full bg-white/20 hover:bg-white/30 text-white text-2xl flex items-center justify-center">›</button>
+            )}
+            {gallery.length > 1 && (
+              <div className="absolute bottom-5 left-1/2 -translate-x-1/2 bg-black/50 text-white text-xs px-3 py-1 rounded-full">{idx + 1} / {gallery.length}</div>
+            )}
+            <button onClick={e => { e.stopPropagation(); setLightbox(null) }} className="absolute top-4 right-4 text-white text-3xl leading-none">&times;</button>
+          </div>
+        )
+      })()}
 
       {/* 현장 수정 모달 */}
       {showEditForm && (
