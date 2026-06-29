@@ -29,6 +29,7 @@ const ROLE_LABEL: Record<string, string> = {
   admin: '관리자',
   designer: '디자인팀',
   field: '현장팀',
+  partner: '외부협력업체',
   staff: '직원',
 }
 

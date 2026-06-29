@@ -3,6 +3,7 @@
 import { useEffect, useState, useMemo } from 'react'
 import Sidebar from '@/components/Sidebar'
 import { supabase } from '@/lib/supabase'
+import { useAuth, canEdit } from '@/lib/auth-context'
 
 const PAYMENT_TYPES = ['계약금', '중도금', '잔금', '기타']
 const TYPE_COLOR: Record<string, string> = {
@@ -40,6 +41,8 @@ function formatAmount(n: number | null) {
 const EMPTY = { project_name: '', type: '계약금', amount: '', due_date: '', paid_date: '', paid: false, note: '' }
 
 export default function PaymentsPage() {
+  const { profile } = useAuth()
+  const readOnly = !canEdit(profile)
   const [payments, setPayments] = useState<Payment[]>([])
   const [projects, setProjects] = useState<Proj[]>([])
   const [loading, setLoading] = useState(true)
@@ -144,7 +147,7 @@ export default function PaymentsPage() {
             <h1 className="text-xl font-bold text-gray-900">수금 관리</h1>
             <p className="text-sm text-gray-500 mt-0.5">현장별 계약금·중도금·잔금 입금 현황</p>
           </div>
-          <button onClick={openAdd} className="bg-green-600 text-white px-4 py-2.5 rounded-lg text-sm font-medium hover:bg-green-700">+ 수금 추가</button>
+          {!readOnly && <button onClick={openAdd} className="bg-green-600 text-white px-4 py-2.5 rounded-lg text-sm font-medium hover:bg-green-700">+ 수금 추가</button>}
         </header>
 
         <div className="flex-1 overflow-auto px-4 md:px-8 py-4 md:py-6 pb-24 md:pb-6">
@@ -208,8 +211,8 @@ export default function PaymentsPage() {
                     return (
                       <div key={p.id} className={`bg-white rounded-xl px-4 py-3.5 border shadow-sm ${isOverdue ? 'border-red-100' : p.paid ? 'border-green-100' : 'border-gray-100'} ${p.paid ? 'opacity-75' : ''}`}>
                         <div className="flex items-center gap-3">
-                          <button onClick={() => togglePaid(p)}
-                            className={`w-6 h-6 rounded-full border-2 flex-shrink-0 flex items-center justify-center transition-colors ${p.paid ? 'bg-green-500 border-green-500' : isOverdue ? 'border-red-300' : 'border-gray-300 hover:border-green-400'}`}>
+                          <button onClick={() => !readOnly && togglePaid(p)} disabled={readOnly}
+                            className={`w-6 h-6 rounded-full border-2 flex-shrink-0 flex items-center justify-center transition-colors ${p.paid ? 'bg-green-500 border-green-500' : isOverdue ? 'border-red-300' : 'border-gray-300 hover:border-green-400'} ${readOnly ? 'cursor-default' : ''}`}>
                             {p.paid && <span className="text-white text-xs">✓</span>}
                           </button>
                           <div className="flex-1 min-w-0">
@@ -225,10 +228,12 @@ export default function PaymentsPage() {
                             </div>
                             {p.note && <div className="text-xs text-gray-400 mt-0.5">{p.note}</div>}
                           </div>
-                          <div className="flex gap-1 flex-shrink-0">
-                            <button onClick={() => openEdit(p)} className="text-gray-300 hover:text-green-500 text-sm px-1">✎</button>
-                            <button onClick={() => remove(p)} className="text-gray-300 hover:text-red-400 text-lg leading-none px-1">×</button>
-                          </div>
+                          {!readOnly && (
+                            <div className="flex gap-1 flex-shrink-0">
+                              <button onClick={() => openEdit(p)} className="text-gray-300 hover:text-green-500 text-sm px-1">✎</button>
+                              <button onClick={() => remove(p)} className="text-gray-300 hover:text-red-400 text-lg leading-none px-1">×</button>
+                            </div>
+                          )}
                         </div>
                       </div>
                     )

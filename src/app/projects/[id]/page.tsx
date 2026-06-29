@@ -4,7 +4,7 @@ import { useEffect, useState, useRef, useCallback } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Sidebar from '@/components/Sidebar'
 import { supabase, Project, ProjectFile, Schedule, ProjectCost, ProjectAssignment, STATUS_LIST, STATUS_COLOR } from '@/lib/supabase'
-import { useAuth } from '@/lib/auth-context'
+import { useAuth, canEdit } from '@/lib/auth-context'
 import { notifyOthers } from '@/lib/notify'
 import SnsTab from '@/components/SnsTab'
 
@@ -456,13 +456,13 @@ export default function ProjectDetail() {
         onMouseLeave={() => setHoveredFileId(null)}>
         {isVideoFile(f) ? (
           <video src={f.file_url} muted playsInline preload="metadata"
-            onClick={() => toggleSelectFile(f.id)}
+            onClick={() => readOnly ? setLightbox(f.file_url) : toggleSelectFile(f.id)}
             className={`w-full h-full object-cover rounded-lg border cursor-pointer transition-all ${
               isSelected ? 'border-green-500 ring-2 ring-green-500 brightness-90' : 'border-gray-200'
             }`} />
         ) : (
           <img src={f.file_url} alt={f.file_name}
-            onClick={() => toggleSelectFile(f.id)}
+            onClick={() => readOnly ? setLightbox(f.file_url) : toggleSelectFile(f.id)}
             className={`w-full h-full object-cover rounded-lg border cursor-pointer transition-all ${
               isSelected ? 'border-green-500 ring-2 ring-green-500 brightness-90' : 'border-gray-200'
             }`} />
@@ -473,6 +473,7 @@ export default function ProjectDetail() {
           </div>
         )}
         {isSelected && (<div className="absolute inset-0 bg-green-500/15 rounded-lg pointer-events-none" />)}
+        {!readOnly && (
         <button
           onClick={e => { e.stopPropagation(); toggleSelectFile(f.id) }}
           className={`absolute top-1.5 left-1.5 w-6 h-6 rounded-full border-2 flex items-center justify-center text-xs font-bold transition-all shadow-sm z-10 ${
@@ -480,6 +481,7 @@ export default function ProjectDetail() {
           }`}>
           {isSelected ? '✓' : ''}
         </button>
+        )}
         <button
           onClick={e => { e.stopPropagation(); setLightbox(f.file_url) }}
           className="absolute top-1.5 right-1.5 w-6 h-6 rounded-full bg-black/50 text-white flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-opacity z-10"
@@ -497,6 +499,7 @@ export default function ProjectDetail() {
   }
 
   const canSeeMoney = profile?.role !== 'field'
+  const readOnly = !canEdit(profile)
   const doneCount = schedules.filter(s => (s.phase_status || '예정') === '완료').length
   const inProgressCount = schedules.filter(s => s.phase_status === '진행중').length
   const progressPct = schedules.length ? Math.round((doneCount / schedules.length) * 100) : 0
@@ -544,10 +547,12 @@ export default function ProjectDetail() {
                 <p className="text-sm text-gray-500">{project.address || <span className="text-gray-300">주소 미입력</span>}</p>
               </div>
             </div>
-            <button onClick={openEditProject}
-              className="flex-shrink-0 border border-gray-300 text-gray-600 px-3 py-1.5 rounded-lg text-sm hover:bg-gray-50">
-              현장 수정
-            </button>
+            {!readOnly && (
+              <button onClick={openEditProject}
+                className="flex-shrink-0 border border-gray-300 text-gray-600 px-3 py-1.5 rounded-lg text-sm hover:bg-gray-50">
+                현장 수정
+              </button>
+            )}
           </div>
         </header>
 
@@ -568,7 +573,7 @@ export default function ProjectDetail() {
         <div className="flex-1 overflow-auto px-4 md:px-8 py-4 md:py-6 pb-20 md:pb-6">
 
           {/* SNS 탭 */}
-          {tab === 'SNS' && <SnsTab projectId={id} />}
+          {tab === 'SNS' && <SnsTab projectId={id} readOnly={readOnly} />}
 
           {/* 현황(대시보드) 탭 */}
           {tab === '현황' && (
@@ -743,10 +748,12 @@ export default function ProjectDetail() {
                     </button>
                   )}
                 </div>
-                <button onClick={() => setShowFileForm(true)}
-                  className="bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-700">
-                  + 자료 추가
-                </button>
+                {!readOnly && (
+                  <button onClick={() => setShowFileForm(true)}
+                    className="bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-700">
+                    + 자료 추가
+                  </button>
+                )}
               </div>
               {files.length === 0 ? (
                 <div className="bg-white rounded-xl border border-gray-200 text-center py-16 text-gray-400">
@@ -778,6 +785,7 @@ export default function ProjectDetail() {
                               className="text-xs px-3 py-1 rounded-lg border border-gray-300 text-gray-600 hover:border-green-400 hover:text-green-600 whitespace-nowrap">
                               ⤓ 전체 저장
                             </button>
+                            {!readOnly && (
                             <button onClick={() => {
                               if (allSelected) {
                                 setSelectedFileIds(prev => {
@@ -795,6 +803,7 @@ export default function ProjectDetail() {
                             }} className={`text-xs px-3 py-1 rounded-lg border transition-colors whitespace-nowrap ${allSelected ? 'border-green-500 text-green-600 bg-green-50' : 'border-gray-300 text-gray-500 hover:border-green-400 hover:text-green-600'}`}>
                               {allSelected ? '전체해제' : '전체선택'}
                             </button>
+                            )}
                           </div>
                         </div>
                         {!isCollapsed && (
@@ -841,6 +850,7 @@ export default function ProjectDetail() {
                                   return (
                                   <div key={f.id} className={`flex items-center gap-3 px-2 py-2.5 rounded-lg transition-colors ${i > 0 ? 'border-t border-gray-100' : ''} ${isSelected ? 'bg-green-50' : 'hover:bg-gray-50'}`}>
                                     {/* 체크박스 */}
+                                    {!readOnly && (
                                     <button
                                       onClick={() => toggleSelectFile(f.id)}
                                       className={`w-5 h-5 rounded border-2 flex-shrink-0 flex items-center justify-center transition-colors ${
@@ -848,6 +858,7 @@ export default function ProjectDetail() {
                                       }`}>
                                       {isSelected && <span className="text-xs font-bold">✓</span>}
                                     </button>
+                                    )}
                                     <span className="text-lg flex-shrink-0">{f.file_type === 'link' ? '🔗' : f.file_type?.includes('pdf') ? '📄' : f.file_type?.includes('image') ? '🖼️' : '📎'}</span>
                                     {/* 파일명 클릭 = 열기 */}
                                     <button onClick={() => {
@@ -876,8 +887,10 @@ export default function ProjectDetail() {
                                       <button onClick={() => downloadFile(f)}
                                         className="text-xs text-gray-400 hover:text-green-600 flex-shrink-0">저장</button>
                                     </>)}
-                                    <button onClick={() => deleteFile(f)}
-                                      className="text-xs text-red-400 hover:text-red-600 flex-shrink-0">삭제</button>
+                                    {!readOnly && (
+                                      <button onClick={() => deleteFile(f)}
+                                        className="text-xs text-red-400 hover:text-red-600 flex-shrink-0">삭제</button>
+                                    )}
                                   </div>
                                 )})}
                               </div>
@@ -895,12 +908,14 @@ export default function ProjectDetail() {
           {/* 공정 탭 */}
           {tab === '공정' && (
             <div>
-              <div className="flex justify-end mb-4">
-                <button onClick={() => setShowScheduleForm(true)}
-                  className="bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-700">
-                  + 공정 추가
-                </button>
-              </div>
+              {!readOnly && (
+                <div className="flex justify-end mb-4">
+                  <button onClick={() => setShowScheduleForm(true)}
+                    className="bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-700">
+                    + 공정 추가
+                  </button>
+                </div>
+              )}
               {schedules.length === 0 ? (
                 <div className="bg-white rounded-xl border border-gray-200 text-center py-16 text-gray-400">
                   <p className="text-3xl mb-2">📅</p><p>등록된 공정이 없어요</p>
@@ -930,32 +945,42 @@ export default function ProjectDetail() {
                           <td className="px-4 py-3 text-sm text-gray-600">{s.end_date || '-'}</td>
                           <td className="px-4 py-3 text-sm text-gray-600">{s.manager || '-'}</td>
                           <td className="px-4 py-3">
-                            <div className="flex gap-1">
-                              {(['예정', '진행중', '완료'] as const).map(st => (
-                                <button key={st} onClick={() => setPhaseStatus(s, st)}
-                                  className={`text-xs px-2 py-1 rounded-full font-medium border transition-colors ${
-                                    ps === st
-                                      ? st === '예정' ? 'bg-gray-200 text-gray-700 border-gray-300'
-                                        : st === '진행중' ? 'bg-blue-100 text-blue-700 border-blue-300'
-                                        : 'bg-green-100 text-green-700 border-green-300'
-                                      : 'bg-white text-gray-400 border-gray-200 hover:border-gray-300'
-                                  }`}>
-                                  {st}
-                                </button>
-                              ))}
-                            </div>
+                            {readOnly ? (
+                              <span className={`text-xs px-2 py-1 rounded-full font-medium border ${
+                                ps === '예정' ? 'bg-gray-200 text-gray-700 border-gray-300'
+                                  : ps === '진행중' ? 'bg-blue-100 text-blue-700 border-blue-300'
+                                  : 'bg-green-100 text-green-700 border-green-300'
+                              }`}>{ps}</span>
+                            ) : (
+                              <div className="flex gap-1">
+                                {(['예정', '진행중', '완료'] as const).map(st => (
+                                  <button key={st} onClick={() => setPhaseStatus(s, st)}
+                                    className={`text-xs px-2 py-1 rounded-full font-medium border transition-colors ${
+                                      ps === st
+                                        ? st === '예정' ? 'bg-gray-200 text-gray-700 border-gray-300'
+                                          : st === '진행중' ? 'bg-blue-100 text-blue-700 border-blue-300'
+                                          : 'bg-green-100 text-green-700 border-green-300'
+                                        : 'bg-white text-gray-400 border-gray-200 hover:border-gray-300'
+                                    }`}>
+                                    {st}
+                                  </button>
+                                ))}
+                              </div>
+                            )}
                           </td>
                           <td className="px-4 py-3">
-                            <div className="flex items-center gap-2">
-                              <button onClick={() => openEditSchedule(s)}
-                                className="text-xs text-green-500 hover:text-green-700 hover:bg-green-50 px-2 py-1 rounded transition-colors">
-                                수정
-                              </button>
-                              <button onClick={() => deleteSchedule(s)}
-                                className="text-xs text-red-400 hover:text-red-600 hover:bg-red-50 px-2 py-1 rounded transition-colors">
-                                삭제
-                              </button>
-                            </div>
+                            {!readOnly && (
+                              <div className="flex items-center gap-2">
+                                <button onClick={() => openEditSchedule(s)}
+                                  className="text-xs text-green-500 hover:text-green-700 hover:bg-green-50 px-2 py-1 rounded transition-colors">
+                                  수정
+                                </button>
+                                <button onClick={() => deleteSchedule(s)}
+                                  className="text-xs text-red-400 hover:text-red-600 hover:bg-red-50 px-2 py-1 rounded transition-colors">
+                                  삭제
+                                </button>
+                              </div>
+                            )}
                           </td>
                         </tr>
                         )
@@ -970,7 +995,7 @@ export default function ProjectDetail() {
           {/* 비용 탭 */}
           {tab === '비용' && (
             <div>
-              <div className="flex justify-end mb-4">
+              <div className="flex justify-end mb-4" style={{ display: readOnly ? 'none' : undefined }}>
                 <button onClick={() => setShowCostForm(true)}
                   className="bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-700">
                   + 월별 자료 추가
@@ -1031,12 +1056,14 @@ export default function ProjectDetail() {
                             </td>
                             <td className="px-4 py-3 text-xs text-gray-400">{c.memo || '-'}</td>
                             <td className="px-4 py-3">
+                              {!readOnly && (
                               <div className="flex items-center gap-2 justify-end">
                                 <button onClick={() => openEditCost(c)}
                                   className="text-xs text-green-500 hover:text-green-700 hover:bg-green-50 px-2 py-1 rounded transition-colors">수정</button>
                                 <button onClick={() => deleteCost(c)}
                                   className="text-xs text-red-400 hover:text-red-600 hover:bg-red-50 px-2 py-1 rounded transition-colors">삭제</button>
                               </div>
+                              )}
                             </td>
                           </tr>
                         ))}

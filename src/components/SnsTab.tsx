@@ -17,7 +17,7 @@ const STATUS_STYLE: Record<string, string> = {
 
 type Slot = { status: string; content: string; link: string; saving?: boolean; saved?: boolean; drafting?: boolean }
 
-export default function SnsTab({ projectId }: { projectId: string }) {
+export default function SnsTab({ projectId, readOnly = false }: { projectId: string; readOnly?: boolean }) {
   const [slots, setSlots] = useState<Record<string, Slot>>({})
   const [loading, setLoading] = useState(true)
 
@@ -91,30 +91,44 @@ export default function SnsTab({ projectId }: { projectId: string }) {
                 <div key={k} className="bg-white rounded-xl border border-gray-200 p-4 flex flex-col gap-2">
                   <div className="flex items-center justify-between">
                     <span className="text-sm font-medium text-gray-800">{t} 포스팅</span>
-                    <select value={s.status} onChange={e => update(k, { status: e.target.value })}
-                      className={`text-xs px-2 py-1 rounded-full border font-medium ${STATUS_STYLE[s.status] || ''}`}>
-                      {STATUSES.map(st => <option key={st} value={st}>{st}</option>)}
-                    </select>
+                    {readOnly ? (
+                      <span className={`text-xs px-2 py-1 rounded-full border font-medium ${STATUS_STYLE[s.status] || ''}`}>{s.status}</span>
+                    ) : (
+                      <select value={s.status} onChange={e => update(k, { status: e.target.value })}
+                        className={`text-xs px-2 py-1 rounded-full border font-medium ${STATUS_STYLE[s.status] || ''}`}>
+                        {STATUSES.map(st => <option key={st} value={st}>{st}</option>)}
+                      </select>
+                    )}
                   </div>
-                  <div className="flex justify-end">
-                    <button onClick={() => generateDraft(ch.key, t)} disabled={s.drafting}
-                      className="text-xs border border-green-300 text-green-700 bg-green-50 px-3 py-1.5 rounded-lg hover:bg-green-100 disabled:opacity-50">
-                      {s.drafting ? 'AI 작성 중...' : '✨ AI 초안 작성'}
-                    </button>
-                  </div>
-                  <textarea value={s.content} onChange={e => update(k, { content: e.target.value })}
-                    placeholder="초안 내용 (제목/본문)을 적어두세요. 위 'AI 초안 작성'을 누르면 해당 단계 사진을 보고 자동으로 채워줘요."
-                    rows={4}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 resize-none" />
-                  <input value={s.link} onChange={e => update(k, { link: e.target.value })}
-                    placeholder="발행 링크 (URL)"
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
+                  {!readOnly && (
+                    <div className="flex justify-end">
+                      <button onClick={() => generateDraft(ch.key, t)} disabled={s.drafting}
+                        className="text-xs border border-green-300 text-green-700 bg-green-50 px-3 py-1.5 rounded-lg hover:bg-green-100 disabled:opacity-50">
+                        {s.drafting ? 'AI 작성 중...' : '✨ AI 초안 작성'}
+                      </button>
+                    </div>
+                  )}
+                  {readOnly ? (
+                    <p className="w-full border border-gray-200 bg-gray-50 rounded-lg px-3 py-2 text-sm whitespace-pre-wrap min-h-[5rem]">{s.content || <span className="text-gray-400">내용 없음</span>}</p>
+                  ) : (
+                    <textarea value={s.content} onChange={e => update(k, { content: e.target.value })}
+                      placeholder="초안 내용 (제목/본문)을 적어두세요. 위 'AI 초안 작성'을 누르면 해당 단계 사진을 보고 자동으로 채워줘요."
+                      rows={4}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 resize-none" />
+                  )}
+                  {!readOnly && (
+                    <input value={s.link} onChange={e => update(k, { link: e.target.value })}
+                      placeholder="발행 링크 (URL)"
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
+                  )}
                   <div className="flex items-center justify-between">
                     {s.link ? <a href={s.link} target="_blank" rel="noreferrer" className="text-xs text-green-600 hover:underline">발행글 열기 ↗</a> : <span />}
-                    <button onClick={() => save(ch.key, t)} disabled={s.saving}
-                      className="text-xs bg-green-600 text-white px-3 py-1.5 rounded-lg hover:bg-green-700 disabled:opacity-50">
-                      {s.saving ? '저장 중...' : s.saved ? '저장됨 ✓' : '저장'}
-                    </button>
+                    {!readOnly && (
+                      <button onClick={() => save(ch.key, t)} disabled={s.saving}
+                        className="text-xs bg-green-600 text-white px-3 py-1.5 rounded-lg hover:bg-green-700 disabled:opacity-50">
+                        {s.saving ? '저장 중...' : s.saved ? '저장됨 ✓' : '저장'}
+                      </button>
+                    )}
                   </div>
                 </div>
               )

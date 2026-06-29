@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef, useCallback } from 'react'
 import Sidebar from '@/components/Sidebar'
 import { supabase } from '@/lib/supabase'
+import { useAuth, canEdit } from '@/lib/auth-context'
 
 type Photo = {
   id: string
@@ -14,6 +15,8 @@ type Photo = {
 }
 
 export default function WithdrawalsPage() {
+  const { profile } = useAuth()
+  const readOnly = !canEdit(profile)
   const [photos, setPhotos] = useState<Photo[]>([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
@@ -142,10 +145,12 @@ export default function WithdrawalsPage() {
             <h1 className="text-xl font-bold text-gray-900">출금 요청</h1>
             <p className="text-sm text-gray-500 mt-0.5">총 {photos.length}건 · 사진과 글을 한 번에 등록</p>
           </div>
-          <button onClick={() => setShowForm(true)}
-            className="bg-green-600 text-white px-4 py-2.5 rounded-lg text-sm font-medium hover:bg-green-700">
-            + 출금 추가
-          </button>
+          {!readOnly && (
+            <button onClick={() => setShowForm(true)}
+              className="bg-green-600 text-white px-4 py-2.5 rounded-lg text-sm font-medium hover:bg-green-700">
+              + 출금 추가
+            </button>
+          )}
         </header>
 
         <div className="flex-1 overflow-auto px-4 md:px-8 py-4 md:py-6 pb-20 md:pb-6">
@@ -181,8 +186,10 @@ export default function WithdrawalsPage() {
                     {p.reason && <p className="text-xs text-gray-700 line-clamp-2 whitespace-pre-wrap">{p.reason}</p>}
                     <div className="flex items-center justify-between mt-1">
                       <span className="text-xs text-gray-400">{p.requested_by || ''} {new Date(p.created_at).toLocaleDateString('ko-KR', { month: 'numeric', day: 'numeric' })}</span>
-                      <button onClick={() => deletePhoto(p)}
-                        className="text-xs text-red-500 hover:text-red-700 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity px-2 py-0.5">삭제</button>
+                      {!readOnly && (
+                        <button onClick={() => deletePhoto(p)}
+                          className="text-xs text-red-500 hover:text-red-700 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity px-2 py-0.5">삭제</button>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -199,27 +206,37 @@ export default function WithdrawalsPage() {
             {/* 글 추가/수정 + 건 삭제 */}
             <div className="bg-white rounded-xl px-4 py-3">
               <label className="text-sm font-semibold text-gray-700 block mb-1.5">사유 / 내용</label>
-              <textarea value={viewerReason} onChange={e => setViewerReason(e.target.value)} rows={4}
-                placeholder="카톡 내용을 붙여넣거나 입력하세요"
-                className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 resize-y leading-relaxed" />
-              <div className="flex gap-2 mt-2">
-                <button onClick={saveViewerReason} disabled={savingReason || viewerBusy}
-                  className="flex-1 bg-green-600 text-white py-2 rounded-lg text-sm font-medium disabled:opacity-50">
-                  {savingReason ? '저장 중...' : '글 저장'}
-                </button>
-                <button onClick={() => { const v = viewer; setViewer(null); deletePhoto(v) }}
-                  className="px-4 border border-red-200 text-red-500 py-2 rounded-lg text-sm font-medium hover:bg-red-50">건 삭제</button>
-              </div>
+              {readOnly ? (
+                <p className="text-sm text-gray-700 whitespace-pre-wrap min-h-[1.5rem]">{viewerReason || '내용 없음'}</p>
+              ) : (
+                <>
+                  <textarea value={viewerReason} onChange={e => setViewerReason(e.target.value)} rows={4}
+                    placeholder="카톡 내용을 붙여넣거나 입력하세요"
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 resize-y leading-relaxed" />
+                  <div className="flex gap-2 mt-2">
+                    <button onClick={saveViewerReason} disabled={savingReason || viewerBusy}
+                      className="flex-1 bg-green-600 text-white py-2 rounded-lg text-sm font-medium disabled:opacity-50">
+                      {savingReason ? '저장 중...' : '글 저장'}
+                    </button>
+                    <button onClick={() => { const v = viewer; setViewer(null); deletePhoto(v) }}
+                      className="px-4 border border-red-200 text-red-500 py-2 rounded-lg text-sm font-medium hover:bg-red-50">건 삭제</button>
+                  </div>
+                </>
+              )}
             </div>
 
             {/* 사진 관리 */}
             <div className="bg-white rounded-xl px-4 py-3">
               <div className="flex items-center justify-between mb-2">
                 <label className="text-sm font-semibold text-gray-700">사진 {viewerImages.length}장</label>
-                <button onClick={() => viewerFileRef.current?.click()} disabled={viewerBusy}
-                  className="text-sm text-green-600 font-medium disabled:opacity-50">+ 사진 추가</button>
-                <input ref={viewerFileRef} type="file" multiple accept="image/*" className="hidden"
-                  onChange={e => { addViewerImages(e.target.files); e.target.value = '' }} />
+                {!readOnly && (
+                  <>
+                    <button onClick={() => viewerFileRef.current?.click()} disabled={viewerBusy}
+                      className="text-sm text-green-600 font-medium disabled:opacity-50">+ 사진 추가</button>
+                    <input ref={viewerFileRef} type="file" multiple accept="image/*" className="hidden"
+                      onChange={e => { addViewerImages(e.target.files); e.target.value = '' }} />
+                  </>
+                )}
               </div>
               {viewerImages.length === 0 ? (
                 <p className="text-xs text-gray-400 py-2">사진이 없습니다 (글만 저장된 건)</p>
@@ -228,8 +245,10 @@ export default function WithdrawalsPage() {
                   {viewerImages.map((u, i) => (
                     <div key={i} className="relative">
                       <img src={u} alt="" className="w-full rounded-lg" />
-                      <button onClick={() => removeViewerImage(u)} disabled={viewerBusy}
-                        className="absolute top-2 right-2 bg-black/60 text-white w-8 h-8 rounded-full flex items-center justify-center text-lg leading-none disabled:opacity-50">&times;</button>
+                      {!readOnly && (
+                        <button onClick={() => removeViewerImage(u)} disabled={viewerBusy}
+                          className="absolute top-2 right-2 bg-black/60 text-white w-8 h-8 rounded-full flex items-center justify-center text-lg leading-none disabled:opacity-50">&times;</button>
+                      )}
                     </div>
                   ))}
                 </div>

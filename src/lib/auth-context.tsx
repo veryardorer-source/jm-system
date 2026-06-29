@@ -6,7 +6,7 @@ import { createClient } from './supabase-browser'
 
 const supabase = createClient()
 
-export type UserRole = 'admin' | 'designer' | 'field' | 'staff'
+export type UserRole = 'admin' | 'designer' | 'field' | 'partner' | 'staff'
 
 export type Profile = {
   id: string
@@ -73,4 +73,9 @@ export function useAuth() {
 
 export function isAdmin(profile: Profile | null) {
   return profile?.role === 'admin'
+}
+
+// 외부협력업체(partner)는 보기 전용 — 추가/수정/삭제 불가
+export function canEdit(profile: Profile | null) {
+  return profile?.role !== 'partner'
 }

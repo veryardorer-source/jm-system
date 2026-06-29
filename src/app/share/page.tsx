@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Sidebar from '@/components/Sidebar'
 import { supabase } from '@/lib/supabase'
-import { useAuth } from '@/lib/auth-context'
+import { useAuth, canEdit } from '@/lib/auth-context'
 import { notifyOthers } from '@/lib/notify'
 
 const CATEGORY_LIST = ['시공전사진', '시공사진', '마감사진', '도면', '3D', '미팅내용', '고객요청', '기타']
@@ -43,6 +43,7 @@ async function clearShared() {
 
 export default function SharePage() {
   const { profile } = useAuth()
+  const readOnly = !canEdit(profile)
   const router = useRouter()
   const [files, setFiles] = useState<File[]>([])
   const [sharedText, setSharedText] = useState('')
@@ -90,6 +91,7 @@ export default function SharePage() {
   }
 
   async function handleUpload() {
+    if (readOnly) { alert('외부협력업체 계정은 저장할 수 없습니다.'); return }
     if (files.length === 0 && !sharedText.trim()) return
     if (dest === 'project' && !projectId) return
     // 사진 없이 텍스트만 공유한 경우 — 영수증/출금요청에 글만 기록
@@ -259,10 +261,14 @@ export default function SharePage() {
                 </div>
               )}
 
-              <button onClick={handleUpload} disabled={uploading || (dest === 'project' && !projectId)}
-                className="bg-green-600 text-white py-3 rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-50">
-                {uploading ? `업로드 중... ${progress}%` : files.length > 0 ? `${files.length}개 저장하기` : '글 저장하기'}
-              </button>
+              {readOnly ? (
+                <p className="text-center text-sm text-gray-400 py-3">외부협력업체 계정은 저장할 수 없습니다.</p>
+              ) : (
+                <button onClick={handleUpload} disabled={uploading || (dest === 'project' && !projectId)}
+                  className="bg-green-600 text-white py-3 rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-50">
+                  {uploading ? `업로드 중... ${progress}%` : files.length > 0 ? `${files.length}개 저장하기` : '글 저장하기'}
+                </button>
+              )}
             </div>
           )}
         </div>

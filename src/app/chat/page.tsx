@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef, useCallback } from 'react'
 import Sidebar from '@/components/Sidebar'
 import { supabase } from '@/lib/supabase'
-import { useAuth } from '@/lib/auth-context'
+import { useAuth, canEdit } from '@/lib/auth-context'
 
 type Message = {
   id: string
@@ -26,6 +26,7 @@ type Active =
 export default function ChatPage() {
   const { profile } = useAuth()
   const me = profile?.id
+  const readOnly = !canEdit(profile)
   const [people, setPeople] = useState<Person[]>([])
   const [rooms, setRooms] = useState<Room[]>([])
   const [active, setActive] = useState<Active>(null)
@@ -167,7 +168,7 @@ export default function ChatPage() {
           <div className={`${active ? 'hidden md:flex' : 'flex'} flex-col w-full md:w-64 border-r border-gray-200 bg-white`}>
             <div className="px-4 py-4 border-b border-gray-200 flex items-center justify-between">
               <h1 className="text-lg font-bold text-gray-900">채팅</h1>
-              <button onClick={() => setShowNew(true)} className="text-xs bg-green-600 text-white px-2.5 py-1.5 rounded-lg hover:bg-green-700">+ 새 채팅방</button>
+              {!readOnly && <button onClick={() => setShowNew(true)} className="text-xs bg-green-600 text-white px-2.5 py-1.5 rounded-lg hover:bg-green-700">+ 새 채팅방</button>}
             </div>
             <div className="flex-1 overflow-auto">
               <button onClick={() => setActive({ kind: 'all' })}
@@ -239,19 +240,25 @@ export default function ChatPage() {
                     </div>
                   )}
                 </div>
-                <form onSubmit={send}
-                  className="fixed bottom-14 md:bottom-0 left-0 md:left-[calc(14rem+16rem)] right-0 bg-white border-t border-gray-200 px-4 py-3 flex gap-2 items-center">
-                  <label className="flex-shrink-0 flex items-center justify-center w-10 h-10 rounded-full border border-gray-300 text-lg cursor-pointer hover:bg-gray-50" title="사진 보내기">
-                    🖼️
-                    <input type="file" accept="image/*" className="hidden"
-                      onChange={e => { const f = e.target.files?.[0]; if (f) sendImage(f); e.currentTarget.value = '' }} />
-                  </label>
-                  <input value={text} onChange={e => setText(e.target.value)}
-                    placeholder="메시지를 입력하세요..."
-                    className="flex-1 border border-gray-300 rounded-full px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
-                  <button type="submit" disabled={sending || !text.trim()}
-                    className="bg-green-600 text-white px-5 py-2.5 rounded-full text-sm font-medium hover:bg-green-700 disabled:opacity-50 flex-shrink-0">전송</button>
-                </form>
+                {readOnly ? (
+                  <div className="fixed bottom-14 md:bottom-0 left-0 md:left-[calc(14rem+16rem)] right-0 bg-gray-50 border-t border-gray-200 px-4 py-3 text-center text-xs text-gray-400">
+                    외부협력업체 계정은 채팅 보기만 가능합니다.
+                  </div>
+                ) : (
+                  <form onSubmit={send}
+                    className="fixed bottom-14 md:bottom-0 left-0 md:left-[calc(14rem+16rem)] right-0 bg-white border-t border-gray-200 px-4 py-3 flex gap-2 items-center">
+                    <label className="flex-shrink-0 flex items-center justify-center w-10 h-10 rounded-full border border-gray-300 text-lg cursor-pointer hover:bg-gray-50" title="사진 보내기">
+                      🖼️
+                      <input type="file" accept="image/*" className="hidden"
+                        onChange={e => { const f = e.target.files?.[0]; if (f) sendImage(f); e.currentTarget.value = '' }} />
+                    </label>
+                    <input value={text} onChange={e => setText(e.target.value)}
+                      placeholder="메시지를 입력하세요..."
+                      className="flex-1 border border-gray-300 rounded-full px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
+                    <button type="submit" disabled={sending || !text.trim()}
+                      className="bg-green-600 text-white px-5 py-2.5 rounded-full text-sm font-medium hover:bg-green-700 disabled:opacity-50 flex-shrink-0">전송</button>
+                  </form>
+                )}
               </>
             )}
           </div>

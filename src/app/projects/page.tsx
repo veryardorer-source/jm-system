@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import Sidebar from '@/components/Sidebar'
 import { supabase, Project, STATUS_LIST, STATUS_COLOR, HIDDEN_STATUSES } from '@/lib/supabase'
+import { useAuth, canEdit } from '@/lib/auth-context'
 
 const EMPTY_FORM = {
   name: '', client_name: '', address: '', manager: '',
@@ -12,6 +13,8 @@ const EMPTY_FORM = {
 }
 
 export default function ProjectsPage() {
+  const { profile } = useAuth()
+  const readOnly = !canEdit(profile)
   const [projects, setProjects] = useState<Project[]>([])
   const [filter, setFilter] = useState('전체')
   const [loading, setLoading] = useState(true)
@@ -73,10 +76,12 @@ export default function ProjectsPage() {
             <h1 className="text-xl font-bold text-gray-900">현장 관리</h1>
             <p className="text-sm text-gray-500 mt-0.5">총 {projects.length}개 현장 · 진행중 {projects.filter(p => !HIDDEN_STATUSES.includes(p.status as typeof HIDDEN_STATUSES[number])).length}개</p>
           </div>
-          <button onClick={() => setShowForm(true)}
-            className="bg-green-600 text-white px-4 py-2.5 rounded-lg text-sm font-medium hover:bg-green-700">
-            + 현장 등록
-          </button>
+          {!readOnly && (
+            <button onClick={() => setShowForm(true)}
+              className="bg-green-600 text-white px-4 py-2.5 rounded-lg text-sm font-medium hover:bg-green-700">
+              + 현장 등록
+            </button>
+          )}
         </header>
 
         <div className="flex-1 overflow-auto">
@@ -127,10 +132,14 @@ export default function ProjectsPage() {
                     <div key={p.id} className="bg-white rounded-xl border border-gray-200 p-4">
                       <div className="flex items-start justify-between gap-2 mb-2">
                         <Link href={`/projects/${p.id}`} className="font-semibold text-gray-900 flex-1">{p.name}</Link>
-                        <button onClick={e => { e.stopPropagation(); e.preventDefault(); setEditingStatusId(p.id) }}
-                          className={`flex-shrink-0 text-xs px-2 py-1 rounded-full font-medium border ${STATUS_COLOR[p.status]}`}>
-                          {p.status} ▾
-                        </button>
+                        {readOnly ? (
+                          <span className={`flex-shrink-0 text-xs px-2 py-1 rounded-full font-medium border ${STATUS_COLOR[p.status]}`}>{p.status}</span>
+                        ) : (
+                          <button onClick={e => { e.stopPropagation(); e.preventDefault(); setEditingStatusId(p.id) }}
+                            className={`flex-shrink-0 text-xs px-2 py-1 rounded-full font-medium border ${STATUS_COLOR[p.status]}`}>
+                            {p.status} ▾
+                          </button>
+                        )}
                       </div>
                       <Link href={`/projects/${p.id}`} className="block">
                         <div className="flex items-center gap-3 text-xs text-gray-500">
@@ -167,10 +176,14 @@ export default function ProjectsPage() {
                           <td className="px-4 py-3.5 text-sm text-gray-600">{p.client_name || '-'}</td>
                           <td className="px-4 py-3.5 text-sm text-gray-600">{p.manager || '-'}</td>
                           <td className="px-4 py-3.5">
-                            <button onClick={e => { e.stopPropagation(); e.preventDefault(); setEditingStatusId(p.id) }}
-                              className={`text-xs px-2.5 py-1 rounded-full font-medium border hover:opacity-80 transition-opacity ${STATUS_COLOR[p.status]}`}>
-                              {p.status} ▾
-                            </button>
+                            {readOnly ? (
+                              <span className={`text-xs px-2.5 py-1 rounded-full font-medium border ${STATUS_COLOR[p.status]}`}>{p.status}</span>
+                            ) : (
+                              <button onClick={e => { e.stopPropagation(); e.preventDefault(); setEditingStatusId(p.id) }}
+                                className={`text-xs px-2.5 py-1 rounded-full font-medium border hover:opacity-80 transition-opacity ${STATUS_COLOR[p.status]}`}>
+                                {p.status} ▾
+                              </button>
+                            )}
                           </td>
                           <td className="px-4 py-3.5 text-sm text-gray-500">
                             {p.start_date && p.end_date ? `${p.start_date} ~ ${p.end_date}` : p.start_date ? `${p.start_date} ~` : '-'}

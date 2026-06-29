@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import Sidebar from '@/components/Sidebar'
 import { supabase } from '@/lib/supabase'
-import { useAuth } from '@/lib/auth-context'
+import { useAuth, canEdit } from '@/lib/auth-context'
 import { notifyOthers } from '@/lib/notify'
 
 type Notice = {
@@ -28,6 +28,7 @@ const EMPTY_FORM = { title: '', content: '', category: '전체', author: '' }
 
 export default function NoticesPage() {
   const { profile } = useAuth()
+  const readOnly = !canEdit(profile)
   const [notices, setNotices] = useState<Notice[]>([])
   const [filter, setFilter] = useState('전체')
   const [loading, setLoading] = useState(true)
@@ -79,10 +80,12 @@ export default function NoticesPage() {
             <h1 className="text-xl font-bold text-gray-900">공지사항</h1>
             <p className="text-sm text-gray-500 mt-0.5">전체 {notices.length}개</p>
           </div>
-          <button onClick={() => setShowForm(true)}
-            className="bg-green-600 text-white px-4 py-2.5 rounded-lg text-sm font-medium hover:bg-green-700">
-            + 공지 등록
-          </button>
+          {!readOnly && (
+            <button onClick={() => setShowForm(true)}
+              className="bg-green-600 text-white px-4 py-2.5 rounded-lg text-sm font-medium hover:bg-green-700">
+              + 공지 등록
+            </button>
+          )}
         </header>
 
         {/* 카테고리 필터 */}
@@ -156,10 +159,12 @@ export default function NoticesPage() {
               <span className="text-xs text-gray-400">
                 {new Date(selected.created_at).toLocaleString('ko-KR')}
               </span>
-              <button onClick={() => handleDelete(selected.id)}
-                className="text-xs text-red-400 hover:text-red-600 hover:bg-red-50 px-3 py-1.5 rounded-lg transition-colors">
-                삭제
-              </button>
+              {!readOnly && (
+                <button onClick={() => handleDelete(selected.id)}
+                  className="text-xs text-red-400 hover:text-red-600 hover:bg-red-50 px-3 py-1.5 rounded-lg transition-colors">
+                  삭제
+                </button>
+              )}
             </div>
           </div>
         </div>

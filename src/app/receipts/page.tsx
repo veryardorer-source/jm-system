@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef, useCallback } from 'react'
 import Sidebar from '@/components/Sidebar'
 import { supabase } from '@/lib/supabase'
+import { useAuth, canEdit } from '@/lib/auth-context'
 
 type Photo = {
   id: string
@@ -13,6 +14,8 @@ type Photo = {
 }
 
 export default function ReceiptsPage() {
+  const { profile } = useAuth()
+  const readOnly = !canEdit(profile)
   const [photos, setPhotos] = useState<Photo[]>([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
@@ -78,10 +81,12 @@ export default function ReceiptsPage() {
             <h1 className="text-xl font-bold text-gray-900">영수증</h1>
             <p className="text-sm text-gray-500 mt-0.5">총 {photos.length}장</p>
           </div>
-          <button onClick={() => setShowForm(true)}
-            className="bg-green-600 text-white px-4 py-2.5 rounded-lg text-sm font-medium hover:bg-green-700">
-            + 사진 업로드
-          </button>
+          {!readOnly && (
+            <button onClick={() => setShowForm(true)}
+              className="bg-green-600 text-white px-4 py-2.5 rounded-lg text-sm font-medium hover:bg-green-700">
+              + 사진 업로드
+            </button>
+          )}
         </header>
 
         <div className="flex-1 overflow-auto px-4 md:px-8 py-4 md:py-6 pb-20 md:pb-6">
@@ -103,8 +108,10 @@ export default function ReceiptsPage() {
                     {p.memo && <p className="text-xs text-gray-700 truncate">{p.memo}</p>}
                     <div className="flex items-center justify-between mt-1">
                       <span className="text-xs text-gray-400">{p.uploaded_by || ''} {new Date(p.created_at).toLocaleDateString('ko-KR', { month: 'numeric', day: 'numeric' })}</span>
-                      <button onClick={() => deletePhoto(p)}
-                        className="text-xs text-red-400 hover:text-red-600 opacity-0 group-hover:opacity-100 transition-opacity">삭제</button>
+                      {!readOnly && (
+                        <button onClick={() => deletePhoto(p)}
+                          className="text-xs text-red-500 hover:text-red-700 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">삭제</button>
+                      )}
                     </div>
                   </div>
                 </div>
