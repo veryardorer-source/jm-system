@@ -24,22 +24,67 @@ export default function WithdrawalsPage() {
   const [uploadCurrent, setUploadCurrent] = useState(0)
   const [viewer, setViewer] = useState<Photo | null>(null)
   const [viewerReason, setViewerReason] = useState('')
+  const [viewerImages, setViewerImages] = useState<string[]>([])
   const [savingReason, setSavingReason] = useState(false)
+  const [viewerBusy, setViewerBusy] = useState(false)
+  const viewerFileRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => { fetchPhotos() }, [])
+
+  function imgsOf(p: Photo) {
+    return (p.images && p.images.length ? p.images : [p.image_url]).filter(Boolean)
+  }
 
   function openViewer(p: Photo) {
     setViewer(p)
     setViewerReason(p.reason || '')
+    setViewerImages(imgsOf(p))
+  }
+
+  // 출금 건의 사진/글을 DB에 반영 + 화면 갱신
+  async function applyViewer(nextImages: string[], nextReason: string) {
+    if (!viewer) return
+    await supabase.from('withdrawal_requests').update({
+      images: nextImages, image_url: nextImages[0] || '', reason: nextReason,
+    }).eq('id', viewer.id)
+    setPhotos(ps => ps.map(x => x.id === viewer.id ? { ...x, images: nextImages, image_url: nextImages[0] || '', reason: nextReason } : x))
   }
 
   async function saveViewerReason() {
     if (!viewer) return
     setSavingReason(true)
-    await supabase.from('withdrawal_requests').update({ reason: viewerReason }).eq('id', viewer.id)
-    setPhotos(ps => ps.map(x => x.id === viewer.id ? { ...x, reason: viewerReason } : x))
+    await applyViewer(viewerImages, viewerReason)
     setSavingReason(false)
     setViewer(null)
+  }
+
+  async function removeViewerImage(url: string) {
+    if (!viewer || viewerBusy) return
+    if (!confirm('이 사진을 삭제할까요?')) return
+    setViewerBusy(true)
+    const path = url.split('/uploads/')[1]
+    if (path) await supabase.storage.from('uploads').remove([path])
+    const next = viewerImages.filter(u => u !== url)
+    setViewerImages(next)
+    await applyViewer(next, viewerReason)
+    setViewerBusy(false)
+  }
+
+  async function addViewerImages(files: FileList | null) {
+    if (!viewer || !files || files.length === 0) return
+    setViewerBusy(true)
+    const added: string[] = []
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i]
+      const ext = file.name.split('.').pop() || 'jpg'
+      const path = `withdrawals/${Date.now()}_${i}.${ext}`
+      const { data } = await supabase.storage.from('uploads').upload(path, file, { contentType: file.type || 'image/jpeg' })
+      if (data) added.push(supabase.storage.from('uploads').getPublicUrl(path).data.publicUrl)
+    }
+    const next = [...viewerImages, ...added]
+    setViewerImages(next)
+    await applyViewer(next, viewerReason)
+    setViewerBusy(false)
   }
 
   async function fetchPhotos() {
@@ -147,34 +192,53 @@ export default function WithdrawalsPage() {
         </div>
       </div>
 
-      {viewer && (() => {
-        const vImgs = (viewer.images && viewer.images.length ? viewer.images : [viewer.image_url]).filter(Boolean)
-        return (
+      {viewer && (
         <div className="fixed inset-0 bg-black/80 z-50 overflow-auto p-4" onClick={() => setViewer(null)}>
           <button onClick={() => setViewer(null)} className="fixed top-4 right-4 text-white text-3xl leading-none z-10">&times;</button>
           <div className="max-w-2xl mx-auto flex flex-col gap-3 py-2" onClick={e => e.stopPropagation()}>
-            {/* 글 추가/수정 */}
+            {/* 글 추가/수정 + 건 삭제 */}
             <div className="bg-white rounded-xl px-4 py-3">
               <label className="text-sm font-semibold text-gray-700 block mb-1.5">사유 / 내용</label>
               <textarea value={viewerReason} onChange={e => setViewerReason(e.target.value)} rows={4}
                 placeholder="카톡 내용을 붙여넣거나 입력하세요"
                 className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 resize-y leading-relaxed" />
               <div className="flex gap-2 mt-2">
-                <button onClick={saveViewerReason} disabled={savingReason}
+                <button onClick={saveViewerReason} disabled={savingReason || viewerBusy}
                   className="flex-1 bg-green-600 text-white py-2 rounded-lg text-sm font-medium disabled:opacity-50">
                   {savingReason ? '저장 중...' : '글 저장'}
                 </button>
                 <button onClick={() => { const v = viewer; setViewer(null); deletePhoto(v) }}
-                  className="px-4 border border-red-200 text-red-500 py-2 rounded-lg text-sm font-medium hover:bg-red-50">삭제</button>
+                  className="px-4 border border-red-200 text-red-500 py-2 rounded-lg text-sm font-medium hover:bg-red-50">건 삭제</button>
               </div>
             </div>
-            {vImgs.map((u, i) => (
-              <img key={i} src={u} alt="" className="w-full rounded-lg" />
-            ))}
+
+            {/* 사진 관리 */}
+            <div className="bg-white rounded-xl px-4 py-3">
+              <div className="flex items-center justify-between mb-2">
+                <label className="text-sm font-semibold text-gray-700">사진 {viewerImages.length}장</label>
+                <button onClick={() => viewerFileRef.current?.click()} disabled={viewerBusy}
+                  className="text-sm text-green-600 font-medium disabled:opacity-50">+ 사진 추가</button>
+                <input ref={viewerFileRef} type="file" multiple accept="image/*" className="hidden"
+                  onChange={e => { addViewerImages(e.target.files); e.target.value = '' }} />
+              </div>
+              {viewerImages.length === 0 ? (
+                <p className="text-xs text-gray-400 py-2">사진이 없습니다 (글만 저장된 건)</p>
+              ) : (
+                <div className="flex flex-col gap-2">
+                  {viewerImages.map((u, i) => (
+                    <div key={i} className="relative">
+                      <img src={u} alt="" className="w-full rounded-lg" />
+                      <button onClick={() => removeViewerImage(u)} disabled={viewerBusy}
+                        className="absolute top-2 right-2 bg-black/60 text-white w-8 h-8 rounded-full flex items-center justify-center text-lg leading-none disabled:opacity-50">&times;</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {viewerBusy && <p className="text-xs text-green-600 mt-2 text-center">처리 중...</p>}
+            </div>
           </div>
         </div>
-        )
-      })()}
+      )}
 
       {showForm && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
