@@ -101,9 +101,17 @@ export default function WithdrawalsPage() {
                 return (
                 <div key={p.id} className="bg-white rounded-xl border border-gray-200 overflow-hidden group">
                   <button onClick={() => setViewer({ images: imgs, reason: p.reason || '' })} className="relative block w-full">
-                    <img src={imgs[0]} alt="출금요청" className="w-full aspect-square object-cover" />
-                    {imgs.length > 1 && (
-                      <span className="absolute top-1.5 right-1.5 bg-black/60 text-white text-xs px-2 py-0.5 rounded-full">📷 {imgs.length}장</span>
+                    {imgs.length > 0 ? (
+                      <>
+                        <img src={imgs[0]} alt="출금요청" className="w-full aspect-square object-cover" />
+                        {imgs.length > 1 && (
+                          <span className="absolute top-1.5 right-1.5 bg-black/60 text-white text-xs px-2 py-0.5 rounded-full">📷 {imgs.length}장</span>
+                        )}
+                      </>
+                    ) : (
+                      <div className="w-full aspect-square bg-amber-50 flex items-center justify-center p-3">
+                        <p className="text-xs text-amber-900 whitespace-pre-wrap line-clamp-6 text-left">{p.reason || '📝 글 메모'}</p>
+                      </div>
                     )}
                   </button>
                   <div className="px-3 py-2">

@@ -31,6 +31,12 @@ async function handleShare(request) {
       i++
     }
     await cache.put('/__shared/count', new Response(String(i)))
+    // 공유로 함께 넘어온 텍스트(카톡 메시지 내용 등)도 저장 — 공유 페이지에서 메모로 사용
+    const sharedText = [formData.get('title'), formData.get('text'), formData.get('url')]
+      .filter((v) => typeof v === 'string' && v.trim())
+      .join('\n')
+      .trim()
+    await cache.put('/__shared/text', new Response(sharedText))
   } catch (e) {
     // 무시 — 공유 화면에서 "파일 없음" 처리
   }

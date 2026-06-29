@@ -28,6 +28,13 @@ async function readSharedFiles(): Promise<File[]> {
   return files
 }
 
+async function readSharedText(): Promise<string> {
+  if (typeof caches === 'undefined') return ''
+  const cache = await caches.open('shared-media')
+  const res = await cache.match('/__shared/text')
+  return res ? (await res.text()).trim() : ''
+}
+
 async function clearShared() {
   if (typeof caches === 'undefined') return
   const cache = await caches.open('shared-media')
@@ -38,6 +45,7 @@ export default function SharePage() {
   const { profile } = useAuth()
   const router = useRouter()
   const [files, setFiles] = useState<File[]>([])
+  const [sharedText, setSharedText] = useState('')
   const [projects, setProjects] = useState<Proj[]>([])
   const [dest, setDest] = useState<Dest>('project')
   const [projectId, setProjectId] = useState('')
@@ -51,12 +59,18 @@ export default function SharePage() {
   useEffect(() => {
     let active = true
     async function init() {
-      const [f, p] = await Promise.all([
+      const [f, t, p] = await Promise.all([
         readSharedFiles(),
+        readSharedText(),
         supabase.from('projects').select('id, name').order('created_at', { ascending: false }),
       ])
       if (!active) return
       setFiles(f)
+      setSharedText(t)
+      // 카톡 등에서 함께 넘어온 텍스트를 사유/메모 칸에 자동 입력
+      if (t) { setReason(t); setMemo(t) }
+      // 사진 없이 글만 공유된 경우엔 기본 저장처를 출금요청으로
+      if (t && f.length === 0) setDest('withdrawal')
       setProjects(p.data || [])
       if (p.data && p.data.length) setProjectId(p.data[0].id)
       setLoading(false)
@@ -76,8 +90,26 @@ export default function SharePage() {
   }
 
   async function handleUpload() {
-    if (files.length === 0) return
+    if (files.length === 0 && !sharedText.trim()) return
     if (dest === 'project' && !projectId) return
+    // 사진 없이 텍스트만 공유한 경우 — 영수증/출금요청에 글만 기록
+    if (files.length === 0) {
+      setUploading(true)
+      const who = profile?.name || ''
+      if (dest === 'receipt') {
+        await supabase.from('receipts').insert([{ image_url: '', memo: reason || sharedText, uploaded_by: who }])
+        notifyOthers(profile?.id, { type: 'receipt', title: '새 영수증 메모', body: reason || sharedText, link: '/receipts' })
+      } else {
+        await supabase.from('withdrawal_requests').insert([{
+          image_url: '', images: [], reason: reason || sharedText, requested_by: who, status: '요청', amount: 0, recipient: '',
+        }])
+        notifyOthers(profile?.id, { type: 'withdrawal', title: '새 출금요청 메모', body: reason || sharedText, link: '/withdrawals' })
+      }
+      await clearShared()
+      setUploading(false)
+      router.push(dest === 'receipt' ? '/receipts' : '/withdrawals')
+      return
+    }
     setUploading(true)
     const who = profile?.name || ''
     const wUrls: string[] = []  // 출금요청: 여러 장을 한 건으로 묶음
@@ -136,14 +168,15 @@ export default function SharePage() {
         <div className="flex-1 overflow-auto px-4 md:px-8 py-4 md:py-6 pb-20 md:pb-6">
           {loading ? (
             <div className="text-center text-gray-400 py-16">불러오는 중...</div>
-          ) : files.length === 0 ? (
+          ) : files.length === 0 && !sharedText ? (
             <div className="bg-white rounded-xl border border-gray-200 text-center py-16 text-gray-400">
               <p className="text-3xl mb-2">📤</p>
-              <p>공유된 파일이 없어요.</p>
-              <p className="text-xs mt-1">카톡 등에서 사진을 공유 → 더보기 → JM관리 를 선택해 주세요.</p>
+              <p>공유된 내용이 없어요.</p>
+              <p className="text-xs mt-1">카톡 등에서 사진이나 글을 공유 → 더보기 → JM관리 를 선택해 주세요.</p>
             </div>
           ) : (
             <div className="max-w-lg flex flex-col gap-4">
+              {files.length > 0 && (
               <div className="bg-white rounded-xl border border-gray-200 p-4">
                 <p className="text-sm font-semibold text-gray-700 mb-2">공유된 파일 {files.length}개</p>
                 <div className="grid grid-cols-4 gap-1.5">
@@ -163,12 +196,21 @@ export default function SharePage() {
                   )}
                 </div>
               </div>
+              )}
+
+              {sharedText && (
+                <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+                  <p className="text-sm font-semibold text-amber-800 mb-1">📝 공유된 글</p>
+                  <p className="text-sm text-gray-700 whitespace-pre-wrap">{sharedText}</p>
+                  <p className="text-xs text-amber-600 mt-1.5">아래 사유/메모 칸에 자동으로 채워뒀어요. 수정 가능합니다.</p>
+                </div>
+              )}
 
               {/* 어디에 저장할지 */}
               <div>
                 <label className="text-sm font-medium text-gray-700 block mb-1.5">어디에 저장할까요?</label>
                 <div className="flex gap-2">
-                  {destBtn('project', '현장 자료')}
+                  {files.length > 0 && destBtn('project', '현장 자료')}
                   {destBtn('receipt', '영수증')}
                   {destBtn('withdrawal', '출금요청')}
                 </div>
@@ -219,7 +261,7 @@ export default function SharePage() {
 
               <button onClick={handleUpload} disabled={uploading || (dest === 'project' && !projectId)}
                 className="bg-green-600 text-white py-3 rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-50">
-                {uploading ? `업로드 중... ${progress}%` : `${files.length}개 저장하기`}
+                {uploading ? `업로드 중... ${progress}%` : files.length > 0 ? `${files.length}개 저장하기` : '글 저장하기'}
               </button>
             </div>
           )}
