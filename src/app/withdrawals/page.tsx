@@ -210,7 +210,8 @@ export default function WithdrawalsPage() {
                 <p className="text-sm text-gray-700 whitespace-pre-wrap min-h-[1.5rem]">{viewerReason || '내용 없음'}</p>
               ) : (
                 <>
-                  <textarea value={viewerReason} onChange={e => setViewerReason(e.target.value)} rows={4}
+                  <textarea value={viewerReason} onChange={e => setViewerReason(e.target.value)}
+                    rows={Math.max(6, viewerReason.split('\n').length + 1)}
                     placeholder="카톡 내용을 붙여넣거나 입력하세요"
                     className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 resize-y leading-relaxed" />
                   <div className="flex gap-2 mt-2">
