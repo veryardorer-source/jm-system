@@ -4,6 +4,7 @@ import { useEffect, useState, useRef, useCallback } from 'react'
 import Sidebar from '@/components/Sidebar'
 import { supabase } from '@/lib/supabase'
 import { useAuth, canEdit } from '@/lib/auth-context'
+import { notifyOthers } from '@/lib/notify'
 
 type Photo = {
   id: string
@@ -118,6 +119,7 @@ export default function WithdrawalsPage() {
       await supabase.from('withdrawal_requests').insert([{
         image_url: urls[0] || '', images: urls, reason, requested_by: requestedBy, status: '요청', amount: 0, recipient: '',
       }])
+      notifyOthers(profile?.id, { type: 'withdrawal', title: '새 출금요청', body: `${requestedBy || ''} ${reason || '출금요청이 등록되었습니다'}`.trim(), link: '/withdrawals' })
     }
     setSelectedFiles([])
     setReason('')

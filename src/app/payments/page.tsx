@@ -4,6 +4,7 @@ import { useEffect, useState, useMemo } from 'react'
 import Sidebar from '@/components/Sidebar'
 import { supabase } from '@/lib/supabase'
 import { useAuth, canEdit } from '@/lib/auth-context'
+import { notifyOthers } from '@/lib/notify'
 
 const PAYMENT_TYPES = ['계약금', '중도금', '잔금', '기타']
 const TYPE_COLOR: Record<string, string> = {
@@ -119,7 +120,10 @@ export default function PaymentsPage() {
       note: form.note || null,
     }
     if (editingId) await supabase.from('payments').update(row).eq('id', editingId)
-    else await supabase.from('payments').insert([row])
+    else {
+      await supabase.from('payments').insert([row])
+      notifyOthers(profile?.id, { type: 'payment', title: '새 수금 등록', body: `${row.project_name} ${row.type} ${row.amount.toLocaleString()}원`, link: '/payments' })
+    }
     setShowForm(false)
     setEditingId(null)
     setSaving(false)

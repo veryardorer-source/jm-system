@@ -4,6 +4,7 @@ import { useEffect, useState, useRef, useCallback } from 'react'
 import Sidebar from '@/components/Sidebar'
 import { supabase } from '@/lib/supabase'
 import { useAuth, canEdit } from '@/lib/auth-context'
+import { notifyOthers } from '@/lib/notify'
 
 type Photo = {
   id: string
@@ -56,6 +57,7 @@ export default function ReceiptsPage() {
         }])
       }
     }
+    notifyOthers(profile?.id, { type: 'receipt', title: `새 영수증 ${selectedFiles.length}건`, body: `${profile?.name || ''} ${memo || '영수증이 등록되었습니다'}`.trim(), link: '/receipts' })
     setSelectedFiles([])
     setMemo('')
     setUploadedBy(profile?.name || '')

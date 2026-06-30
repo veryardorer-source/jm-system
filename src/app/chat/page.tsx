@@ -59,6 +59,9 @@ export default function ChatPage() {
     if (!me) return
     supabase.from('profiles').select('id, name').neq('id', me).then(({ data }) => setPeople(data || []))
     loadRooms()
+    // 채팅 화면을 열면 안 읽은 채팅 알림을 읽음 처리 (사이드바 채팅 배지 사라짐)
+    supabase.from('notifications').update({ is_read: true })
+      .eq('user_id', me).eq('type', 'chat').eq('is_read', false).then(() => {})
   }, [me, loadRooms])
 
   const belongs = useCallback((m: Message) => {

@@ -51,16 +51,20 @@ export default function Sidebar() {
   const isPartner = profile?.role === 'partner'
   const navItems = isPartner ? NAV_ITEMS.filter(i => !PARTNER_HIDDEN.includes(i.href)) : NAV_ITEMS
   const [unread, setUnread] = useState(0)
+  const [chatUnread, setChatUnread] = useState(0)
   const [moreOpen, setMoreOpen] = useState(false)
 
   useEffect(() => {
     if (!profile?.id) return
     let active = true
     const load = async () => {
-      const { count } = await supabase.from('notifications')
-        .select('id', { count: 'exact', head: true })
-        .eq('user_id', profile.id).eq('is_read', false)
-      if (active) setUnread(count || 0)
+      const [{ count: total }, { count: chat }] = await Promise.all([
+        supabase.from('notifications').select('id', { count: 'exact', head: true })
+          .eq('user_id', profile.id).eq('is_read', false),
+        supabase.from('notifications').select('id', { count: 'exact', head: true })
+          .eq('user_id', profile.id).eq('is_read', false).eq('type', 'chat'),
+      ])
+      if (active) { setUnread(total || 0); setChatUnread(chat || 0) }
     }
     load()
     const ch = supabase.channel('notif-' + profile.id)
@@ -93,6 +97,11 @@ export default function Sidebar() {
                 {item.href === '/notifications' && unread > 0 && (
                   <span className="ml-auto bg-red-500 text-white text-xs rounded-full min-w-[20px] h-5 px-1.5 flex items-center justify-center">
                     {unread > 99 ? '99+' : unread}
+                  </span>
+                )}
+                {item.href === '/chat' && chatUnread > 0 && (
+                  <span className="ml-auto bg-red-500 text-white text-xs rounded-full min-w-[20px] h-5 px-1.5 flex items-center justify-center">
+                    {chatUnread > 99 ? '99+' : chatUnread}
                   </span>
                 )}
               </Link>
@@ -144,6 +153,11 @@ export default function Sidebar() {
               {item.href === '/notifications' && unread > 0 && (
                 <span className="absolute top-1 right-[24%] bg-red-500 text-white text-[10px] rounded-full min-w-[16px] h-4 px-1 flex items-center justify-center">
                   {unread > 99 ? '99+' : unread}
+                </span>
+              )}
+              {item.href === '/chat' && chatUnread > 0 && (
+                <span className="absolute top-1 right-[24%] bg-red-500 text-white text-[10px] rounded-full min-w-[16px] h-4 px-1 flex items-center justify-center">
+                  {chatUnread > 99 ? '99+' : chatUnread}
                 </span>
               )}
             </Link>

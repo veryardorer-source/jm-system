@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import Sidebar from '@/components/Sidebar'
 import { supabase } from '@/lib/supabase'
 import { useAuth, canEdit } from '@/lib/auth-context'
+import { notifyOthers } from '@/lib/notify'
 
 type WorkLog = {
   id: string
@@ -63,6 +64,7 @@ export default function WorkLogsPage() {
         log_date: form.log_date, today_work: form.today_work, tomorrow_work: form.tomorrow_work, memo: form.memo,
         author: profile?.name || '', author_id: profile?.id || null,
       }])
+      notifyOthers(profile?.id, { type: 'worklog', title: `새 작업일지 · ${profile?.name || ''}`.trim(), body: form.log_date, link: '/worklogs' })
     }
     setShowForm(false)
     setEditingId(null)

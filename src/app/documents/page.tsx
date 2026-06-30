@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import Sidebar from '@/components/Sidebar'
 import { useAuth } from '@/lib/auth-context'
+import { notifyOthers } from '@/lib/notify'
 import { supabase, CompanyDocument, DOC_CATEGORY_LIST, DocVisibility } from '@/lib/supabase'
 
 const EMPTY_FORM = { title: '', category: DOC_CATEGORY_LIST[0] as string, visibility: '전체공개' as DocVisibility, memo: '' }
@@ -90,6 +91,9 @@ export default function DocumentsPage() {
       ? await supabase.from('company_documents').update(payload).eq('id', editing.id)
       : await supabase.from('company_documents').insert([payload])
     if (error) { alert('저장 실패: ' + error.message); setSaving(false); return }
+    if (!editing && form.visibility === '전체공개') {
+      notifyOthers(profile?.id, { type: 'document', title: `새 회사 서류 · ${form.title}`, body: form.category, link: '/documents' })
+    }
     setForm(EMPTY_FORM); setFile(null); setEditing(null); setShowForm(false); setSaving(false)
     fetchDocs()
   }
