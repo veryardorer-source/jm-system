@@ -26,6 +26,9 @@ const ADMIN_ITEMS = [
   { href: '/admin/finance', label: '재정관리', icon: '📊' },
 ]
 
+// 외부협력업체(partner)에게 숨길 메뉴 (금전·내부 자료) — 현장 관련만 보이게
+const PARTNER_HIDDEN = ['/receipts', '/withdrawals', '/payments', '/worklogs', '/documents']
+
 // 모바일 하단바에 항상 보일 핵심 메뉴 (나머지는 '더보기'로)
 const MOBILE_PRIMARY = ['/', '/projects', '/chat', '/notifications']
 const MOBILE_SHORT: Record<string, string> = {
@@ -45,6 +48,8 @@ export default function Sidebar() {
   const router = useRouter()
   const { profile, signOut } = useAuth()
   const isAdmin = profile?.role === 'admin'
+  const isPartner = profile?.role === 'partner'
+  const navItems = isPartner ? NAV_ITEMS.filter(i => !PARTNER_HIDDEN.includes(i.href)) : NAV_ITEMS
   const [unread, setUnread] = useState(0)
   const [moreOpen, setMoreOpen] = useState(false)
 
@@ -77,7 +82,7 @@ export default function Sidebar() {
           <Image src="/logo.png" alt="JM Architecture Interior" width={140} height={48} className="brightness-0 invert" />
         </div>
         <nav className="flex-1 px-3 py-4 flex flex-col gap-1">
-          {NAV_ITEMS.map(item => {
+          {navItems.map(item => {
             const active = pathname === item.href || (item.href !== '/' && pathname.startsWith(item.href))
             return (
               <Link key={item.href} href={item.href}
@@ -127,7 +132,7 @@ export default function Sidebar() {
 
       {/* 모바일 하단 탭바 — 핵심 4개 + 더보기 */}
       <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-green-800 border-t border-green-700 z-50 flex h-14">
-        {NAV_ITEMS.filter(i => MOBILE_PRIMARY.includes(i.href)).map(item => {
+        {navItems.filter(i => MOBILE_PRIMARY.includes(i.href)).map(item => {
           const active = pathname === item.href || (item.href !== '/' && pathname.startsWith(item.href))
           return (
             <Link key={item.href} href={item.href} onClick={() => setMoreOpen(false)}
@@ -163,7 +168,7 @@ export default function Sidebar() {
               </div>
             )}
             <div className="grid grid-cols-4 gap-2">
-              {NAV_ITEMS.filter(i => !MOBILE_PRIMARY.includes(i.href)).map(item => {
+              {navItems.filter(i => !MOBILE_PRIMARY.includes(i.href)).map(item => {
                 const active = pathname.startsWith(item.href)
                 return (
                   <Link key={item.href} href={item.href} onClick={() => setMoreOpen(false)}

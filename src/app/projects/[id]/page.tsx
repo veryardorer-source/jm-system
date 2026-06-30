@@ -501,8 +501,9 @@ export default function ProjectDetail() {
     )
   }
 
-  const canSeeMoney = profile?.role !== 'field'
+  const canSeeMoney = profile?.role !== 'field' && profile?.role !== 'partner'
   const readOnly = !canEdit(profile)
+  const visibleTabs = canSeeMoney ? TAB_LIST : TAB_LIST.filter(t => t !== '비용')
   const doneCount = schedules.filter(s => (s.phase_status || '예정') === '완료').length
   const inProgressCount = schedules.filter(s => s.phase_status === '진행중').length
   const progressPct = schedules.length ? Math.round((doneCount / schedules.length) * 100) : 0
@@ -562,7 +563,7 @@ export default function ProjectDetail() {
         {/* 탭 */}
         <div className="bg-white border-b border-gray-200 px-4 md:px-8">
           <div className="flex gap-1">
-            {TAB_LIST.map(t => (
+            {visibleTabs.map(t => (
               <button key={t} onClick={() => setTab(t)}
                 className={`relative px-5 py-3 text-sm font-medium border-b-2 transition-colors ${
                   tab === t ? 'border-green-600 text-green-600' : 'border-transparent text-gray-500 hover:text-gray-700'

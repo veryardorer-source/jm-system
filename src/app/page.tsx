@@ -4,10 +4,13 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import Sidebar from '@/components/Sidebar'
 import { supabase, Project, ProjectAssignment, Schedule, STATUS_COLOR, STATUS_LIST, HIDDEN_STATUSES } from '@/lib/supabase'
+import { useAuth, canEdit } from '@/lib/auth-context'
 
 type ViewMode = 'card' | 'timeline'
 
 export default function Dashboard() {
+  const { profile } = useAuth()
+  const readOnly = !canEdit(profile)
   const [projects, setProjects] = useState<Project[]>([])
   const [assignments, setAssignments] = useState<ProjectAssignment[]>([])
   const [schedules, setSchedules] = useState<Schedule[]>([])
@@ -118,7 +121,7 @@ const [loading, setLoading] = useState(true)
                     <Link href="/projects" className="text-green-600 text-sm mt-2 inline-block">현장 등록하기 →</Link>
                   </div>
                 ) : viewMode === 'timeline' ? (
-                  <TimelineView projects={activeProjects} schedules={schedules} onRefresh={fetchAll} />
+                  <TimelineView projects={activeProjects} schedules={schedules} onRefresh={fetchAll} readOnly={readOnly} />
                 ) : (
                   <div className="grid grid-cols-1 gap-3">
                     {STATUS_LIST.filter(s => !HIDDEN_STATUSES.includes(s as typeof HIDDEN_STATUSES[number])).map(status => {
@@ -219,10 +222,11 @@ const PHASE_STATUS_COLOR: Record<string, string> = {
   '완료':   '#86efac', // green-300
 }
 
-function TimelineView({ projects, schedules, onRefresh }: {
+function TimelineView({ projects, schedules, onRefresh, readOnly }: {
   projects: Project[]
   schedules: Schedule[]
   onRefresh: () => void
+  readOnly: boolean
 }) {
   const today = new Date(); today.setHours(0,0,0,0)
   // 기본 표시 범위: 오늘 -2주 ~ +6주 (약 2개월), 스크롤로 전체 공정 확인 가능
@@ -344,14 +348,16 @@ function TimelineView({ projects, schedules, onRefresh }: {
                   <div className="w-48 flex-shrink-0 px-4 flex items-center justify-between border-r border-gray-100 gap-1">
                     <Link href={`/projects/${p.id}`}
                       className="text-xs font-semibold text-gray-800 hover:text-green-600 truncate flex-1">{p.name}</Link>
-                    <button onClick={() => { setShowAddForm(p.id); setAddForm({ task_name: '', scheduled_date: '', end_date: '' }) }}
-                      className="text-gray-300 hover:text-green-500 text-base flex-shrink-0" title="공정 추가">+</button>
+                    {!readOnly && (
+                      <button onClick={() => { setShowAddForm(p.id); setAddForm({ task_name: '', scheduled_date: '', end_date: '' }) }}
+                        className="text-gray-300 hover:text-green-500 text-base flex-shrink-0" title="공정 추가">+</button>
+                    )}
                   </div>
                   <div className="flex-1 relative" style={{ minHeight: 40 }}>
                     <div className="absolute top-0 bottom-0 w-px bg-red-300 z-10" style={{ left: `${todayPct}%` }} />
                     {projectSchedules.length === 0 && (
                       <div className="flex items-center h-full px-3">
-                        <span className="text-xs text-gray-300">+ 버튼으로 공정 추가</span>
+                        <span className="text-xs text-gray-300">{readOnly ? '등록된 공정 없음' : '+ 버튼으로 공정 추가'}</span>
                       </div>
                     )}
                     {projectSchedules.map(s => {
@@ -365,18 +371,20 @@ function TimelineView({ projects, schedules, onRefresh }: {
                         <div key={s.id} className="absolute group"
                           style={{ left: `${left}%`, width: `${width}%`, top: 6, height: 28, zIndex: statusPicker === s.id ? 30 : 1 }}>
                           {/* 바 */}
-                          <div onClick={e => { e.stopPropagation(); setStatusPicker(statusPicker === s.id ? null : s.id) }}
-                            className="w-full h-6 rounded-full flex items-center px-2 overflow-hidden border cursor-pointer hover:opacity-90"
+                          <div onClick={e => { e.stopPropagation(); if (!readOnly) setStatusPicker(statusPicker === s.id ? null : s.id) }}
+                            className={`w-full h-6 rounded-full flex items-center px-2 overflow-hidden border ${readOnly ? '' : 'cursor-pointer hover:opacity-90'}`}
                             style={{ backgroundColor: color, borderColor: ps === '진행중' ? '#16a34a' : 'transparent' }}>
                             <span className="text-xs font-medium truncate" style={{ fontSize: 10, color: textColor }}>
                               {s.task_name}
                             </span>
                           </div>
                           {/* 삭제 버튼 */}
-                          <button onClick={e => { e.stopPropagation(); deletePhase(s.id) }}
-                            className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white rounded-full text-xs hidden group-hover:flex items-center justify-center leading-none">×</button>
+                          {!readOnly && (
+                            <button onClick={e => { e.stopPropagation(); deletePhase(s.id) }}
+                              className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white rounded-full text-xs hidden group-hover:flex items-center justify-center leading-none">×</button>
+                          )}
                           {/* 상태 선택 팝업 */}
-                          {statusPicker === s.id && (
+                          {!readOnly && statusPicker === s.id && (
                             <div className="absolute top-7 left-0 bg-white border border-gray-200 rounded-xl shadow-lg z-50 overflow-hidden"
                               style={{ minWidth: 100 }}>
                               {(['예정', '진행중', '완료'] as const).map(st => (
