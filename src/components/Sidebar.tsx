@@ -27,7 +27,7 @@ const ADMIN_ITEMS = [
 ]
 
 // 외부협력업체(partner)에게 숨길 메뉴 (금전·내부 자료) — 현장 관련만 보이게
-const PARTNER_HIDDEN = ['/receipts', '/withdrawals', '/payments', '/worklogs', '/documents']
+const PARTNER_HIDDEN = ['/receipts', '/withdrawals', '/payments', '/worklogs', '/documents', '/chat']
 
 // 모바일 하단바에 항상 보일 핵심 메뉴 (나머지는 '더보기'로)
 const MOBILE_PRIMARY = ['/', '/projects', '/chat', '/notifications']
