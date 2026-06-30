@@ -69,7 +69,9 @@ export default function NoticesPage() {
     fetchNotices()
   }
 
-  const filtered = notices.filter(n => filter === '전체' || n.category === filter)
+  // 외부협력업체는 '사용법' 공지만 볼 수 있음
+  const scoped = readOnly ? notices.filter(n => n.category === '사용법') : notices
+  const filtered = scoped.filter(n => filter === '전체' || n.category === filter)
 
   return (
     <div className="flex flex-col md:flex-row min-h-screen">
@@ -78,7 +80,7 @@ export default function NoticesPage() {
         <header className="bg-white border-b border-gray-200 px-4 md:px-8 py-4 md:py-5 flex items-center justify-between flex-shrink-0">
           <div>
             <h1 className="text-xl font-bold text-gray-900">공지사항</h1>
-            <p className="text-sm text-gray-500 mt-0.5">전체 {notices.length}개</p>
+            <p className="text-sm text-gray-500 mt-0.5">전체 {scoped.length}개</p>
           </div>
           {!readOnly && (
             <button onClick={() => setShowForm(true)}
@@ -88,7 +90,8 @@ export default function NoticesPage() {
           )}
         </header>
 
-        {/* 카테고리 필터 */}
+        {/* 카테고리 필터 (외부협력업체는 사용법만 보여 필터 숨김) */}
+        {!readOnly && (
         <div className="bg-white border-b border-gray-200 px-4 md:px-8 py-3 flex gap-2 overflow-x-auto flex-shrink-0">
           {CATEGORIES.map(c => (
             <button key={c} onClick={() => setFilter(c)}
@@ -102,6 +105,7 @@ export default function NoticesPage() {
             </button>
           ))}
         </div>
+        )}
 
         <div className="flex-1 overflow-auto px-4 md:px-8 py-4 md:py-6 pb-20 md:pb-6">
           {loading ? (
