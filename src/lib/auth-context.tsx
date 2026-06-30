@@ -79,3 +79,9 @@ export function isAdmin(profile: Profile | null) {
 export function canEdit(profile: Profile | null) {
   return profile?.role !== 'partner'
 }
+
+// 관리자가 부여하는 정식 역할. 이 중 하나가 아니면 '승인 대기'(가입만 한 상태)로 보고 접근 차단.
+export const APPROVED_ROLES = ['admin', 'designer', 'field', 'partner'] as const
+export function isApproved(profile: Profile | null) {
+  return !!profile && (APPROVED_ROLES as readonly string[]).includes(profile.role)
+}

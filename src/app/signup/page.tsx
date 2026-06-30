@@ -39,7 +39,7 @@ export default function SignupPage() {
       const { error: profileError } = await supabase.from('profiles').insert([{
         id: data.user.id,
         name: form.name.trim(),
-        role: 'staff',
+        role: 'pending', // 관리자가 권한을 줄 때까지 '승인 대기' — 아무것도 못 봄
         team: null,
       }])
       if (profileError) {

@@ -128,8 +128,8 @@ export default function AdminUsersPage() {
                           <NameCell user={u} onSave={name => updateName(u.id, name)} isMe={u.id === myProfile?.id} />
                         </td>
                         <td className="px-4 py-3">
-                          <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${roleInfo?.color}`}>
-                            {roleInfo?.label}
+                          <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${roleInfo?.color || 'bg-amber-100 text-amber-700'}`}>
+                            {roleInfo?.label || '승인대기'}
                           </span>
                         </td>
                         <td className="px-4 py-3">
@@ -165,8 +165,8 @@ export default function AdminUsersPage() {
                           <p className="text-sm font-semibold text-gray-800">{u.name}</p>
                           {u.id === myProfile?.id && <p className="text-xs text-green-500">나</p>}
                         </div>
-                        <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${roleInfo?.color}`}>
-                          {roleInfo?.label}
+                        <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${roleInfo?.color || 'bg-amber-100 text-amber-700'}`}>
+                          {roleInfo?.label || '승인대기'}
                         </span>
                       </div>
                       {u.id !== myProfile?.id && (

@@ -3,6 +3,7 @@ import "./globals.css";
 import { AuthProvider } from "@/lib/auth-context";
 import SWRegister from "@/components/SWRegister";
 import NotifPopup from "@/components/NotifPopup";
+import AuthGate from "@/components/AuthGate";
 
 export const metadata: Metadata = {
   title: "JM 관리 시스템",
@@ -35,8 +36,10 @@ export default function RootLayout({
       <body className="h-full bg-gray-50">
         <SWRegister />
         <AuthProvider>
-          <NotifPopup />
-          {children}
+          <AuthGate>
+            <NotifPopup />
+            {children}
+          </AuthGate>
         </AuthProvider>
       </body>
     </html>
