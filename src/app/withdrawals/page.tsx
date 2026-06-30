@@ -33,6 +33,7 @@ export default function WithdrawalsPage() {
   const viewerFileRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => { fetchPhotos() }, [])
+  useEffect(() => { if (profile?.name) setRequestedBy(profile.name) }, [profile?.name])
 
   function imgsOf(p: Photo) {
     return (p.images && p.images.length ? p.images : [p.image_url]).filter(Boolean)
@@ -120,7 +121,7 @@ export default function WithdrawalsPage() {
     }
     setSelectedFiles([])
     setReason('')
-    setRequestedBy('')
+    setRequestedBy(profile?.name || '')
     setShowForm(false)
     setUploading(false)
     setUploadCurrent(0)

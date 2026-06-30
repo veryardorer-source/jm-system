@@ -122,7 +122,7 @@ export default function SharePage() {
         const url = await uploadOne(file, i, `files/${projectId}`)
         if (url) await supabase.from('project_files').insert([{
           project_id: projectId, file_name: file.name, file_url: url,
-          file_type: file.type || '', category, memo: memo || '', uploaded_by: '',
+          file_type: file.type || '', category, memo: memo || '', uploaded_by: who,
         }])
       } else if (dest === 'receipt') {
         const url = await uploadOne(file, i, 'receipts')

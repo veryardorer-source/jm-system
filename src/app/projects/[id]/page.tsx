@@ -136,7 +136,7 @@ export default function ProjectDetail() {
         file_type: 'link',
         category: '구매링크',
         memo: fileForm.memo || '',
-        uploaded_by: '',
+        uploaded_by: profile?.name || '',
       }])
       if (error) { alert('저장 실패: ' + error.message); return }
       notifyOthers(profile?.id, { type: 'file', title: `${project?.name || '현장'} · 새 구매링크`, body: fileForm.linkTitle.trim() || '구매링크가 추가되었습니다', link: `/projects/${id}` })
@@ -197,7 +197,7 @@ export default function ProjectDetail() {
         file_type: file.type || '',
         category: fileForm.category.trim() || '기타',
         memo: fileForm.memo || '',
-        uploaded_by: '',
+        uploaded_by: profile?.name || '',
       }])
       if (insertError) {
         alert('DB 저장 실패: ' + insertError.message)
@@ -486,6 +486,9 @@ export default function ProjectDetail() {
           onClick={e => { e.stopPropagation(); setLightbox(f.file_url) }}
           className="absolute top-1.5 right-1.5 w-6 h-6 rounded-full bg-black/50 text-white flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-opacity z-10"
           title="크게 보기">⛶</button>
+        {f.uploaded_by && !isHovered && (
+          <span className="absolute bottom-1 left-1 bg-black/55 text-white text-[10px] px-1.5 py-0.5 rounded max-w-[85%] truncate pointer-events-none">{f.uploaded_by}</span>
+        )}
         {isHovered && (
           <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent rounded-b-lg flex items-end justify-between p-1.5 gap-1">
             <button onClick={e => { e.stopPropagation(); shareFile(f) }}
@@ -879,7 +882,7 @@ export default function ProjectDetail() {
                                       <p className="text-sm font-medium text-gray-800 hover:text-green-600 truncate">{f.file_name}</p>
                                       {f.memo && <p className="text-xs text-gray-400">{f.memo}</p>}
                                     </button>
-                                    <span className="text-xs text-gray-400 flex-shrink-0 hidden sm:block">{new Date(f.created_at).toLocaleDateString('ko-KR')}</span>
+                                    <span className="text-xs text-gray-400 flex-shrink-0 hidden sm:block">{f.uploaded_by ? `${f.uploaded_by} · ` : ''}{new Date(f.created_at).toLocaleDateString('ko-KR')}</span>
                                     {f.file_type !== 'link' && (<>
                                       <button onClick={() => shareFile(f)}
                                         className="text-xs text-blue-400 hover:text-blue-600 flex-shrink-0">내보내기</button>

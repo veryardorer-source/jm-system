@@ -26,6 +26,7 @@ export default function ReceiptsPage() {
   const [uploadCurrent, setUploadCurrent] = useState(0)
 
   useEffect(() => { fetchPhotos() }, [])
+  useEffect(() => { if (profile?.name) setUploadedBy(profile.name) }, [profile?.name])
 
   async function fetchPhotos() {
     setLoading(true)
@@ -51,13 +52,13 @@ export default function ReceiptsPage() {
         await supabase.from('receipts').insert([{
           image_url: urlData.publicUrl,
           memo,
-          uploaded_by: uploadedBy,
+          uploaded_by: uploadedBy.trim() || profile?.name || '',
         }])
       }
     }
     setSelectedFiles([])
     setMemo('')
-    setUploadedBy('')
+    setUploadedBy(profile?.name || '')
     setShowForm(false)
     setUploading(false)
     setUploadCurrent(0)
