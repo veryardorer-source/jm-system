@@ -25,10 +25,36 @@ type Active =
   | { kind: 'room'; id: string; name: string }
   | null
 
+// ── 대화별 안읽음 추적 (마지막으로 읽은 시각을 기기에 저장) ──
+const LR_KEY = 'jm_chat_lastread'
+function getLastRead(): Record<string, string> {
+  if (typeof localStorage === 'undefined') return {}
+  try { return JSON.parse(localStorage.getItem(LR_KEY) || '{}') } catch { return {} }
+}
+function markRead(key: string) {
+  if (typeof localStorage === 'undefined' || !key) return
+  const lr = getLastRead(); lr[key] = new Date().toISOString()
+  localStorage.setItem(LR_KEY, JSON.stringify(lr))
+}
+function convKey(a: Active): string | null {
+  if (!a) return null
+  if (a.kind === 'all') return 'all'
+  if (a.kind === 'room') return 'room:' + a.id
+  return 'dm:' + a.id
+}
+function msgKey(m: Message, myId: string, roomIds: Set<string>): string | null {
+  if (m.sender_id === myId) return null               // 내가 보낸 건 제외
+  if (m.room_id == null && m.recipient_id == null) return 'all'
+  if (m.room_id != null) return roomIds.has(m.room_id) ? 'room:' + m.room_id : null
+  if (m.recipient_id === myId) return 'dm:' + (m.sender_id || '')
+  return null
+}
+
 export default function ChatPage() {
   const { profile } = useAuth()
   const me = profile?.id
   const readOnly = !canEdit(profile)
+  const [unread, setUnread] = useState<Record<string, number>>({})
   const [dragOver, setDragOver] = useState(false)
   const [people, setPeople] = useState<Person[]>([])
   const [rooms, setRooms] = useState<Room[]>([])
@@ -64,6 +90,36 @@ export default function ChatPage() {
       .eq('user_id', me).eq('type', 'chat').eq('is_read', false).then(() => {})
   }, [me, loadRooms])
 
+  // 안읽음 초기 계산 (페이지 진입/방 목록 로드 시): 마지막 읽은 시각 이후 받은 메시지 수
+  useEffect(() => {
+    if (!me) return
+    let on = true
+    const roomIds = new Set(rooms.map(r => r.id))
+    ;(async () => {
+      const { data } = await supabase.from('messages').select('*')
+        .or(`recipient_id.is.null,recipient_id.eq.${me},sender_id.eq.${me}`)
+        .order('created_at', { ascending: false }).limit(300)
+      if (!on) return
+      const lr = getLastRead()
+      const counts: Record<string, number> = {}
+      for (const m of (data || [])) {
+        const key = msgKey(m as Message, me, roomIds)
+        if (!key) continue
+        if (!lr[key] || (m.created_at as string) > lr[key]) counts[key] = (counts[key] || 0) + 1
+      }
+      setUnread(counts)
+    })()
+    return () => { on = false }
+  }, [me, rooms])
+
+  // 대화를 열면 그 대화는 읽음 처리 (점 사라짐)
+  useEffect(() => {
+    const key = convKey(active)
+    if (!key) return
+    markRead(key)
+    setUnread(u => (u[key] ? { ...u, [key]: 0 } : u))
+  }, [active])
+
   const belongs = useCallback((m: Message) => {
     if (!active) return false
     if (active.kind === 'all') return m.recipient_id == null && m.room_id == null
@@ -84,14 +140,22 @@ export default function ChatPage() {
       if (on) setMessages(data || [])
     }
     load()
+    const roomIds = new Set(rooms.map(r => r.id))
     const ch = supabase.channel('chat-live')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, payload => {
         const m = payload.new as Message
-        if (belongs(m)) setMessages(prev => prev.some(x => x.id === m.id) ? prev : [...prev, m])
+        if (belongs(m)) {
+          setMessages(prev => prev.some(x => x.id === m.id) ? prev : [...prev, m])
+          if (m.sender_id !== me) markRead(convKey(active)!) // 보고 있는 대화는 계속 읽음 처리
+        } else {
+          // 지금 보고 있지 않은 대화에서 온 메시지 → 안읽음 표시
+          const key = msgKey(m, me!, roomIds)
+          if (key) setUnread(u => ({ ...u, [key]: (u[key] || 0) + 1 }))
+        }
       })
       .subscribe()
     return () => { on = false; supabase.removeChannel(ch) }
-  }, [active, me, belongs])
+  }, [active, me, belongs, rooms])
 
   useEffect(() => { scrollToBottom() }, [messages, scrollToBottom])
 
@@ -172,6 +236,9 @@ export default function ChatPage() {
     setPicked(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
   }
 
+  const badge = (n: number) => n > 0
+    ? <span className="ml-auto bg-red-500 text-white text-[10px] font-bold rounded-full min-w-[18px] h-[18px] px-1 flex items-center justify-center flex-shrink-0">{n > 99 ? '99+' : n}</span>
+    : null
   const activeName = !active ? '' : active.kind === 'all' ? '전체 채팅방' : active.name
   const showSenderName = active?.kind === 'all' || active?.kind === 'room'
   const fmtTime = (iso: string) => new Date(iso).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })
@@ -203,9 +270,12 @@ export default function ChatPage() {
             </div>
             <div className="flex-1 overflow-auto">
               <button onClick={() => setActive({ kind: 'all' })}
-                className={`w-full text-left px-4 py-3 border-b border-gray-100 hover:bg-gray-50 ${active?.kind === 'all' ? 'bg-green-50' : ''}`}>
-                <span className="text-sm font-medium text-gray-800">📢 전체 채팅방</span>
-                <p className="text-xs text-gray-400 mt-0.5">모든 직원</p>
+                className={`w-full text-left px-4 py-3 border-b border-gray-100 hover:bg-gray-50 flex items-center ${active?.kind === 'all' ? 'bg-green-50' : ''}`}>
+                <div className="min-w-0">
+                  <span className="text-sm font-medium text-gray-800">📢 전체 채팅방</span>
+                  <p className="text-xs text-gray-400 mt-0.5">모든 직원</p>
+                </div>
+                {badge(unread['all'] || 0)}
               </button>
 
               {rooms.length > 0 && <div className="px-4 pt-3 pb-1 text-xs text-gray-400 font-semibold">채팅방</div>}
@@ -213,7 +283,8 @@ export default function ChatPage() {
                 <button key={r.id} onClick={() => setActive({ kind: 'room', id: r.id, name: r.name })}
                   className={`w-full text-left px-4 py-3 border-b border-gray-100 hover:bg-gray-50 flex items-center gap-2.5 ${active?.kind === 'room' && active.id === r.id ? 'bg-green-50' : ''}`}>
                   <span className="w-8 h-8 rounded-full bg-green-100 text-green-700 flex items-center justify-center text-sm flex-shrink-0">#</span>
-                  <span className="text-sm text-gray-800">{r.name}</span>
+                  <span className="text-sm text-gray-800 truncate">{r.name}</span>
+                  {badge(unread['room:' + r.id] || 0)}
                 </button>
               ))}
 
@@ -222,7 +293,8 @@ export default function ChatPage() {
                 <button key={p.id} onClick={() => setActive({ kind: 'dm', id: p.id, name: p.name })}
                   className={`w-full text-left px-4 py-3 border-b border-gray-100 hover:bg-gray-50 flex items-center gap-2.5 ${active?.kind === 'dm' && active.id === p.id ? 'bg-green-50' : ''}`}>
                   <span className="w-8 h-8 rounded-full bg-gray-100 text-gray-600 flex items-center justify-center text-sm flex-shrink-0">{p.name?.slice(0, 1) || '?'}</span>
-                  <span className="text-sm text-gray-800">{p.name}</span>
+                  <span className="text-sm text-gray-800 truncate">{p.name}</span>
+                  {badge(unread['dm:' + p.id] || 0)}
                 </button>
               ))}
               {people.length === 0 && <p className="text-center text-xs text-gray-400 py-6">다른 직원이 없어요</p>}
