@@ -23,6 +23,7 @@ export default function AdminEmployeesPage() {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [revealedId, setRevealedId] = useState<string | null>(null)
+  const [detailEmp, setDetailEmp] = useState<Employee | null>(null)
 
   useEffect(() => {
     if (!authLoading) {
@@ -124,11 +125,14 @@ export default function AdminEmployeesPage() {
 
         <div className="flex-1 overflow-auto px-4 md:px-8 py-6 pb-20 md:pb-6 flex flex-col gap-8">
           <EmployeeTable title="상용직" list={regular} mask={mask} revealedId={revealedId} setRevealedId={setRevealedId}
-            onEdit={openEdit} onToggle={toggleActive} onDelete={deleteEmployee} />
+            onEdit={openEdit} onToggle={toggleActive} onDelete={deleteEmployee} onOpenDetail={setDetailEmp} />
           <EmployeeTable title="일용직" list={daily} mask={mask} revealedId={revealedId} setRevealedId={setRevealedId}
-            onEdit={openEdit} onToggle={toggleActive} onDelete={deleteEmployee} />
+            onEdit={openEdit} onToggle={toggleActive} onDelete={deleteEmployee} onOpenDetail={setDetailEmp} />
         </div>
       </div>
+
+      {/* 직원 상세(급여·근태) 모달 */}
+      {detailEmp && <EmployeeDetailModal emp={detailEmp} onClose={() => setDetailEmp(null)} />}
 
       {/* 추가/수정 모달 */}
       {showForm && (
@@ -232,7 +236,7 @@ export default function AdminEmployeesPage() {
   )
 }
 
-function EmployeeTable({ title, list, mask, revealedId, setRevealedId, onEdit, onToggle, onDelete }: {
+function EmployeeTable({ title, list, mask, revealedId, setRevealedId, onEdit, onToggle, onDelete, onOpenDetail }: {
   title: string
   list: Employee[]
   mask: (v: string, id: string) => string
@@ -241,6 +245,7 @@ function EmployeeTable({ title, list, mask, revealedId, setRevealedId, onEdit, o
   onEdit: (e: Employee) => void
   onToggle: (e: Employee) => void
   onDelete: (e: Employee) => void
+  onOpenDetail: (e: Employee) => void
 }) {
   return (
     <div>
@@ -267,7 +272,12 @@ function EmployeeTable({ title, list, mask, revealedId, setRevealedId, onEdit, o
             <tbody>
               {list.map(e => (
                 <tr key={e.id} className="border-b border-gray-50 hover:bg-gray-50">
-                  <td className="px-4 py-3 text-sm font-medium text-gray-800">{e.name}</td>
+                  <td className="px-4 py-3 text-sm font-medium">
+                    <button onClick={() => onOpenDetail(e)} className="text-green-700 hover:text-green-900 hover:underline font-semibold">
+                      {e.name}
+                    </button>
+                    <span className="block text-[11px] text-gray-400 font-normal">급여·근태 보기</span>
+                  </td>
                   <td className="px-4 py-3 text-sm text-gray-600 font-mono">
                     <button onClick={() => setRevealedId(revealedId === e.id ? null : e.id)} className="hover:text-green-600">
                       {mask(e.resident_number, e.id)}
@@ -299,6 +309,145 @@ function EmployeeTable({ title, list, mask, revealedId, setRevealedId, onEdit, o
           </table>
         </div>
       )}
+    </div>
+  )
+}
+
+// ───────────── 직원 상세: 급여 + 근태 ─────────────
+type Salary = { id: string; month: string; amount: number; memo: string | null }
+type Attendance = { id: string; att_date: string; att_type: string; memo: string | null }
+const ATT_TYPES = ['지각', '조퇴', '결근', '연차', '반차', '기타']
+const ATT_COLOR: Record<string, string> = {
+  '지각': 'bg-amber-100 text-amber-700', '조퇴': 'bg-amber-100 text-amber-700',
+  '결근': 'bg-red-100 text-red-700', '연차': 'bg-blue-100 text-blue-700',
+  '반차': 'bg-blue-100 text-blue-700', '기타': 'bg-gray-100 text-gray-600',
+}
+
+function EmployeeDetailModal({ emp, onClose }: { emp: Employee; onClose: () => void }) {
+  const [salaries, setSalaries] = useState<Salary[]>([])
+  const [attendance, setAttendance] = useState<Attendance[]>([])
+  const [loading, setLoading] = useState(true)
+  const [sForm, setSForm] = useState({ month: '', amount: '', memo: '' })
+  const [aForm, setAForm] = useState({ att_date: '', att_type: '지각', memo: '' })
+  const [busy, setBusy] = useState(false)
+
+  async function load() {
+    const sb = createClient()
+    const [s, a] = await Promise.all([
+      sb.from('employee_salaries').select('*').eq('employee_id', emp.id).order('month', { ascending: false }),
+      sb.from('employee_attendance').select('*').eq('employee_id', emp.id).order('att_date', { ascending: false }),
+    ])
+    setSalaries(s.data || [])
+    setAttendance(a.data || [])
+    setLoading(false)
+  }
+  useEffect(() => { load() }, [emp.id])
+
+  async function addSalary(e: React.FormEvent) {
+    e.preventDefault()
+    if (!sForm.month || !sForm.amount) return
+    setBusy(true)
+    const sb = createClient()
+    await sb.from('employee_salaries').insert([{ employee_id: emp.id, month: sForm.month, amount: Number(sForm.amount) || 0, memo: sForm.memo || null }])
+    setSForm({ month: '', amount: '', memo: '' }); setBusy(false); load()
+  }
+  async function delSalary(id: string) {
+    const sb = createClient()
+    await sb.from('employee_salaries').delete().eq('id', id); load()
+  }
+  async function addAttendance(e: React.FormEvent) {
+    e.preventDefault()
+    if (!aForm.att_date) return
+    setBusy(true)
+    const sb = createClient()
+    await sb.from('employee_attendance').insert([{ employee_id: emp.id, att_date: aForm.att_date, att_type: aForm.att_type, memo: aForm.memo || null }])
+    setAForm({ att_date: '', att_type: '지각', memo: '' }); setBusy(false); load()
+  }
+  async function delAttendance(id: string) {
+    const sb = createClient()
+    await sb.from('employee_attendance').delete().eq('id', id); load()
+  }
+
+  const salaryTotal = salaries.reduce((s, x) => s + (x.amount || 0), 0)
+
+  return (
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl w-full max-w-2xl shadow-xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 sticky top-0 bg-white z-10">
+          <div>
+            <h2 className="text-lg font-bold">{emp.name}</h2>
+            <p className="text-xs text-gray-400">{emp.department || ''} · {emp.employment_type}</p>
+          </div>
+          <button onClick={onClose} className="text-gray-400 text-2xl">&times;</button>
+        </div>
+
+        {loading ? (
+          <div className="py-16 text-center text-gray-400 text-sm">불러오는 중...</div>
+        ) : (
+          <div className="px-6 py-5 flex flex-col gap-6">
+            {/* 급여 */}
+            <section>
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="text-sm font-bold text-gray-800">💰 급여 내역</h3>
+                <span className="text-xs text-gray-400">합계 {salaryTotal.toLocaleString()}원</span>
+              </div>
+              <form onSubmit={addSalary} className="flex flex-wrap gap-2 mb-3 items-end">
+                <input type="month" value={sForm.month} onChange={e => setSForm({ ...sForm, month: e.target.value })} required
+                  className="border border-gray-300 rounded-lg px-2 py-2 text-sm" />
+                <input type="number" inputMode="numeric" value={sForm.amount} onChange={e => setSForm({ ...sForm, amount: e.target.value })} placeholder="금액(원)" required
+                  className="border border-gray-300 rounded-lg px-2 py-2 text-sm w-32" />
+                <input value={sForm.memo} onChange={e => setSForm({ ...sForm, memo: e.target.value })} placeholder="메모"
+                  className="border border-gray-300 rounded-lg px-2 py-2 text-sm flex-1 min-w-[100px]" />
+                <button type="submit" disabled={busy} className="bg-green-600 text-white px-3 py-2 rounded-lg text-sm font-medium disabled:opacity-50">추가</button>
+              </form>
+              {salaries.length === 0 ? (
+                <p className="text-xs text-gray-400 py-2">등록된 급여가 없어요</p>
+              ) : (
+                <div className="flex flex-col gap-1">
+                  {salaries.map(s => (
+                    <div key={s.id} className="flex items-center gap-3 text-sm bg-gray-50 rounded-lg px-3 py-2">
+                      <span className="font-medium text-gray-700 w-20">{s.month}</span>
+                      <span className="font-semibold text-gray-900">{s.amount.toLocaleString()}원</span>
+                      {s.memo && <span className="text-xs text-gray-400 flex-1 truncate">{s.memo}</span>}
+                      <button onClick={() => delSalary(s.id)} className="ml-auto text-xs text-red-400 hover:text-red-600">삭제</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
+
+            {/* 근태 */}
+            <section>
+              <h3 className="text-sm font-bold text-gray-800 mb-2">🗓️ 근태 내역 (지각·결근·연차 등)</h3>
+              <form onSubmit={addAttendance} className="flex flex-wrap gap-2 mb-3 items-end">
+                <input type="date" value={aForm.att_date} onChange={e => setAForm({ ...aForm, att_date: e.target.value })} required
+                  className="border border-gray-300 rounded-lg px-2 py-2 text-sm" />
+                <select value={aForm.att_type} onChange={e => setAForm({ ...aForm, att_type: e.target.value })}
+                  className="border border-gray-300 rounded-lg px-2 py-2 text-sm">
+                  {ATT_TYPES.map(t => <option key={t}>{t}</option>)}
+                </select>
+                <input value={aForm.memo} onChange={e => setAForm({ ...aForm, memo: e.target.value })} placeholder="메모(사유 등)"
+                  className="border border-gray-300 rounded-lg px-2 py-2 text-sm flex-1 min-w-[100px]" />
+                <button type="submit" disabled={busy} className="bg-green-600 text-white px-3 py-2 rounded-lg text-sm font-medium disabled:opacity-50">추가</button>
+              </form>
+              {attendance.length === 0 ? (
+                <p className="text-xs text-gray-400 py-2">등록된 근태가 없어요</p>
+              ) : (
+                <div className="flex flex-col gap-1">
+                  {attendance.map(a => (
+                    <div key={a.id} className="flex items-center gap-3 text-sm bg-gray-50 rounded-lg px-3 py-2">
+                      <span className="font-medium text-gray-700 w-24">{a.att_date}</span>
+                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${ATT_COLOR[a.att_type] || 'bg-gray-100 text-gray-600'}`}>{a.att_type}</span>
+                      {a.memo && <span className="text-xs text-gray-400 flex-1 truncate">{a.memo}</span>}
+                      <button onClick={() => delAttendance(a.id)} className="ml-auto text-xs text-red-400 hover:text-red-600">삭제</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
+          </div>
+        )}
+      </div>
     </div>
   )
 }
