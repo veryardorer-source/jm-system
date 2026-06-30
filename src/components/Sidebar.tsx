@@ -26,6 +26,12 @@ const ADMIN_ITEMS = [
   { href: '/admin/finance', label: '재정관리', icon: '📊' },
 ]
 
+// 모바일 하단바에 항상 보일 핵심 메뉴 (나머지는 '더보기'로)
+const MOBILE_PRIMARY = ['/', '/projects', '/chat', '/notifications']
+const MOBILE_SHORT: Record<string, string> = {
+  '/': '홈', '/projects': '현장', '/chat': '채팅', '/notifications': '알림',
+}
+
 const ROLE_LABEL: Record<string, string> = {
   admin: '관리자',
   designer: '디자인팀',
@@ -40,6 +46,7 @@ export default function Sidebar() {
   const { profile, signOut } = useAuth()
   const isAdmin = profile?.role === 'admin'
   const [unread, setUnread] = useState(0)
+  const [moreOpen, setMoreOpen] = useState(false)
 
   useEffect(() => {
     if (!profile?.id) return
@@ -118,26 +125,70 @@ export default function Sidebar() {
         </div>
       </aside>
 
-      {/* 모바일 하단 탭바 */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-green-800 border-t border-green-700 z-40 flex">
-        {NAV_ITEMS.map(item => {
+      {/* 모바일 하단 탭바 — 핵심 4개 + 더보기 */}
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-green-800 border-t border-green-700 z-50 flex h-14">
+        {NAV_ITEMS.filter(i => MOBILE_PRIMARY.includes(i.href)).map(item => {
           const active = pathname === item.href || (item.href !== '/' && pathname.startsWith(item.href))
           return (
-            <Link key={item.href} href={item.href}
-              className={`relative flex-1 flex flex-col items-center justify-center py-2 text-xs transition-colors ${
-                active ? 'text-white font-semibold' : 'text-green-100'
+            <Link key={item.href} href={item.href} onClick={() => setMoreOpen(false)}
+              className={`relative flex-1 flex flex-col items-center justify-center py-1.5 text-xs transition-colors ${
+                active && !moreOpen ? 'text-white font-semibold' : 'text-green-100'
               }`}>
               <span className="text-lg mb-0.5">{item.icon}</span>
-              <span className="leading-none">{item.label.replace(' 관리', '').replace('사항', '').replace(' 요청', '').replace(' 서류', '')}</span>
+              <span className="leading-none">{MOBILE_SHORT[item.href] || item.label}</span>
               {item.href === '/notifications' && unread > 0 && (
-                <span className="absolute top-1 right-[22%] bg-red-500 text-white text-[10px] rounded-full min-w-[16px] h-4 px-1 flex items-center justify-center">
+                <span className="absolute top-1 right-[24%] bg-red-500 text-white text-[10px] rounded-full min-w-[16px] h-4 px-1 flex items-center justify-center">
                   {unread > 99 ? '99+' : unread}
                 </span>
               )}
             </Link>
           )
         })}
+        <button onClick={() => setMoreOpen(v => !v)}
+          className={`flex-1 flex flex-col items-center justify-center py-1.5 text-xs transition-colors ${moreOpen ? 'text-white font-semibold' : 'text-green-100'}`}>
+          <span className="text-lg mb-0.5">☰</span>
+          <span className="leading-none">더보기</span>
+        </button>
       </nav>
+
+      {/* 모바일 더보기 시트 */}
+      {moreOpen && (
+        <div className="md:hidden fixed inset-0 z-40" onClick={() => setMoreOpen(false)}>
+          <div className="absolute inset-0 bg-black/40" />
+          <div className="absolute bottom-14 left-0 right-0 bg-white rounded-t-2xl px-4 pt-4 pb-5 shadow-2xl" onClick={e => e.stopPropagation()}>
+            {profile && (
+              <div className="mb-3 px-1">
+                <p className="text-sm font-semibold text-gray-900">{profile.name}</p>
+                <p className="text-xs text-gray-400">{ROLE_LABEL[profile.role] || profile.role}</p>
+              </div>
+            )}
+            <div className="grid grid-cols-4 gap-2">
+              {NAV_ITEMS.filter(i => !MOBILE_PRIMARY.includes(i.href)).map(item => {
+                const active = pathname.startsWith(item.href)
+                return (
+                  <Link key={item.href} href={item.href} onClick={() => setMoreOpen(false)}
+                    className={`flex flex-col items-center gap-1 py-3 rounded-xl text-center ${active ? 'bg-green-50' : 'hover:bg-gray-50'}`}>
+                    <span className="text-2xl">{item.icon}</span>
+                    <span className="text-[11px] text-gray-700 leading-tight">{item.label}</span>
+                  </Link>
+                )
+              })}
+              {isAdmin && ADMIN_ITEMS.map(item => {
+                const active = pathname.startsWith(item.href)
+                return (
+                  <Link key={item.href} href={item.href} onClick={() => setMoreOpen(false)}
+                    className={`flex flex-col items-center gap-1 py-3 rounded-xl text-center ${active ? 'bg-green-50' : 'hover:bg-gray-50'}`}>
+                    <span className="text-2xl">{item.icon}</span>
+                    <span className="text-[11px] text-gray-700 leading-tight">{item.label}</span>
+                  </Link>
+                )
+              })}
+            </div>
+            <button onClick={handleSignOut}
+              className="mt-3 w-full text-center text-sm text-red-500 py-2.5 border-t border-gray-100">로그아웃</button>
+          </div>
+        </div>
+      )}
     </>
   )
 }
