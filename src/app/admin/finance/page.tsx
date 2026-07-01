@@ -541,10 +541,11 @@ function QuoteTab({ list, onRefresh }: { list: Quote[]; onRefresh: () => void })
   function openFile(q: Quote) {
     if (!q.file_url) return
     const name = q.file_name?.toLowerCase() || ''
-    // PDF·엑셀·워드·PPT 등은 구글 뷰어로 브라우저에서 바로 열기(다운로드 없이)
-    if (/\.(pdf|xlsx|xls|csv|doc|docx|ppt|pptx)$/.test(name)) {
-      window.open(`https://docs.google.com/viewer?url=${encodeURIComponent(q.file_url)}`, '_blank')
+    if (/\.(xlsx|xls|doc|docx|ppt|pptx)$/.test(name)) {
+      // 엑셀·워드·PPT → 마이크로소프트 오피스 온라인 뷰어(다운로드 없이 미리보기)
+      window.open(`https://view.officeapps.live.com/op/view.aspx?src=${encodeURIComponent(q.file_url)}`, '_blank')
     } else {
+      // PDF·사진 등은 브라우저에서 바로 열림
       window.open(q.file_url, '_blank')
     }
   }
