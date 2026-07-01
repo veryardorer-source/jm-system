@@ -355,6 +355,7 @@ function PayrollPivot({ list }: { list: Payroll[] }) {
 // 급여대장 엑셀 업로드 (해당 시트 자동 인식 → 미리보기 → 저장)
 function LedgerUploadModal({ onClose, onSave }: { onClose: () => void; onSave: (d: PayrollLedger) => Promise<void> }) {
   const [data, setData] = useState<PayrollLedger | null>(null)
+  const [month, setMonth] = useState('') // 'YYYY-MM' (자동 인식 또는 직접 선택)
   const [parsing, setParsing] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -366,11 +367,12 @@ function LedgerUploadModal({ onClose, onSave }: { onClose: () => void; onSave: (
     setParsing(false)
     if (!parsed) { setError('급여대장 시트에서 성명/급여합계를 찾지 못했어요. 파일에 "급여대장" 시트와 성명·급여합계 열이 있는지 확인해주세요.'); return }
     setData(parsed)
+    setMonth(parsed.month || month)
   }
   async function handleSave() {
-    if (!data) return
+    if (!data || !month) return
     setSaving(true)
-    await onSave(data)
+    await onSave({ month, rows: data.rows })
     setSaving(false)
   }
   const total = data?.rows.reduce((s, r) => s + r.gross, 0) || 0
@@ -392,9 +394,15 @@ function LedgerUploadModal({ onClose, onSave }: { onClose: () => void; onSave: (
           {parsing && <p className="text-sm text-gray-400">분석 중...</p>}
           {error && <p className="text-sm text-red-500 bg-red-50 px-3 py-2 rounded-lg">{error}</p>}
           {data && (
+            <>
+            <div>
+              <label className="text-sm font-medium text-gray-700 block mb-1.5">급여 월 * {data.month ? <span className="text-green-600 font-normal">(자동 인식됨)</span> : <span className="text-amber-600 font-normal">(자동 인식 실패 — 직접 선택)</span>}</label>
+              <input type="month" value={month} onChange={e => setMonth(e.target.value)}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
+            </div>
             <div className="border border-gray-200 rounded-lg overflow-hidden">
               <div className="bg-green-50 px-3 py-2 text-sm text-green-800 flex justify-between">
-                <span><b>{data.month || '월 미인식'}</b> · {data.rows.length}명</span>
+                <span><b>{month || '월 선택 필요'}</b> · {data.rows.length}명</span>
                 <span className="font-semibold">합계 {total.toLocaleString()}원</span>
               </div>
               <div className="max-h-56 overflow-y-auto">
@@ -415,17 +423,17 @@ function LedgerUploadModal({ onClose, onSave }: { onClose: () => void; onSave: (
                   </tbody>
                 </table>
               </div>
-              {!data.month && <p className="text-xs text-amber-600 px-3 py-2">⚠ 월을 못 읽었어요. 이대로 저장하면 월 없이 들어갑니다. 파일에 &quot;2026년 7월&quot; 표기가 있는지 확인하세요.</p>}
             </div>
+            </>
           )}
           <div className="flex gap-3 mt-1">
             <button onClick={onClose} className="flex-1 border border-gray-300 text-gray-700 py-2.5 rounded-lg text-sm font-medium">취소</button>
-            <button onClick={handleSave} disabled={saving || !data || !data.month}
+            <button onClick={handleSave} disabled={saving || !data || !month}
               className="flex-1 bg-green-600 text-white py-2.5 rounded-lg text-sm font-medium disabled:opacity-50">
-              {saving ? '저장 중...' : data?.month ? `${data.month} 급여 저장` : '월 인식 필요'}
+              {saving ? '저장 중...' : month ? `${month} 급여 저장` : '월 선택 필요'}
             </button>
           </div>
-          {data && data.month && <p className="text-xs text-gray-400 -mt-2">※ 같은 달을 다시 올리면 그 달 급여가 새 내용으로 교체됩니다.</p>}
+          {data && month && <p className="text-xs text-gray-400 -mt-2">※ 같은 달을 다시 올리면 그 달 급여가 새 내용으로 교체됩니다.</p>}
         </div>
       </div>
     </div>

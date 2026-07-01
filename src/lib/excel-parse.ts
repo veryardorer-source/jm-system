@@ -66,7 +66,8 @@ function readNamedSheet(file: File, keyword: string): Promise<unknown[][]> {
         const wb = XLSX.read(e.target?.result, { type: 'binary' })
         const name = wb.SheetNames.find(n => n.includes(keyword)) || wb.SheetNames[0]
         const sheet = wb.Sheets[name]
-        resolve(XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: '' }))
+        // raw:false → 표시 형식(날짜·통화 포함)을 문자열로 반환 (예: 날짜셀 "2026년 6월", "6,875,000")
+        resolve(XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: '', raw: false }))
       } catch (err) { reject(err) }
     }
     reader.onerror = reject
@@ -80,12 +81,16 @@ const numOf = (v: unknown) => Number(String(v ?? '').replace(/[^0-9.-]/g, '')) |
 export async function parsePayrollLedger(file: File): Promise<PayrollLedger | null> {
   const rows = await readNamedSheet(file, '급여대장')
 
-  // 월 찾기: "2026년 7월" 같은 셀
+  // 월 찾기: "2026년 7월", "2026-07", "2026.7" 등
   let month = ''
-  for (let r = 0; r < Math.min(rows.length, 8); r++) {
+  for (let r = 0; r < Math.min(rows.length, 10); r++) {
     for (const cell of rows[r] || []) {
-      const m = String(cell ?? '').match(/(20\d{2})\s*년\s*(\d{1,2})\s*월/)
-      if (m) { month = `${m[1]}-${String(m[2]).padStart(2, '0')}`; break }
+      const s = String(cell ?? '')
+      const m = s.match(/(20\d{2})\s*[년.\-/]\s*(\d{1,2})\s*월?/)
+      if (m) {
+        const mm = Number(m[2])
+        if (mm >= 1 && mm <= 12) { month = `${m[1]}-${String(mm).padStart(2, '0')}`; break }
+      }
     }
     if (month) break
   }
