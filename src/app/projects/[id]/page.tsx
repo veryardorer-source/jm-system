@@ -33,6 +33,40 @@ async function toBrowserSafeImage(file: File): Promise<{ file: File; ext: string
   }
 }
 
+// HEIC(아이폰 원본) 이미지는 브라우저가 못 띄우므로, 화면에 보여줄 때 즉석에서 JPEG로 변환해 표시.
+// (업로드 자동변환을 거치지 않은 옛 파일도 이제 정상적으로 보임)
+function HeicImg({ src, alt, className, onClick }: {
+  src: string; alt?: string; className?: string; onClick?: (e: React.MouseEvent) => void
+}) {
+  const heicSrc = /\.(heic|heif)$/i.test((src || '').split('?')[0])
+  const [url, setUrl] = useState(heicSrc ? '' : src)
+  useEffect(() => {
+    if (!/\.(heic|heif)$/i.test((src || '').split('?')[0])) { setUrl(src); return }
+    let created: string | null = null
+    let cancelled = false
+    setUrl('')
+    ;(async () => {
+      try {
+        const heic2any = (await import('heic2any')).default
+        const res = await fetch(src)
+        const blob = await res.blob()
+        const out = await heic2any({ blob, toType: 'image/jpeg', quality: 0.85 })
+        const b = (Array.isArray(out) ? out[0] : out) as Blob
+        if (cancelled) return
+        created = URL.createObjectURL(b)
+        setUrl(created)
+      } catch { if (!cancelled) setUrl(src) }
+    })()
+    return () => { cancelled = true; if (created) URL.revokeObjectURL(created) }
+  }, [src])
+  if (!url) return (
+    <div className={`${className || ''} bg-gray-100 flex items-center justify-center`} onClick={onClick}>
+      <span className="text-[10px] text-gray-400 animate-pulse">사진 변환 중...</span>
+    </div>
+  )
+  return <img src={url} alt={alt} className={className} onClick={onClick} />
+}
+
 export default function ProjectDetail() {
   const { id } = useParams<{ id: string }>()
   const router = useRouter()
@@ -461,7 +495,7 @@ export default function ProjectDetail() {
               isSelected ? 'border-green-500 ring-2 ring-green-500 brightness-90' : 'border-gray-200'
             }`} />
         ) : (
-          <img src={f.file_url} alt={f.file_name}
+          <HeicImg src={f.file_url} alt={f.file_name}
             onClick={() => readOnly ? setLightbox(f.file_url) : toggleSelectFile(f.id)}
             className={`w-full h-full object-cover rounded-lg border cursor-pointer transition-all ${
               isSelected ? 'border-green-500 ring-2 ring-green-500 brightness-90' : 'border-gray-200'
@@ -1225,7 +1259,7 @@ export default function ProjectDetail() {
                 onClick={e => e.stopPropagation()}
                 className="max-w-full max-h-full rounded-lg" />
             ) : (
-              <img src={lightbox} alt="" onClick={e => e.stopPropagation()} className="max-w-full max-h-full object-contain rounded-lg" />
+              <HeicImg src={lightbox} alt="" onClick={e => e.stopPropagation()} className="max-w-full max-h-full object-contain rounded-lg" />
             )}
             {idx > 0 && (
               <button onClick={e => { e.stopPropagation(); go(-1) }}
