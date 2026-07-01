@@ -6,11 +6,18 @@ import webpush from 'web-push'
 
 export const runtime = 'nodejs'
 
-webpush.setVapidDetails(
-  process.env.VAPID_SUBJECT || 'mailto:admin@example.com',
-  process.env.VAPID_PUBLIC_KEY || '',
-  process.env.VAPID_PRIVATE_KEY || '',
-)
+// VAPID 키가 있을 때만 설정(빌드/키 미설정 환경에서 안전). 설정 성공 여부 반환.
+function ensureVapid(): boolean {
+  const pub = process.env.VAPID_PUBLIC_KEY
+  const priv = process.env.VAPID_PRIVATE_KEY
+  if (!pub || !priv) return false
+  try {
+    webpush.setVapidDetails(process.env.VAPID_SUBJECT || 'mailto:admin@example.com', pub, priv)
+    return true
+  } catch {
+    return false
+  }
+}
 
 export async function POST(req: NextRequest) {
   // 로그인한 사용자만 호출 가능
@@ -22,6 +29,8 @@ export async function POST(req: NextRequest) {
   )
   const { data: { user } } = await authClient.auth.getUser()
   if (!user) return NextResponse.json({ error: '인증 필요' }, { status: 401 })
+
+  if (!ensureVapid()) return NextResponse.json({ ok: true, sent: 0, note: 'push not configured' })
 
   const { userIds, title, body, link } = await req.json()
   if (!Array.isArray(userIds) || userIds.length === 0) return NextResponse.json({ ok: true, sent: 0 })
