@@ -1119,8 +1119,8 @@ export default function ProjectDetail() {
       {/* 자료 추가 모달 */}
       {showFileForm && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl w-full max-w-md shadow-xl">
-            <div className="flex items-center justify-between px-6 py-5 border-b border-gray-100">
+          <div className="bg-white rounded-2xl w-full max-w-md shadow-xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between px-6 py-5 border-b border-gray-100 sticky top-0 bg-white">
               <h2 className="text-lg font-bold">자료 업로드</h2>
               <button onClick={() => { setShowFileForm(false); setSelectedFiles([]) }} className="text-gray-400 text-2xl">&times;</button>
             </div>
@@ -1350,8 +1350,8 @@ export default function ProjectDetail() {
       {/* 공정 추가 모달 */}
       {showScheduleForm && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl w-full max-w-md shadow-xl">
-            <div className="flex items-center justify-between px-6 py-5 border-b border-gray-100">
+          <div className="bg-white rounded-2xl w-full max-w-md shadow-xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between px-6 py-5 border-b border-gray-100 sticky top-0 bg-white">
               <h2 className="text-lg font-bold">{editingSchedule ? '공정 수정' : '공정 추가'}</h2>
               <button onClick={() => { setShowScheduleForm(false); setEditingSchedule(null); setSForm({ task_name: '', scheduled_date: '', end_date: '', manager: '' }) }} className="text-gray-400 text-2xl">&times;</button>
             </div>
@@ -1396,8 +1396,8 @@ export default function ProjectDetail() {
       {/* 비용 추가 모달 */}
       {showCostForm && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl w-full max-w-md shadow-xl">
-            <div className="flex items-center justify-between px-6 py-5 border-b border-gray-100">
+          <div className="bg-white rounded-2xl w-full max-w-md shadow-xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between px-6 py-5 border-b border-gray-100 sticky top-0 bg-white">
               <h2 className="text-lg font-bold">{editingCost ? '비용 자료 수정' : '월별 비용 자료 추가'}</h2>
               <button onClick={() => { setShowCostForm(false); setEditingCost(null); setCForm({ month: '', amount: '', memo: '' }); setCostFile(null) }} className="text-gray-400 text-2xl">&times;</button>
             </div>
