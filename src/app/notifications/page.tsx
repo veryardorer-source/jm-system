@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import Sidebar from '@/components/Sidebar'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/lib/auth-context'
+import { subscribeToPush, pushSupported } from '@/lib/push'
 
 type AppNotification = {
   id: string
@@ -21,6 +22,20 @@ export default function NotificationsPage() {
   const router = useRouter()
   const [items, setItems] = useState<AppNotification[]>([])
   const [loading, setLoading] = useState(true)
+  const [perm, setPerm] = useState<'granted' | 'denied' | 'default' | 'unsupported'>('default')
+  const [enabling, setEnabling] = useState(false)
+
+  useEffect(() => {
+    if (!pushSupported()) { setPerm('unsupported'); return }
+    setPerm(Notification.permission)
+  }, [])
+
+  async function enablePush() {
+    setEnabling(true)
+    await subscribeToPush(profile?.id || '')
+    if (pushSupported()) setPerm(Notification.permission)
+    setEnabling(false)
+  }
 
   useEffect(() => {
     if (!profile?.id) return
@@ -65,6 +80,33 @@ export default function NotificationsPage() {
         </header>
 
         <div className="flex-1 overflow-auto px-4 md:px-8 py-4 md:py-6 pb-20 md:pb-6">
+          {/* 이 기기에서 OS 알림 받기 */}
+          <div className="max-w-2xl mb-4">
+            {perm === 'granted' ? (
+              <div className="bg-green-50 border border-green-200 rounded-xl px-4 py-3 flex items-center gap-3">
+                <span className="text-lg">✅</span>
+                <div className="flex-1 text-sm text-green-800">이 기기에서 알림을 받고 있어요. (앱을 꺼도 PC·휴대폰에 팝업)</div>
+                <button onClick={enablePush} disabled={enabling} className="text-xs text-green-700 underline disabled:opacity-50">다시 확인</button>
+              </div>
+            ) : perm === 'denied' ? (
+              <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-700">
+                🔕 이 브라우저에서 알림이 <b>차단</b>돼 있어요. 주소창 왼쪽 <b>자물쇠(🔒) 아이콘 → 알림 → 허용</b>으로 바꾼 뒤 새로고침해 주세요.
+              </div>
+            ) : perm === 'unsupported' ? (
+              <div className="bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm text-gray-500">
+                이 브라우저는 OS 알림을 지원하지 않아요. (아이폰은 <b>홈 화면에 앱 설치</b> 후 이용 가능)
+              </div>
+            ) : (
+              <div className="bg-green-600 text-white rounded-xl px-4 py-3 flex items-center gap-3 shadow-sm">
+                <span className="text-lg">🔔</span>
+                <div className="flex-1 text-sm">알림을 켜면 앱을 꺼도 새 소식이 이 기기에 팝업으로 떠요.</div>
+                <button onClick={enablePush} disabled={enabling}
+                  className="bg-white text-green-700 text-sm font-bold px-4 py-1.5 rounded-lg flex-shrink-0 disabled:opacity-50">
+                  {enabling ? '켜는 중...' : '알림 켜기'}
+                </button>
+              </div>
+            )}
+          </div>
           {loading ? (
             <div className="text-center text-gray-400 py-16">불러오는 중...</div>
           ) : items.length === 0 ? (

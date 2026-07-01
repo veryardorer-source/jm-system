@@ -8,8 +8,10 @@ import { createClient } from '@/lib/supabase-browser'
 import { FixedCost, Payroll, ProjectProfit, SalesRecord, Project, supabase } from '@/lib/supabase'
 import { parseExcelRows, parseExcelTotal, ParsedRow } from '@/lib/excel-parse'
 
-const TAB_LIST = ['고정지출', '급여내역', '현장별 이익', '매출매입'] as const
+const TAB_LIST = ['고정지출', '급여내역', '현장별 이익', '매출매입', '견적서'] as const
 type Tab = typeof TAB_LIST[number]
+
+type Quote = { id: string; title: string; quote_date: string | null; amount: number; memo: string | null; file_url: string | null; file_name: string | null; created_at: string }
 
 function TrendChart({ data }: { data: { label: string; value: number }[] }) {
   const max = Math.max(...data.map(d => d.value), 1)
@@ -39,6 +41,7 @@ export default function FinancePage() {
   const [profits, setProfits] = useState<ProjectProfit[]>([])
   const [sales, setSales] = useState<SalesRecord[]>([])
   const [projects, setProjects] = useState<Project[]>([])
+  const [quotes, setQuotes] = useState<Quote[]>([])
 
   useEffect(() => {
     if (!authLoading) {
@@ -50,18 +53,20 @@ export default function FinancePage() {
   async function fetchAll() {
     setLoading(true)
     const sb = createClient()
-    const [fc, pr, pp, sl, proj] = await Promise.all([
+    const [fc, pr, pp, sl, proj, qt] = await Promise.all([
       sb.from('finance_fixed_costs').select('*').order('month', { ascending: false }),
       sb.from('finance_payroll').select('*').order('month', { ascending: false }),
       sb.from('finance_project_profit').select('*').order('month', { ascending: false }),
       sb.from('finance_sales').select('*').order('month', { ascending: false }),
       supabase.from('projects').select('*').order('name'),
+      sb.from('finance_quotes').select('*').order('quote_date', { ascending: false, nullsFirst: false }),
     ])
     setFixedCosts(fc.data || [])
     setPayrolls(pr.data || [])
     setProfits(pp.data || [])
     setSales(sl.data || [])
     setProjects(proj.data || [])
+    setQuotes(qt.data || [])
     setLoading(false)
   }
 
@@ -97,6 +102,7 @@ export default function FinancePage() {
           {tab === '급여내역' && <PayrollTab list={payrolls} onRefresh={fetchAll} />}
           {tab === '현장별 이익' && <ProfitTab list={profits} projects={projects} onRefresh={fetchAll} />}
           {tab === '매출매입' && <SalesTab list={sales} onRefresh={fetchAll} />}
+          {tab === '견적서' && <QuoteTab list={quotes} onRefresh={fetchAll} />}
         </div>
       </div>
     </div>
@@ -484,6 +490,123 @@ function SalesTab({ list, onRefresh }: { list: SalesRecord[]; onRefresh: () => v
                 if (total) setForm(prev => ({ ...prev, amount: String(total) }))
               }
             }} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:bg-green-50 file:text-green-700 file:text-xs" />
+          </div>
+          <TextInput label="메모" value={form.memo} onChange={v => setForm({ ...form, memo: v })} />
+        </FormModal>
+      )}
+    </div>
+  )
+}
+
+// ───────────── 견적서 ─────────────
+function QuoteTab({ list, onRefresh }: { list: Quote[]; onRefresh: () => void }) {
+  const [showForm, setShowForm] = useState(false)
+  const [editing, setEditing] = useState<Quote | null>(null)
+  const [form, setForm] = useState({ title: '', quote_date: '', amount: '', memo: '' })
+  const [file, setFile] = useState<File | null>(null)
+  const [saving, setSaving] = useState(false)
+
+  async function save(e: React.FormEvent) {
+    e.preventDefault()
+    if (!form.title.trim()) return
+    setSaving(true)
+    const sb = createClient()
+    let file_url = editing?.file_url || '', file_name = editing?.file_name || ''
+    if (file) {
+      const ext = file.name.split('.').pop() || 'bin'
+      const path = `finance/quotes/${Date.now()}.${ext}`
+      const { error: upErr } = await sb.storage.from('uploads').upload(path, file, { contentType: file.type || 'application/octet-stream', upsert: true })
+      if (upErr) { alert('파일 업로드 실패: ' + upErr.message); setSaving(false); return }
+      file_url = sb.storage.from('uploads').getPublicUrl(path).data.publicUrl
+      file_name = file.name
+    }
+    const payload = { title: form.title.trim(), quote_date: form.quote_date || null, amount: Number(form.amount) || 0, memo: form.memo, file_url, file_name }
+    const { error } = editing
+      ? await sb.from('finance_quotes').update(payload).eq('id', editing.id)
+      : await sb.from('finance_quotes').insert([payload])
+    if (error) { alert('저장 실패: ' + error.message); setSaving(false); return }
+    setForm({ title: '', quote_date: '', amount: '', memo: '' }); setFile(null)
+    setEditing(null); setShowForm(false); setSaving(false)
+    onRefresh()
+  }
+
+  async function del(q: Quote) {
+    if (!confirm(`"${q.title}" 견적서를 삭제할까요?`)) return
+    const sb = createClient()
+    if (q.file_url) { const path = q.file_url.split('/uploads/')[1]; if (path) await sb.storage.from('uploads').remove([path]) }
+    await sb.from('finance_quotes').delete().eq('id', q.id)
+    onRefresh()
+  }
+
+  function openFile(q: Quote) {
+    if (!q.file_url) return
+    const name = q.file_name?.toLowerCase() || ''
+    if (name.endsWith('.pdf')) window.open(`https://docs.google.com/viewer?url=${encodeURIComponent(q.file_url)}`, '_blank')
+    else window.open(q.file_url, '_blank')
+  }
+
+  return (
+    <div>
+      <div className="flex justify-end mb-4">
+        <button onClick={() => { setEditing(null); setForm({ title: '', quote_date: '', amount: '', memo: '' }); setFile(null); setShowForm(true) }}
+          className="bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-700">+ 견적서 추가</button>
+      </div>
+      <p className="text-xs text-gray-400 mb-3">이 프로그램 이전에 만든 견적서(PDF·엑셀·사진)도 파일로 올려두면 여기서 모아볼 수 있어요.</p>
+      {list.length === 0 ? (
+        <EmptyState icon="📄" text="등록된 견적서가 없어요" />
+      ) : (
+        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden overflow-x-auto">
+          <table className="w-full whitespace-nowrap">
+            <thead>
+              <tr className="border-b border-gray-100 bg-gray-50">
+                <th className="text-left text-xs font-semibold text-gray-400 px-6 py-3">견적명 / 현장</th>
+                <th className="text-left text-xs font-semibold text-gray-400 px-4 py-3">견적일</th>
+                <th className="text-right text-xs font-semibold text-gray-400 px-4 py-3">금액</th>
+                <th className="text-left text-xs font-semibold text-gray-400 px-4 py-3">첨부</th>
+                <th className="text-left text-xs font-semibold text-gray-400 px-4 py-3">메모</th>
+                <th className="px-4 py-3"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {list.map(q => (
+                <tr key={q.id} className="border-b border-gray-50 hover:bg-gray-50">
+                  <td className="px-6 py-3 text-sm font-medium text-gray-800">{q.title}</td>
+                  <td className="px-4 py-3 text-sm text-gray-500">{q.quote_date || '-'}</td>
+                  <td className="px-4 py-3 text-sm text-right font-semibold text-gray-800">{q.amount ? q.amount.toLocaleString() + '원' : '-'}</td>
+                  <td className="px-4 py-3">
+                    {q.file_url ? (
+                      <button onClick={() => openFile(q)} className="text-xs text-green-600 hover:underline truncate max-w-[160px] inline-block">📎 {q.file_name}</button>
+                    ) : <span className="text-xs text-gray-300">-</span>}
+                  </td>
+                  <td className="px-4 py-3 text-xs text-gray-400">{q.memo || '-'}</td>
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-2 justify-end">
+                      <button onClick={() => { setEditing(q); setForm({ title: q.title, quote_date: q.quote_date || '', amount: String(q.amount || ''), memo: q.memo || '' }); setFile(null); setShowForm(true) }}
+                        className="text-xs text-green-500 hover:text-green-700">수정</button>
+                      <button onClick={() => del(q)} className="text-xs text-red-400 hover:text-red-600">삭제</button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {showForm && (
+        <FormModal title={editing ? '견적서 수정' : '견적서 추가'} onClose={() => setShowForm(false)} onSubmit={save} saving={saving}>
+          <TextInput label="견적명 / 현장 *" required value={form.title} onChange={v => setForm({ ...form, title: v })} placeholder="예) 롯데캐슬 미용실 견적서" />
+          <div>
+            <label className="text-sm font-medium text-gray-700 block mb-1.5">견적일</label>
+            <input type="date" value={form.quote_date} onChange={e => setForm({ ...form, quote_date: e.target.value })}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
+          </div>
+          <NumberInput label="금액 (선택)" value={form.amount} onChange={v => setForm({ ...form, amount: v })} />
+          <div>
+            <label className="text-sm font-medium text-gray-700 block mb-1.5">
+              견적서 파일 {editing?.file_name ? <span className="text-gray-400 font-normal">(변경 시에만 · 현재: {editing.file_name})</span> : <span className="text-gray-400 font-normal">(PDF·엑셀·사진)</span>}
+            </label>
+            <input type="file" onChange={e => setFile(e.target.files?.[0] || null)}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:bg-green-50 file:text-green-700 file:text-xs" />
           </div>
           <TextInput label="메모" value={form.memo} onChange={v => setForm({ ...form, memo: v })} />
         </FormModal>
