@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/lib/auth-context'
 import { supabase } from '@/lib/supabase'
+import { subscribeToPush, pushSupported } from '@/lib/push'
 
 type Toast = { id: string; title: string; body: string; link?: string }
 type NewNotif = { id?: string; title?: string; body?: string | null; link?: string | null }
@@ -12,13 +13,28 @@ export default function NotifPopup() {
   const { profile } = useAuth()
   const router = useRouter()
   const [toasts, setToasts] = useState<Toast[]>([])
+  const [needEnable, setNeedEnable] = useState(false)
+
+  // 알림 권한/푸시 구독 상태 확인 (앱 꺼져 있어도 OS 알림 오게)
+  useEffect(() => {
+    if (!profile?.id) return
+    if (!pushSupported()) return
+    if (Notification.permission === 'granted') {
+      subscribeToPush(profile.id) // 이미 허용 → 조용히 (재)구독
+      setNeedEnable(false)
+    } else if (Notification.permission === 'default') {
+      setNeedEnable(true) // 아직 결정 안 함 → '알림 켜기' 버튼 노출
+    }
+  }, [profile?.id])
+
+  async function enablePush() {
+    if (!profile?.id) return
+    const ok = await subscribeToPush(profile.id)
+    setNeedEnable(!ok && Notification.permission === 'default')
+  }
 
   useEffect(() => {
     if (!profile?.id) return
-    // 알림 권한 요청 (이미 결정돼 있으면 무시됨)
-    if (typeof Notification !== 'undefined' && Notification.permission === 'default') {
-      Notification.requestPermission().catch(() => {})
-    }
     const ch = supabase.channel('notif-popup-' + profile.id)
       .on('postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${profile.id}` },
@@ -43,9 +59,17 @@ export default function NotifPopup() {
     return () => { supabase.removeChannel(ch) }
   }, [profile?.id, router])
 
-  if (toasts.length === 0) return null
+  if (toasts.length === 0 && !needEnable) return null
   return (
     <div className="fixed top-4 right-4 z-[100] flex flex-col gap-2 w-80 max-w-[92vw]">
+      {needEnable && (
+        <div className="bg-green-600 text-white shadow-lg rounded-xl px-4 py-3 flex items-center gap-3">
+          <span className="text-lg">🔔</span>
+          <div className="flex-1 text-xs leading-snug">알림을 켜면 앱을 꺼도 새 소식이 PC·휴대폰에 팝업으로 떠요.</div>
+          <button onClick={enablePush} className="bg-white text-green-700 text-xs font-bold px-3 py-1.5 rounded-lg flex-shrink-0">켜기</button>
+          <button onClick={() => setNeedEnable(false)} className="text-white/70 text-lg leading-none flex-shrink-0">&times;</button>
+        </div>
+      )}
       {toasts.map(t => (
         <button key={t.id}
           onClick={() => { if (t.link) router.push(t.link); setToasts(x => x.filter(y => y.id !== t.id)) }}

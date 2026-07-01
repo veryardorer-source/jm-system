@@ -1,9 +1,37 @@
-// JM관리 서비스워커 — Web Share Target(공유 대상) 처리 전용.
-// 앱 자산 캐싱은 하지 않는다(POST /share-target 외에는 전부 네트워크로 통과 → 앱 동작에 영향 없음).
-// v3 (2026-06-29): 공유 텍스트 수신 지원 — 폰에서 강제 갱신용 버전 표기
+// JM관리 서비스워커 — Web Share Target(공유) + Web Push(알림) 처리.
+// v4 (2026-06-30): 웹 푸시(앱 꺼져 있어도 OS 알림) 추가.
 
 self.addEventListener('install', () => self.skipWaiting())
 self.addEventListener('activate', (event) => event.waitUntil(self.clients.claim()))
+
+// 웹 푸시 수신 → OS 알림 표시 (앱이 꺼져 있어도 동작)
+self.addEventListener('push', (event) => {
+  let data = {}
+  try { data = event.data ? event.data.json() : {} } catch (e) { data = {} }
+  const title = data.title || 'JM 관리 시스템'
+  const options = {
+    body: data.body || '',
+    icon: '/icons/icon-192.png',
+    badge: '/icons/icon-192.png',
+    tag: data.tag || undefined,
+    data: { link: data.link || '/' },
+  }
+  event.waitUntil(self.registration.showNotification(title, options))
+})
+
+// 알림 클릭 → 앱 열기/포커스 + 해당 화면 이동
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close()
+  const link = (event.notification.data && event.notification.data.link) || '/'
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
+      for (const client of clientList) {
+        if ('focus' in client) { client.navigate(link); return client.focus() }
+      }
+      if (self.clients.openWindow) return self.clients.openWindow(link)
+    })
+  )
+})
 
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url)

@@ -4,6 +4,7 @@ import { useEffect, useState, useRef, useCallback } from 'react'
 import Sidebar from '@/components/Sidebar'
 import { supabase } from '@/lib/supabase'
 import { useAuth, canEdit } from '@/lib/auth-context'
+import { sendPush } from '@/lib/notify'
 
 type Message = {
   id: string
@@ -162,11 +163,17 @@ export default function ChatPage() {
   async function pushNotif(body: string) {
     if (!active) return
     if (active.kind === 'dm') {
-      await supabase.from('notifications').insert([{ user_id: active.id, type: 'chat', title: `${profile?.name || '직원'} 님의 메시지`, body, link: '/chat' }])
+      const title = `${profile?.name || '직원'} 님의 메시지`
+      await supabase.from('notifications').insert([{ user_id: active.id, type: 'chat', title, body, link: '/chat' }])
+      sendPush([active.id], title, body, '/chat')
     } else if (active.kind === 'room') {
       const { data: mem } = await supabase.from('chat_room_members').select('user_id').eq('room_id', active.id)
-      const rows = (mem || []).filter(x => x.user_id !== me).map(x => ({ user_id: x.user_id, type: 'chat', title: `${active.name} · ${profile?.name || '직원'}`, body, link: '/chat' }))
-      if (rows.length) await supabase.from('notifications').insert(rows)
+      const ids = (mem || []).map(x => x.user_id).filter(uid => uid !== me)
+      const title = `${active.name} · ${profile?.name || '직원'}`
+      if (ids.length) {
+        await supabase.from('notifications').insert(ids.map(uid => ({ user_id: uid, type: 'chat', title, body, link: '/chat' })))
+        sendPush(ids, title, body, '/chat')
+      }
     }
   }
 
