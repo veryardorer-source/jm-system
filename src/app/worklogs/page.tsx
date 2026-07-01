@@ -11,6 +11,7 @@ type WorkLog = {
   log_date: string
   today_work: string
   tomorrow_work: string
+  special_notes: string
   memo: string
   author: string
   author_id: string | null
@@ -18,7 +19,7 @@ type WorkLog = {
 }
 
 const today = () => new Date().toISOString().slice(0, 10)
-const EMPTY = { log_date: today(), today_work: '', tomorrow_work: '', memo: '' }
+const EMPTY = { log_date: today(), today_work: '', tomorrow_work: '', special_notes: '', memo: '' }
 
 export default function WorkLogsPage() {
   const { profile } = useAuth()
@@ -47,7 +48,7 @@ export default function WorkLogsPage() {
   }
   function openEdit(l: WorkLog) {
     setEditingId(l.id)
-    setForm({ log_date: l.log_date, today_work: l.today_work || '', tomorrow_work: l.tomorrow_work || '', memo: l.memo || '' })
+    setForm({ log_date: l.log_date, today_work: l.today_work || '', tomorrow_work: l.tomorrow_work || '', special_notes: l.special_notes || '', memo: l.memo || '' })
     setShowForm(true)
   }
 
@@ -57,11 +58,11 @@ export default function WorkLogsPage() {
     setSaving(true)
     if (editingId) {
       await supabase.from('work_logs').update({
-        log_date: form.log_date, today_work: form.today_work, tomorrow_work: form.tomorrow_work, memo: form.memo,
+        log_date: form.log_date, today_work: form.today_work, tomorrow_work: form.tomorrow_work, special_notes: form.special_notes, memo: form.memo,
       }).eq('id', editingId)
     } else {
       await supabase.from('work_logs').insert([{
-        log_date: form.log_date, today_work: form.today_work, tomorrow_work: form.tomorrow_work, memo: form.memo,
+        log_date: form.log_date, today_work: form.today_work, tomorrow_work: form.tomorrow_work, special_notes: form.special_notes, memo: form.memo,
         author: profile?.name || '', author_id: profile?.id || null,
       }])
       notifyOthers(profile?.id, { type: 'worklog', title: `새 작업일지 · ${profile?.name || ''}`.trim(), body: form.log_date, link: '/worklogs' })
@@ -139,6 +140,7 @@ export default function WorkLogsPage() {
                   <div className="px-5 py-4 flex flex-col gap-3">
                     <Field label="오늘 한 업무" value={l.today_work} accent="text-green-600" />
                     <Field label="내일 해야할 업무" value={l.tomorrow_work} accent="text-blue-600" />
+                    {l.special_notes && <Field label="특이사항" value={l.special_notes} accent="text-orange-600" />}
                     {l.memo && <Field label="메모" value={l.memo} accent="text-gray-500" />}
                   </div>
                 </div>
@@ -171,6 +173,12 @@ export default function WorkLogsPage() {
                 <label className="text-sm font-medium text-gray-700 block mb-1.5">내일 해야할 업무</label>
                 <textarea value={form.tomorrow_work} onChange={e => setForm(f => ({ ...f, tomorrow_work: e.target.value }))} rows={4}
                   placeholder="내일 할 업무를 적어주세요"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 resize-y leading-relaxed" />
+              </div>
+              <div>
+                <label className="text-sm font-medium text-gray-700 block mb-1.5">특이사항</label>
+                <textarea value={form.special_notes} onChange={e => setForm(f => ({ ...f, special_notes: e.target.value }))} rows={3}
+                  placeholder="현장 특이사항, 문제/이슈, 전달사항 등"
                   className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 resize-y leading-relaxed" />
               </div>
               <div>
