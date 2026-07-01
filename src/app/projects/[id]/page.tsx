@@ -95,6 +95,7 @@ export default function ProjectDetail() {
 
   const [collapsedCats, setCollapsedCats] = useState<Record<string, boolean>>({})
   const [collapsedZones, setCollapsedZones] = useState<Record<string, boolean>>({})
+  const [photoGroup, setPhotoGroup] = useState<'date' | 'zone'>('date') // 사진 정렬: 날짜별/구역별
   const [selectedFileIds, setSelectedFileIds] = useState<Set<string>>(new Set())
   const [hoveredFileId, setHoveredFileId] = useState<string | null>(null)
 
@@ -481,6 +482,25 @@ export default function ProjectDetail() {
       a[0] === '미분류' ? 1 : b[0] === '미분류' ? -1 : a[0].localeCompare(b[0], 'ko'))
   }
 
+  // 파일명에 날짜(20260615 / 2026-06-15 등)가 있으면 그 날짜, 없으면 업로드 날짜로
+  const fileDate = (f: ProjectFile): string => {
+    const mt = (f.file_name || '').match(/(20\d{2})[._-]?(0[1-9]|1[0-2])[._-]?(0[1-9]|[12]\d|3[01])/)
+    if (mt) return `${mt[1]}-${mt[2]}-${mt[3]}`
+    return (f.created_at || '').slice(0, 10)
+  }
+  const fmtDateHeader = (d: string): string => {
+    if (!d) return '날짜 미상'
+    const dt = new Date(d + 'T00:00:00')
+    if (isNaN(dt.getTime())) return d
+    const wd = ['일', '월', '화', '수', '목', '금', '토'][dt.getDay()]
+    return `${dt.getFullYear()}년 ${dt.getMonth() + 1}월 ${dt.getDate()}일 (${wd})`
+  }
+  const groupByDate = (arr: ProjectFile[]): [string, ProjectFile[]][] => {
+    const m = new Map<string, ProjectFile[]>()
+    arr.forEach(f => { const d = fileDate(f); if (!m.has(d)) m.set(d, []); m.get(d)!.push(f) })
+    return Array.from(m.entries()).sort((a, b) => b[0].localeCompare(a[0])) // 최신 날짜 먼저
+  }
+
   function renderPhotoTile(f: ProjectFile) {
     const isSelected = selectedFileIds.has(f.id)
     const isHovered = hoveredFileId === f.id
@@ -777,14 +797,21 @@ export default function ProjectDetail() {
           {/* 자료 탭 */}
           {tab === '자료' && (
             <div>
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex gap-2">
+              <div className="flex items-center justify-between mb-4 gap-2 flex-wrap">
+                <div className="flex gap-2 items-center">
                   {selectedFileIds.size > 0 && (
                     <button onClick={clearSelection}
                       className="border border-gray-300 text-gray-600 px-4 py-2 rounded-lg text-sm hover:bg-gray-50">
                       선택 취소
                     </button>
                   )}
+                  {/* 사진 정렬: 날짜별 / 구역별 */}
+                  <div className="flex rounded-lg border border-gray-200 overflow-hidden text-xs">
+                    <button onClick={() => setPhotoGroup('date')}
+                      className={`px-3 py-2 font-medium ${photoGroup === 'date' ? 'bg-green-600 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}>📅 날짜별</button>
+                    <button onClick={() => setPhotoGroup('zone')}
+                      className={`px-3 py-2 font-medium border-l border-gray-200 ${photoGroup === 'zone' ? 'bg-green-600 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}>📁 구역별</button>
+                  </div>
                 </div>
                 {!readOnly && (
                   <button onClick={() => setShowFileForm(true)}
@@ -847,7 +874,31 @@ export default function ProjectDetail() {
                         {!isCollapsed && (
                           <div className="border-t border-gray-100 p-3">
                             {isPhoto ? (
-                              (() => {
+                              photoGroup === 'date' ? (
+                                // 📅 날짜별 묶기
+                                <div className="flex flex-col gap-4">
+                                  {groupByDate(catFiles).map(([date, dFiles]) => {
+                                    const dKey = `${cat}::date::${date}`
+                                    const dCollapsed = collapsedZones[dKey] === true // 기본 펼침
+                                    return (
+                                      <div key={dKey}>
+                                        <button onClick={() => setCollapsedZones(p => ({ ...p, [dKey]: !dCollapsed }))}
+                                          className="flex items-center gap-2 w-full text-left px-3 py-2.5 rounded-lg bg-gray-50 hover:bg-gray-100 border border-gray-200">
+                                          <span>📅</span>
+                                          <span className="text-sm font-medium text-gray-700">{fmtDateHeader(date)}</span>
+                                          <span className="text-xs text-gray-400">{dFiles.length}장</span>
+                                          <span className="text-gray-400 text-xs ml-auto">{dCollapsed ? '▼ 펼치기' : '▲ 접기'}</span>
+                                        </button>
+                                        {!dCollapsed && (
+                                          <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-2 mt-2">
+                                            {dFiles.map(f => renderPhotoTile(f))}
+                                          </div>
+                                        )}
+                                      </div>
+                                    )
+                                  })}
+                                </div>
+                              ) : (() => {
                                 const zones = groupByZone(catFiles)
                                 if (zones.length === 1) {
                                   return (
