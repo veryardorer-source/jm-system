@@ -318,7 +318,7 @@ export default function ChatPage() {
                   <button onClick={() => setActive(null)} className="md:hidden text-gray-400 text-sm">←</button>
                   <span className="font-bold text-gray-900">{active.kind === 'room' ? '# ' : ''}{activeName}</span>
                 </header>
-                <div className="relative flex-1 overflow-auto px-4 py-4 pb-24 md:pb-4 bg-gray-50"
+                <div className="relative flex-1 overflow-auto px-4 py-4 pb-36 md:pb-24 bg-gray-50"
                   onDragOver={e => { if (readOnly) return; e.preventDefault(); setDragOver(true) }}
                   onDragLeave={e => { e.preventDefault(); setDragOver(false) }}
                   onDrop={e => {
