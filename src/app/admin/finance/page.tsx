@@ -6,7 +6,7 @@ import Sidebar from '@/components/Sidebar'
 import { useAuth } from '@/lib/auth-context'
 import { createClient } from '@/lib/supabase-browser'
 import { FixedCost, Payroll, ProjectProfit, SalesRecord, Project, supabase } from '@/lib/supabase'
-import { parseExcelRows, parseExcelTotal, ParsedRow } from '@/lib/excel-parse'
+import { parseExcelRows, parseExcelTotal, ParsedRow, parsePayrollLedger, PayrollLedger } from '@/lib/excel-parse'
 
 const TAB_LIST = ['고정지출', '급여내역', '현장별 이익', '매출매입', '견적서'] as const
 type Tab = typeof TAB_LIST[number]
@@ -199,6 +199,8 @@ function PayrollTab({ list, onRefresh }: { list: Payroll[]; onRefresh: () => voi
   const [editing, setEditing] = useState<Payroll | null>(null)
   const [form, setForm] = useState({ month: '', employee_name: '', amount: '', memo: '' })
   const [saving, setSaving] = useState(false)
+  const [view, setView] = useState<'month' | 'person'>('month')
+  const [showLedger, setShowLedger] = useState(false)
 
   async function bulkSave(month: string, rows: ParsedRow[]) {
     const sb = createClient()
@@ -207,6 +209,24 @@ function PayrollTab({ list, onRefresh }: { list: Payroll[]; onRefresh: () => voi
     )
     if (error) { alert('저장 실패: ' + error.message); return }
     setShowBulk(false)
+    onRefresh()
+  }
+
+  // 급여대장 업로드 → 그 달 데이터를 새 내용으로 교체 후 저장
+  async function ledgerSave(data: PayrollLedger) {
+    const sb = createClient()
+    const monthKey = data.month + '-01'
+    await sb.from('finance_payroll').delete().eq('month', monthKey) // 같은 달 기존 것 교체
+    const { error } = await sb.from('finance_payroll').insert(
+      data.rows.map(r => ({
+        month: monthKey,
+        employee_name: r.name,
+        amount: r.gross,
+        memo: `실지급 ${r.net.toLocaleString()}원${r.base ? ` · 기본급 ${r.base.toLocaleString()}` : ''}`,
+      }))
+    )
+    if (error) { alert('저장 실패: ' + error.message); return }
+    setShowLedger(false)
     onRefresh()
   }
 
@@ -241,25 +261,36 @@ function PayrollTab({ list, onRefresh }: { list: Payroll[]; onRefresh: () => voi
 
   return (
     <div>
-      <div className="flex justify-end gap-2 mb-4">
-        <button onClick={() => setShowBulk(true)}
-          className="border border-green-600 text-green-600 px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-50">📊 엑셀로 일괄 추가</button>
-        <button onClick={() => { setEditing(null); setForm({ month: '', employee_name: '', amount: '', memo: '' }); setShowForm(true) }}
-          className="bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-700">+ 직접 추가</button>
+      <div className="flex items-center justify-between gap-2 mb-4 flex-wrap">
+        <div className="flex rounded-lg border border-gray-200 overflow-hidden text-sm">
+          <button onClick={() => setView('month')} className={`px-4 py-2 font-medium ${view === 'month' ? 'bg-green-600 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}>월별</button>
+          <button onClick={() => setView('person')} className={`px-4 py-2 font-medium border-l border-gray-200 ${view === 'person' ? 'bg-green-600 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}>개인별</button>
+        </div>
+        <div className="flex gap-2">
+          <button onClick={() => setShowLedger(true)}
+            className="bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-700">📋 급여대장 업로드</button>
+          <button onClick={() => setShowBulk(true)}
+            className="border border-green-600 text-green-600 px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-50">간단 엑셀</button>
+          <button onClick={() => { setEditing(null); setForm({ month: '', employee_name: '', amount: '', memo: '' }); setShowForm(true) }}
+            className="border border-gray-300 text-gray-600 px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-50">+ 직접</button>
+        </div>
       </div>
       {list.length === 0 ? (
-        <EmptyState icon="💵" text="등록된 급여내역이 없어요" />
-      ) : (
+        <EmptyState icon="💵" text="등록된 급여내역이 없어요. '급여대장 업로드'로 엑셀을 올려보세요." />
+      ) : view === 'month' ? (
         <>
-          <ChartCard title="월별 총 급여 추이" data={byMonth} />
+          <ChartCard title="월별 총 급여 추이 (급여합계 기준)" data={byMonth} />
           <SimpleTable
-            cols={['월', '직원명', '금액', '메모']}
+            cols={['월', '직원명', '급여합계', '메모(실지급 등)']}
             rows={list.map(c => [c.month?.slice(0,7), c.employee_name, c.amount.toLocaleString() + '원', c.memo || '-'])}
             onEdit={i => { const c = list[i]; setEditing(c); setForm({ month: c.month?.slice(0,7) || '', employee_name: c.employee_name, amount: String(c.amount), memo: c.memo || '' }); setShowForm(true) }}
             onDelete={i => del(list[i])}
           />
         </>
+      ) : (
+        <PayrollPivot list={list} />
       )}
+      {showLedger && <LedgerUploadModal onClose={() => setShowLedger(false)} onSave={ledgerSave} />}
       {showForm && (
         <FormModal title={editing ? '급여 수정' : '급여 추가'} onClose={() => setShowForm(false)} onSubmit={save} saving={saving}>
           <MonthInput value={form.month} onChange={v => setForm({ ...form, month: v })} />
@@ -271,6 +302,132 @@ function PayrollTab({ list, onRefresh }: { list: Payroll[]; onRefresh: () => voi
       {showBulk && (
         <BulkImportModal title="급여내역 엑셀 일괄 추가" labelHeader="직원명" onClose={() => setShowBulk(false)} onSave={bulkSave} />
       )}
+    </div>
+  )
+}
+
+// 개인별 급여 변동 (직원 × 월 표) — 전월 대비 변동 강조
+function PayrollPivot({ list }: { list: Payroll[] }) {
+  const months = Array.from(new Set(list.map(p => p.month?.slice(0, 7)).filter(Boolean))).sort() as string[]
+  const names = Array.from(new Set(list.map(p => p.employee_name).filter(Boolean)))
+  const amt = (name: string, m: string) => list.find(p => p.employee_name === name && p.month?.slice(0, 7) === m)?.amount
+  if (months.length === 0) return <EmptyState icon="📈" text="자료가 없어요" />
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto">
+      <p className="text-xs text-gray-400 px-4 pt-3">직원별 월 급여(급여합계). 전월과 다르면 색으로 표시돼요. (▲증가 ▼감소)</p>
+      <table className="w-full whitespace-nowrap text-sm mt-2">
+        <thead>
+          <tr className="border-b border-gray-100 bg-gray-50">
+            <th className="text-left text-xs font-semibold text-gray-400 px-4 py-2 sticky left-0 bg-gray-50">직원</th>
+            {months.map(m => <th key={m} className="text-right text-xs font-semibold text-gray-400 px-4 py-2">{m}</th>)}
+          </tr>
+        </thead>
+        <tbody>
+          {names.map(name => (
+            <tr key={name} className="border-b border-gray-50 hover:bg-gray-50">
+              <td className="px-4 py-2 font-medium text-gray-800 sticky left-0 bg-white">{name}</td>
+              {months.map((m, i) => {
+                const v = amt(name, m)
+                const prev = i > 0 ? amt(name, months[i - 1]) : undefined
+                const changed = v != null && prev != null && v !== prev
+                const up = changed && (v as number) > (prev as number)
+                return (
+                  <td key={m} className={`px-4 py-2 text-right ${v == null ? 'text-gray-300' : changed ? (up ? 'text-green-600 font-semibold' : 'text-red-500 font-semibold') : 'text-gray-700'}`}>
+                    {v == null ? '-' : `${v.toLocaleString()}${changed ? (up ? ' ▲' : ' ▼') : ''}`}
+                  </td>
+                )
+              })}
+            </tr>
+          ))}
+          <tr className="border-t-2 border-gray-200 bg-gray-50 font-semibold">
+            <td className="px-4 py-2 text-gray-700 sticky left-0 bg-gray-50">월 합계</td>
+            {months.map(m => {
+              const total = list.filter(p => p.month?.slice(0, 7) === m).reduce((s, p) => s + p.amount, 0)
+              return <td key={m} className="px-4 py-2 text-right text-gray-900">{total.toLocaleString()}</td>
+            })}
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+// 급여대장 엑셀 업로드 (해당 시트 자동 인식 → 미리보기 → 저장)
+function LedgerUploadModal({ onClose, onSave }: { onClose: () => void; onSave: (d: PayrollLedger) => Promise<void> }) {
+  const [data, setData] = useState<PayrollLedger | null>(null)
+  const [parsing, setParsing] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+
+  async function handleFile(file: File | null) {
+    if (!file) return
+    setParsing(true); setError(''); setData(null)
+    const parsed = await parsePayrollLedger(file).catch(() => null)
+    setParsing(false)
+    if (!parsed) { setError('급여대장 시트에서 성명/급여합계를 찾지 못했어요. 파일에 "급여대장" 시트와 성명·급여합계 열이 있는지 확인해주세요.'); return }
+    setData(parsed)
+  }
+  async function handleSave() {
+    if (!data) return
+    setSaving(true)
+    await onSave(data)
+    setSaving(false)
+  }
+  const total = data?.rows.reduce((s, r) => s + r.gross, 0) || 0
+
+  return (
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl w-full max-w-lg shadow-xl max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between px-6 py-5 border-b border-gray-100 sticky top-0 bg-white">
+          <h2 className="text-lg font-bold">급여대장 업로드</h2>
+          <button onClick={onClose} className="text-gray-400 text-2xl">&times;</button>
+        </div>
+        <div className="px-6 py-5 flex flex-col gap-4">
+          <div>
+            <label className="text-sm font-medium text-gray-700 block mb-1.5">급여대장 엑셀 파일 *</label>
+            <input type="file" accept=".xlsx,.xls" onChange={e => handleFile(e.target.files?.[0] || null)}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:bg-green-50 file:text-green-700 file:text-xs" />
+            <p className="text-xs text-gray-400 mt-1">여러 시트 중 <b>&quot;급여대장&quot;</b> 시트를 자동으로 읽어요. 월은 &quot;2026년 7월&quot; 같은 표기에서 인식합니다.</p>
+          </div>
+          {parsing && <p className="text-sm text-gray-400">분석 중...</p>}
+          {error && <p className="text-sm text-red-500 bg-red-50 px-3 py-2 rounded-lg">{error}</p>}
+          {data && (
+            <div className="border border-gray-200 rounded-lg overflow-hidden">
+              <div className="bg-green-50 px-3 py-2 text-sm text-green-800 flex justify-between">
+                <span><b>{data.month || '월 미인식'}</b> · {data.rows.length}명</span>
+                <span className="font-semibold">합계 {total.toLocaleString()}원</span>
+              </div>
+              <div className="max-h-56 overflow-y-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50 sticky top-0"><tr>
+                    <th className="text-left text-xs font-semibold text-gray-400 px-3 py-2">성명</th>
+                    <th className="text-right text-xs font-semibold text-gray-400 px-3 py-2">급여합계</th>
+                    <th className="text-right text-xs font-semibold text-gray-400 px-3 py-2">실지급</th>
+                  </tr></thead>
+                  <tbody>
+                    {data.rows.map((r, i) => (
+                      <tr key={i} className="border-t border-gray-100">
+                        <td className="px-3 py-1.5">{r.name}</td>
+                        <td className="px-3 py-1.5 text-right">{r.gross.toLocaleString()}</td>
+                        <td className="px-3 py-1.5 text-right text-gray-500">{r.net.toLocaleString()}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {!data.month && <p className="text-xs text-amber-600 px-3 py-2">⚠ 월을 못 읽었어요. 이대로 저장하면 월 없이 들어갑니다. 파일에 &quot;2026년 7월&quot; 표기가 있는지 확인하세요.</p>}
+            </div>
+          )}
+          <div className="flex gap-3 mt-1">
+            <button onClick={onClose} className="flex-1 border border-gray-300 text-gray-700 py-2.5 rounded-lg text-sm font-medium">취소</button>
+            <button onClick={handleSave} disabled={saving || !data || !data.month}
+              className="flex-1 bg-green-600 text-white py-2.5 rounded-lg text-sm font-medium disabled:opacity-50">
+              {saving ? '저장 중...' : data?.month ? `${data.month} 급여 저장` : '월 인식 필요'}
+            </button>
+          </div>
+          {data && data.month && <p className="text-xs text-gray-400 -mt-2">※ 같은 달을 다시 올리면 그 달 급여가 새 내용으로 교체됩니다.</p>}
+        </div>
+      </div>
     </div>
   )
 }

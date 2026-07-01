@@ -53,3 +53,72 @@ export async function parseExcelTotal(file: File): Promise<number | null> {
   if (!rows) return null
   return rows.reduce((sum, r) => sum + r.amount, 0)
 }
+
+// ───────────── 급여대장 파서 ─────────────
+export type PayrollRow = { name: string; base: number; gross: number; net: number }
+export type PayrollLedger = { month: string; rows: PayrollRow[] } // month: 'YYYY-MM'
+
+function readNamedSheet(file: File, keyword: string): Promise<unknown[][]> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = e => {
+      try {
+        const wb = XLSX.read(e.target?.result, { type: 'binary' })
+        const name = wb.SheetNames.find(n => n.includes(keyword)) || wb.SheetNames[0]
+        const sheet = wb.Sheets[name]
+        resolve(XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: '' }))
+      } catch (err) { reject(err) }
+    }
+    reader.onerror = reject
+    reader.readAsBinaryString(file)
+  })
+}
+
+const numOf = (v: unknown) => Number(String(v ?? '').replace(/[^0-9.-]/g, '')) || 0
+
+/** '급여대장' 시트를 읽어 월(YYYY-MM)과 직원별 (기본급/급여합계/차감지급액)을 추출. 실패 시 null. */
+export async function parsePayrollLedger(file: File): Promise<PayrollLedger | null> {
+  const rows = await readNamedSheet(file, '급여대장')
+
+  // 월 찾기: "2026년 7월" 같은 셀
+  let month = ''
+  for (let r = 0; r < Math.min(rows.length, 8); r++) {
+    for (const cell of rows[r] || []) {
+      const m = String(cell ?? '').match(/(20\d{2})\s*년\s*(\d{1,2})\s*월/)
+      if (m) { month = `${m[1]}-${String(m[2]).padStart(2, '0')}`; break }
+    }
+    if (month) break
+  }
+
+  // 헤더 행: '성명'과 '급여합계'가 있는 행
+  let headerIdx = -1, nameCol = -1, baseCol = -1, grossCol = -1, netCol = -1
+  for (let r = 0; r < Math.min(rows.length, 15); r++) {
+    const row = (rows[r] || []).map(c => String(c ?? '').replace(/\s/g, ''))
+    const nc = row.findIndex(c => c === '성명' || c === '이름')
+    const gc = row.findIndex(c => c.includes('급여합계'))
+    if (nc >= 0 && gc >= 0) {
+      headerIdx = r; nameCol = nc; grossCol = gc
+      baseCol = row.findIndex(c => c.includes('기본급'))
+      netCol = row.findIndex(c => c.includes('차감지급'))
+      break
+    }
+  }
+  if (headerIdx < 0) return null
+
+  const result: PayrollRow[] = []
+  for (let r = headerIdx + 1; r < rows.length; r++) {
+    const row = rows[r]
+    if (!row) continue
+    const name = String(row[nameCol] ?? '').trim()
+    if (!name || name.includes('합계') || name.includes('총계') || /^[0-9]+$/.test(name)) continue
+    const gross = grossCol >= 0 ? numOf(row[grossCol]) : 0
+    if (!gross) continue
+    result.push({
+      name,
+      base: baseCol >= 0 ? numOf(row[baseCol]) : 0,
+      gross,
+      net: netCol >= 0 ? numOf(row[netCol]) : 0,
+    })
+  }
+  return result.length ? { month, rows: result } : null
+}
