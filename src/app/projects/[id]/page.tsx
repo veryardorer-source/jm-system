@@ -488,18 +488,6 @@ export default function ProjectDetail() {
     if (mt) return `${mt[1]}-${mt[2]}-${mt[3]}`
     return (f.created_at || '').slice(0, 10)
   }
-  const fmtDateHeader = (d: string): string => {
-    if (!d) return '날짜 미상'
-    const dt = new Date(d + 'T00:00:00')
-    if (isNaN(dt.getTime())) return d
-    const wd = ['일', '월', '화', '수', '목', '금', '토'][dt.getDay()]
-    return `${dt.getFullYear()}년 ${dt.getMonth() + 1}월 ${dt.getDate()}일 (${wd})`
-  }
-  const groupByDate = (arr: ProjectFile[]): [string, ProjectFile[]][] => {
-    const m = new Map<string, ProjectFile[]>()
-    arr.forEach(f => { const d = fileDate(f); if (!m.has(d)) m.set(d, []); m.get(d)!.push(f) })
-    return Array.from(m.entries()).sort((a, b) => b[0].localeCompare(a[0])) // 최신 날짜 먼저
-  }
 
   function renderPhotoTile(f: ProjectFile) {
     const isSelected = selectedFileIds.has(f.id)
@@ -808,7 +796,7 @@ export default function ProjectDetail() {
                   {/* 사진 정렬: 날짜별 / 구역별 */}
                   <div className="flex rounded-lg border border-gray-200 overflow-hidden text-xs">
                     <button onClick={() => setPhotoGroup('date')}
-                      className={`px-3 py-2 font-medium ${photoGroup === 'date' ? 'bg-green-600 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}>📅 날짜별</button>
+                      className={`px-3 py-2 font-medium ${photoGroup === 'date' ? 'bg-green-600 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}>📅 날짜순</button>
                     <button onClick={() => setPhotoGroup('zone')}
                       className={`px-3 py-2 font-medium border-l border-gray-200 ${photoGroup === 'zone' ? 'bg-green-600 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}>📁 구역별</button>
                   </div>
@@ -875,28 +863,12 @@ export default function ProjectDetail() {
                           <div className="border-t border-gray-100 p-3">
                             {isPhoto ? (
                               photoGroup === 'date' ? (
-                                // 📅 날짜별 묶기
-                                <div className="flex flex-col gap-4">
-                                  {groupByDate(catFiles).map(([date, dFiles]) => {
-                                    const dKey = `${cat}::date::${date}`
-                                    const dCollapsed = collapsedZones[dKey] === true // 기본 펼침
-                                    return (
-                                      <div key={dKey}>
-                                        <button onClick={() => setCollapsedZones(p => ({ ...p, [dKey]: !dCollapsed }))}
-                                          className="flex items-center gap-2 w-full text-left px-3 py-2.5 rounded-lg bg-gray-50 hover:bg-gray-100 border border-gray-200">
-                                          <span>📅</span>
-                                          <span className="text-sm font-medium text-gray-700">{fmtDateHeader(date)}</span>
-                                          <span className="text-xs text-gray-400">{dFiles.length}장</span>
-                                          <span className="text-gray-400 text-xs ml-auto">{dCollapsed ? '▼ 펼치기' : '▲ 접기'}</span>
-                                        </button>
-                                        {!dCollapsed && (
-                                          <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-2 mt-2">
-                                            {dFiles.map(f => renderPhotoTile(f))}
-                                          </div>
-                                        )}
-                                      </div>
-                                    )
-                                  })}
+                                // 📅 날짜순 정렬 (묶지 않고 평평하게, 최신 먼저)
+                                <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-2">
+                                  {[...catFiles].sort((a, b) => {
+                                    const d = fileDate(b).localeCompare(fileDate(a))
+                                    return d !== 0 ? d : (a.file_name || '').localeCompare(b.file_name || '', undefined, { numeric: true })
+                                  }).map(f => renderPhotoTile(f))}
                                 </div>
                               ) : (() => {
                                 const zones = groupByZone(catFiles)
