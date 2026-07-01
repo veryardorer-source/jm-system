@@ -266,7 +266,7 @@ export default function ChatPage() {
   return (
     <div className="flex flex-col md:flex-row min-h-screen">
       <Sidebar />
-      <div className="flex-1 flex flex-col h-screen">
+      <div className="flex-1 flex flex-col h-[calc(100dvh-3.5rem)] md:h-screen">
         <div className="flex-1 flex min-h-0">
 
           {/* 대화 목록 */}
@@ -309,7 +309,7 @@ export default function ChatPage() {
           </div>
 
           {/* 대화 화면 */}
-          <div className={`${active ? 'flex' : 'hidden md:flex'} flex-col flex-1 min-w-0`}>
+          <div className={`${active ? 'flex' : 'hidden md:flex'} flex-col flex-1 min-w-0 min-h-0`}>
             {!active ? (
               <div className="flex-1 flex items-center justify-center text-gray-400 text-sm">왼쪽에서 대화를 선택하세요</div>
             ) : (
@@ -318,7 +318,7 @@ export default function ChatPage() {
                   <button onClick={() => setActive(null)} className="md:hidden text-gray-400 text-sm">←</button>
                   <span className="font-bold text-gray-900">{active.kind === 'room' ? '# ' : ''}{activeName}</span>
                 </header>
-                <div className="relative flex-1 overflow-auto px-4 py-4 pb-36 md:pb-24 bg-gray-50"
+                <div className="relative flex-1 min-h-0 overflow-auto px-4 py-4 bg-gray-50"
                   onDragOver={e => { if (readOnly) return; e.preventDefault(); setDragOver(true) }}
                   onDragLeave={e => { e.preventDefault(); setDragOver(false) }}
                   onDrop={e => {
@@ -372,12 +372,12 @@ export default function ChatPage() {
                   )}
                 </div>
                 {readOnly ? (
-                  <div className="fixed bottom-14 md:bottom-0 left-0 md:left-[calc(14rem+16rem)] right-0 bg-gray-50 border-t border-gray-200 px-4 py-3 text-center text-xs text-gray-400">
+                  <div className="flex-shrink-0 bg-gray-50 border-t border-gray-200 px-4 py-3 text-center text-xs text-gray-400">
                     외부협력업체 계정은 채팅 보기만 가능합니다.
                   </div>
                 ) : (
                   <form onSubmit={send}
-                    className="fixed bottom-14 md:bottom-0 left-0 md:left-[calc(14rem+16rem)] right-0 bg-white border-t border-gray-200 px-4 py-3 flex gap-2 items-center">
+                    className="flex-shrink-0 bg-white border-t border-gray-200 px-4 py-3 flex gap-2 items-center">
                     <label className="flex-shrink-0 flex items-center justify-center w-10 h-10 rounded-full border border-gray-300 text-lg cursor-pointer hover:bg-gray-50" title="사진 보내기">
                       🖼️
                       <input type="file" accept="image/*" className="hidden"
