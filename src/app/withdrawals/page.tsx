@@ -319,6 +319,18 @@ function MultiFileZone({ files, onChange }: { files: File[]; onChange: (f: File[
     if (!fl) return
     onChange([...files, ...Array.from(fl)])
   }, [files, onChange])
+  // 캡처(스크린샷) 붙여넣기 — 이 창이 열려 있을 때 Ctrl+V로 이미지 추가
+  useEffect(() => {
+    const onPaste = (e: ClipboardEvent) => {
+      const imgs = Array.from(e.clipboardData?.items || []).filter(it => it.type.startsWith('image/'))
+      if (imgs.length === 0) return
+      e.preventDefault()
+      const pasted = imgs.map(it => it.getAsFile()).filter(Boolean) as File[]
+      if (pasted.length) onChange([...files, ...pasted])
+    }
+    window.addEventListener('paste', onPaste)
+    return () => window.removeEventListener('paste', onPaste)
+  }, [files, onChange])
   return (
     <div>
       <div onClick={() => inputRef.current?.click()}
@@ -335,8 +347,8 @@ function MultiFileZone({ files, onChange }: { files: File[]; onChange: (f: File[
           </div>
         ) : (
           <div className="text-center pointer-events-none">
-            <p className="text-sm font-medium text-gray-600">사진을 드래그하거나 클릭해서 선택</p>
-            <p className="text-xs text-gray-400 mt-0.5">여러 장 동시 선택 가능</p>
+            <p className="text-sm font-medium text-gray-600">클릭·드래그 또는 <span className="text-green-600">Ctrl+V 붙여넣기</span></p>
+            <p className="text-xs text-gray-400 mt-0.5">캡처한 화면도 바로 붙여넣기 가능</p>
           </div>
         )}
       </div>

@@ -389,7 +389,13 @@ export default function ChatPage() {
                         onChange={e => { const f = e.target.files?.[0]; if (f) sendFile(f); e.currentTarget.value = '' }} />
                     </label>
                     <input value={text} onChange={e => setText(e.target.value)}
-                      placeholder="메시지를 입력하세요..."
+                      onPaste={e => {
+                        const imgs = Array.from(e.clipboardData?.items || []).filter(it => it.type.startsWith('image/'))
+                        if (imgs.length === 0) return
+                        e.preventDefault()
+                        imgs.forEach(it => { const f = it.getAsFile(); if (f) sendFile(f) })
+                      }}
+                      placeholder="메시지 입력 · 캡처 후 Ctrl+V로 붙여넣기"
                       className="flex-1 border border-gray-300 rounded-full px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
                     <button type="submit" disabled={sending || !text.trim()}
                       className="bg-green-600 text-white px-5 py-2.5 rounded-full text-sm font-medium hover:bg-green-700 disabled:opacity-50 flex-shrink-0">전송</button>

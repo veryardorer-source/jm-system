@@ -1459,6 +1459,19 @@ function DropZone({ files, onChange }: { files: File[]; onChange: (f: File[]) =>
     addFiles(e.dataTransfer.files)
   }, [addFiles])
 
+  // 캡처(스크린샷) 붙여넣기 — 이 창이 열려 있을 때 Ctrl+V로 이미지 추가
+  useEffect(() => {
+    const onPaste = (e: ClipboardEvent) => {
+      const imgs = Array.from(e.clipboardData?.items || []).filter(it => it.type.startsWith('image/'))
+      if (imgs.length === 0) return
+      e.preventDefault()
+      const pasted = imgs.map(it => it.getAsFile()).filter(Boolean) as File[]
+      if (pasted.length) onChange([...files, ...pasted])
+    }
+    window.addEventListener('paste', onPaste)
+    return () => window.removeEventListener('paste', onPaste)
+  }, [files, onChange])
+
   const totalMB = files.reduce((sum, f) => sum + f.size, 0) / 1024 / 1024
 
   return (
@@ -1485,8 +1498,8 @@ function DropZone({ files, onChange }: { files: File[]; onChange: (f: File[]) =>
         ) : (
           <div className="text-center pointer-events-none">
             <p className="text-2xl mb-1">{dragging ? '📂' : '📁'}</p>
-            <p className="text-sm font-medium text-gray-600">{dragging ? '여기에 놓으세요!' : '드래그하거나 클릭해서 선택'}</p>
-            <p className="text-xs text-gray-400 mt-0.5">여러 파일 동시 선택 가능</p>
+            <p className="text-sm font-medium text-gray-600">{dragging ? '여기에 놓으세요!' : '드래그·클릭 또는 Ctrl+V 붙여넣기'}</p>
+            <p className="text-xs text-gray-400 mt-0.5">캡처 화면도 붙여넣기 가능</p>
           </div>
         )}
       </div>
