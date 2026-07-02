@@ -74,10 +74,13 @@ export default function ChatPage() {
   const [active, setActive] = useState<Active>(null)
   const [messages, setMessages] = useState<Message[]>([])
   const [reactions, setReactions] = useState<Record<string, Reaction[]>>({})
+  const [reads, setReads] = useState<string[]>([])       // 상대(들)의 마지막 읽은 시각
+  const [participants, setParticipants] = useState(0)    // 나를 제외한 대화 상대 수
   const [text, setText] = useState('')
   const [sending, setSending] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
   const msgsRef = useRef<Message[]>([])
+  const activeRef = useRef<Active>(null)
 
   // 답장 / 수정 / 메뉴 / 멘션 / 검색
   const [replyTo, setReplyTo] = useState<Message | null>(null)
@@ -115,6 +118,29 @@ export default function ChatPage() {
     for (const r of (data || []) as Reaction[]) (map[r.message_id] ||= []).push(r)
     setReactions(map)
   }, [])
+
+  // 상대가 어디까지 읽었는지 불러오기
+  const loadReads = useCallback(async (a: Active) => {
+    if (!a || a.kind === 'all' || !me) { setReads([]); setParticipants(0); return }
+    if (a.kind === 'dm') {
+      const { data } = await supabase.from('chat_reads').select('last_read_at').eq('user_id', a.id).eq('conv_key', 'dm:' + me).maybeSingle()
+      setParticipants(1); setReads(data?.last_read_at ? [data.last_read_at] : [])
+    } else {
+      const { data: mem } = await supabase.from('chat_room_members').select('user_id').eq('room_id', a.id)
+      const others = (mem || []).map(x => x.user_id).filter(u => u !== me)
+      setParticipants(others.length)
+      if (!others.length) { setReads([]); return }
+      const { data } = await supabase.from('chat_reads').select('last_read_at').eq('conv_key', 'room:' + a.id).in('user_id', others)
+      setReads((data || []).map(r => r.last_read_at).filter(Boolean) as string[])
+    }
+  }, [me])
+
+  // 내가 이 대화를 읽었음을 기록
+  const markMyRead = useCallback(async (a: Active) => {
+    const key = convKey(a)
+    if (!key || !me || !a || a.kind === 'all') return
+    await supabase.from('chat_reads').upsert({ user_id: me, conv_key: key, last_read_at: new Date().toISOString() }, { onConflict: 'user_id,conv_key' })
+  }, [me])
 
   useEffect(() => {
     if (!me) return
@@ -156,6 +182,13 @@ export default function ChatPage() {
     setReplyTo(null); setEditing(null); setMenuFor(null); setSearchOpen(false); setSearchQ('')
   }, [active])
 
+  // 대화 열면: 읽음 기록 + 상대 읽음 상태 로드
+  useEffect(() => {
+    activeRef.current = active
+    if (active) { markMyRead(active); loadReads(active) }
+    else { setReads([]); setParticipants(0) }
+  }, [active, markMyRead, loadReads])
+
   const belongs = useCallback((m: Message) => {
     if (!active) return false
     if (active.kind === 'all') return m.recipient_id == null && m.room_id == null
@@ -182,7 +215,7 @@ export default function ChatPage() {
         const m = payload.new as Message
         if (belongs(m)) {
           setMessages(prev => prev.some(x => x.id === m.id) ? prev : [...prev, m])
-          if (m.sender_id !== me) markRead(convKey(active)!) // 보고 있는 대화는 계속 읽음 처리
+          if (m.sender_id !== me) { markRead(convKey(active)!); markMyRead(active) } // 보고 있는 대화는 계속 읽음 처리
         } else {
           // 지금 보고 있지 않은 대화에서 온 메시지 → 안읽음 표시
           const key = msgKey(m, me!, roomIds)
@@ -196,9 +229,12 @@ export default function ChatPage() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'message_reactions' }, () => {
         reloadReactions()
       })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'chat_reads' }, () => {
+        loadReads(activeRef.current)
+      })
       .subscribe()
     return () => { on = false; supabase.removeChannel(ch) }
-  }, [active, me, belongs, rooms, reloadReactions])
+  }, [active, me, belongs, rooms, reloadReactions, markMyRead, loadReads])
 
   useEffect(() => { msgsRef.current = messages; reloadReactions() }, [messages, reloadReactions])
   useEffect(() => { scrollToBottom() }, [messages, scrollToBottom])
@@ -387,6 +423,16 @@ export default function ChatPage() {
     })
   }
 
+  // 내가 보낸 메시지의 읽음 표시 (1:1='읽음' / 단체방=안 읽은 사람 수)
+  function readLabel(m: Message): string | null {
+    if (m.sender_id !== me || m.is_deleted || !active || active.kind === 'all') return null
+    const readers = reads.filter(t => t && t >= m.created_at).length
+    if (active.kind === 'dm') return readers >= 1 ? '읽음' : null
+    if (participants <= 0) return null
+    const unread = participants - readers
+    return unread > 0 ? String(unread) : '읽음'
+  }
+
   function renderReactions(mId: string) {
     const rs = reactions[mId] || []
     if (!rs.length) return null
@@ -524,7 +570,10 @@ export default function ChatPage() {
                           <div key={m.id} id={'msg-' + m.id} className={`group flex flex-col rounded-lg transition-shadow ${mine ? 'items-end' : 'items-start'}`}>
                             {!mine && showSenderName && <span className="text-xs text-gray-500 mb-0.5 ml-1">{m.sender_name || '직원'}</span>}
                             <div className={`flex items-end gap-1 ${mine ? 'flex-row' : 'flex-row-reverse'}`}>
-                              <span className="text-[10px] text-gray-400 flex-shrink-0">{fmtTime(m.created_at)}{m.edited_at ? ' (수정됨)' : ''}</span>
+                              <span className="text-[10px] text-gray-400 flex-shrink-0 flex flex-col items-center leading-tight">
+                                {(() => { const rl = readLabel(m); return rl && <span className={/^\d+$/.test(rl) ? 'text-amber-500 font-semibold' : 'text-green-600'}>{rl}</span> })()}
+                                <span>{fmtTime(m.created_at)}{m.edited_at ? ' (수정됨)' : ''}</span>
+                              </span>
                               {!m.is_deleted && !readOnly && (
                                 <button onClick={() => setMenuFor(menuFor === m.id ? null : m.id)}
                                   className="text-gray-300 hover:text-gray-500 text-sm px-0.5 flex-shrink-0 opacity-100 md:opacity-0 md:group-hover:opacity-100">⋯</button>
