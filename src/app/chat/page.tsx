@@ -17,8 +17,14 @@ type Message = {
   image_url?: string | null
   file_url?: string | null
   file_name?: string | null
+  reply_to_id?: string | null
+  reply_preview?: string | null
+  is_deleted?: boolean | null
+  edited_at?: string | null
+  pinned?: boolean | null
   created_at: string
 }
+type Reaction = { id: string; message_id: string; user_id: string; user_name: string | null; emoji: string }
 type Person = { id: string; name: string }
 type Room = { id: string; name: string }
 type Active =
@@ -26,6 +32,8 @@ type Active =
   | { kind: 'dm'; id: string; name: string }
   | { kind: 'room'; id: string; name: string }
   | null
+
+const EMOJIS = ['👍', '❤️', '😂', '😮', '🙏', '✅']
 
 // ── 대화별 안읽음 추적 (마지막으로 읽은 시각을 기기에 저장) ──
 const LR_KEY = 'jm_chat_lastread'
@@ -51,10 +59,12 @@ function msgKey(m: Message, myId: string, roomIds: Set<string>): string | null {
   if (m.recipient_id === myId) return 'dm:' + (m.sender_id || '')
   return null
 }
+function escRe(s: string) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') }
 
 export default function ChatPage() {
   const { profile } = useAuth()
   const me = profile?.id
+  const isAdmin = profile?.role === 'admin'
   const readOnly = !canEdit(profile)
   const [unread, setUnread] = useState<Record<string, number>>({})
   const [chatLightbox, setChatLightbox] = useState<string | null>(null)
@@ -63,15 +73,28 @@ export default function ChatPage() {
   const [rooms, setRooms] = useState<Room[]>([])
   const [active, setActive] = useState<Active>(null)
   const [messages, setMessages] = useState<Message[]>([])
+  const [reactions, setReactions] = useState<Record<string, Reaction[]>>({})
   const [text, setText] = useState('')
   const [sending, setSending] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
+  const msgsRef = useRef<Message[]>([])
 
-  // 새 채팅방 만들기
+  // 답장 / 수정 / 메뉴 / 멘션 / 검색
+  const [replyTo, setReplyTo] = useState<Message | null>(null)
+  const [editing, setEditing] = useState<{ id: string; text: string } | null>(null)
+  const [menuFor, setMenuFor] = useState<string | null>(null)
+  const [mentionOpen, setMentionOpen] = useState(false)
+  const [searchOpen, setSearchOpen] = useState(false)
+  const [searchQ, setSearchQ] = useState('')
+
+  // 새 채팅방 만들기 / 방 관리
   const [showNew, setShowNew] = useState(false)
   const [roomName, setRoomName] = useState('')
   const [picked, setPicked] = useState<Set<string>>(new Set())
   const [creating, setCreating] = useState(false)
+  const [showRoomSettings, setShowRoomSettings] = useState(false)
+  const [roomMemberIds, setRoomMemberIds] = useState<Set<string>>(new Set())
+  const [renameVal, setRenameVal] = useState('')
 
   const scrollToBottom = useCallback(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [])
 
@@ -83,6 +106,15 @@ export default function ChatPage() {
     const { data } = await supabase.from('chat_rooms').select('id, name').in('id', ids).order('created_at', { ascending: true })
     setRooms(data || [])
   }, [me])
+
+  const reloadReactions = useCallback(async () => {
+    const ids = msgsRef.current.map(m => m.id)
+    if (!ids.length) { setReactions({}); return }
+    const { data } = await supabase.from('message_reactions').select('*').in('message_id', ids)
+    const map: Record<string, Reaction[]> = {}
+    for (const r of (data || []) as Reaction[]) (map[r.message_id] ||= []).push(r)
+    setReactions(map)
+  }, [])
 
   useEffect(() => {
     if (!me) return
@@ -121,6 +153,7 @@ export default function ChatPage() {
     if (!key) return
     markRead(key)
     setUnread(u => (u[key] ? { ...u, [key]: 0 } : u))
+    setReplyTo(null); setEditing(null); setMenuFor(null); setSearchOpen(false); setSearchQ('')
   }, [active])
 
   const belongs = useCallback((m: Message) => {
@@ -156,10 +189,18 @@ export default function ChatPage() {
           if (key) setUnread(u => ({ ...u, [key]: (u[key] || 0) + 1 }))
         }
       })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'messages' }, payload => {
+        const m = payload.new as Message
+        setMessages(prev => prev.map(x => x.id === m.id ? m : x))
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'message_reactions' }, () => {
+        reloadReactions()
+      })
       .subscribe()
     return () => { on = false; supabase.removeChannel(ch) }
-  }, [active, me, belongs, rooms])
+  }, [active, me, belongs, rooms, reloadReactions])
 
+  useEffect(() => { msgsRef.current = messages; reloadReactions() }, [messages, reloadReactions])
   useEffect(() => { scrollToBottom() }, [messages, scrollToBottom])
 
   async function pushNotif(body: string) {
@@ -179,18 +220,38 @@ export default function ChatPage() {
     }
   }
 
+  async function notifyMentions(content: string) {
+    const ids = people.filter(p => p.name && content.includes('@' + p.name)).map(p => p.id)
+    if (!ids.length) return
+    const title = `${profile?.name || '직원'} 님이 회원님을 언급했어요`
+    await supabase.from('notifications').insert(ids.map(uid => ({ user_id: uid, type: 'chat', title, body: content.slice(0, 60), link: '/chat' })))
+    sendPush(ids, title, content.slice(0, 60), '/chat')
+  }
+
+  function replyFields() {
+    if (!replyTo) return {}
+    const summary = replyTo.content || (replyTo.image_url ? '사진' : replyTo.file_name || '파일')
+    return { reply_to_id: replyTo.id, reply_preview: `${replyTo.sender_name || '직원'}|${summary.slice(0, 40)}` }
+  }
+
   async function send(e: React.FormEvent) {
     e.preventDefault()
     const content = text.trim()
     if (!content || !active) return
     setSending(true)
+    if (editing) {
+      const { error } = await supabase.from('messages').update({ content, edited_at: new Date().toISOString() }).eq('id', editing.id)
+      setSending(false)
+      if (error) { alert('수정 실패: ' + error.message); return }
+      setEditing(null); setText(''); return
+    }
     const recipient_id = active.kind === 'dm' ? active.id : null
     const room_id = active.kind === 'room' ? active.id : null
-    const { error } = await supabase.from('messages').insert([{ sender_id: me ?? null, sender_name: profile?.name ?? '직원', recipient_id, room_id, content }])
-    if (!error) await pushNotif(content.slice(0, 40))
+    const { error } = await supabase.from('messages').insert([{ sender_id: me ?? null, sender_name: profile?.name ?? '직원', recipient_id, room_id, content, ...replyFields() }])
+    if (!error) { await pushNotif(content.slice(0, 40)); await notifyMentions(content) }
     setSending(false)
     if (error) { alert('전송 실패: ' + error.message); return }
-    setText('')
+    setText(''); setReplyTo(null)
   }
 
   async function sendImage(file: File) {
@@ -203,9 +264,9 @@ export default function ChatPage() {
     const { data: urlData } = supabase.storage.from('uploads').getPublicUrl(path)
     const recipient_id = active.kind === 'dm' ? active.id : null
     const room_id = active.kind === 'room' ? active.id : null
-    const { error } = await supabase.from('messages').insert([{ sender_id: me ?? null, sender_name: profile?.name ?? '직원', recipient_id, room_id, content: '', image_url: urlData.publicUrl }])
+    const { error } = await supabase.from('messages').insert([{ sender_id: me ?? null, sender_name: profile?.name ?? '직원', recipient_id, room_id, content: '', image_url: urlData.publicUrl, ...replyFields() }])
     if (!error) await pushNotif('📷 사진')
-    setSending(false)
+    setSending(false); setReplyTo(null)
     if (error) alert('전송 실패: ' + error.message)
   }
 
@@ -221,10 +282,34 @@ export default function ChatPage() {
     const { data: urlData } = supabase.storage.from('uploads').getPublicUrl(path)
     const recipient_id = active.kind === 'dm' ? active.id : null
     const room_id = active.kind === 'room' ? active.id : null
-    const { error } = await supabase.from('messages').insert([{ sender_id: me ?? null, sender_name: profile?.name ?? '직원', recipient_id, room_id, content: '', file_url: urlData.publicUrl, file_name: file.name }])
+    const { error } = await supabase.from('messages').insert([{ sender_id: me ?? null, sender_name: profile?.name ?? '직원', recipient_id, room_id, content: '', file_url: urlData.publicUrl, file_name: file.name, ...replyFields() }])
     if (!error) await pushNotif('📎 ' + file.name)
-    setSending(false)
+    setSending(false); setReplyTo(null)
     if (error) alert('전송 실패: ' + error.message)
+  }
+
+  // ── 메시지 동작: 반응 / 답장 / 수정 / 삭제 / 고정 ──
+  async function toggleReaction(mId: string, emoji: string) {
+    if (!me) return
+    const mine = (reactions[mId] || []).some(r => r.emoji === emoji && r.user_id === me)
+    if (mine) await supabase.from('message_reactions').delete().eq('message_id', mId).eq('user_id', me).eq('emoji', emoji)
+    else await supabase.from('message_reactions').insert([{ message_id: mId, user_id: me, user_name: profile?.name || '', emoji }])
+    setMenuFor(null); reloadReactions()
+  }
+  function startReply(m: Message) { setReplyTo(m); setEditing(null); setMenuFor(null) }
+  function startEdit(m: Message) { setEditing({ id: m.id, text: m.content }); setText(m.content); setReplyTo(null); setMenuFor(null) }
+  async function deleteMsg(m: Message) {
+    if (!confirm('이 메시지를 삭제할까요?')) return
+    setMenuFor(null)
+    await supabase.from('messages').update({ is_deleted: true, content: '', image_url: null, file_url: null, file_name: null }).eq('id', m.id)
+  }
+  async function togglePin(m: Message) {
+    setMenuFor(null)
+    await supabase.from('messages').update({ pinned: !m.pinned }).eq('id', m.id)
+  }
+  function jumpTo(id: string) {
+    const el = document.getElementById('msg-' + id)
+    if (el) { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); el.classList.add('ring-2', 'ring-green-400'); setTimeout(() => el.classList.remove('ring-2', 'ring-green-400'), 1500) }
   }
 
   async function createRoom(e: React.FormEvent) {
@@ -245,17 +330,76 @@ export default function ChatPage() {
     setPicked(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
   }
 
+  // ── 방 관리 ──
+  async function openRoomSettings() {
+    if (!active || active.kind !== 'room') return
+    const { data } = await supabase.from('chat_room_members').select('user_id').eq('room_id', active.id)
+    setRoomMemberIds(new Set((data || []).map(x => x.user_id)))
+    setRenameVal(active.name)
+    setShowRoomSettings(true)
+  }
+  async function saveRoomName() {
+    if (!active || active.kind !== 'room' || !renameVal.trim()) return
+    await supabase.from('chat_rooms').update({ name: renameVal.trim() }).eq('id', active.id)
+    setActive({ kind: 'room', id: active.id, name: renameVal.trim() })
+    await loadRooms()
+  }
+  async function addRoomMember(uid: string) {
+    if (!active || active.kind !== 'room') return
+    await supabase.from('chat_room_members').insert([{ room_id: active.id, user_id: uid }])
+    setRoomMemberIds(prev => new Set(prev).add(uid))
+  }
+  async function removeRoomMember(uid: string) {
+    if (!active || active.kind !== 'room') return
+    await supabase.from('chat_room_members').delete().eq('room_id', active.id).eq('user_id', uid)
+    setRoomMemberIds(prev => { const n = new Set(prev); n.delete(uid); return n })
+  }
+  async function leaveRoom() {
+    if (!active || active.kind !== 'room' || !me) return
+    if (!confirm('이 채팅방에서 나갈까요?')) return
+    await supabase.from('chat_room_members').delete().eq('room_id', active.id).eq('user_id', me)
+    setShowRoomSettings(false); setActive(null)
+    await loadRooms()
+  }
+
+  function insertMention(name: string) {
+    setText(t => (t.endsWith(' ') || t === '' ? t : t + ' ') + '@' + name + ' ')
+    setMentionOpen(false)
+  }
+
   const badge = (n: number) => n > 0
     ? <span className="ml-auto bg-red-500 text-white text-[10px] font-bold rounded-full min-w-[18px] h-[18px] px-1 flex items-center justify-center flex-shrink-0">{n > 99 ? '99+' : n}</span>
     : null
   const activeName = !active ? '' : active.kind === 'all' ? '전체 채팅방' : active.name
   const showSenderName = active?.kind === 'all' || active?.kind === 'room'
   const fmtTime = (iso: string) => new Date(iso).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })
+
   function renderContent(t: string, mine: boolean) {
-    return t.split(/(https?:\/\/[^\s]+)/g).map((p, i) =>
-      /^https?:\/\//.test(p)
-        ? <a key={i} href={p} target="_blank" rel="noreferrer" className={`underline break-all ${mine ? 'text-white' : 'text-green-700'}`}>{p}</a>
-        : <span key={i}>{p}</span>)
+    const names = [...new Set(people.map(p => p.name).filter(Boolean))].sort((a, b) => b.length - a.length)
+    const mentionSrc = names.length ? '@(?:' + names.map(escRe).join('|') + ')' : null
+    return t.split(/(https?:\/\/[^\s]+)/g).map((p, i) => {
+      if (/^https?:\/\//.test(p)) return <a key={i} href={p} target="_blank" rel="noreferrer" className={`underline break-all ${mine ? 'text-white' : 'text-green-700'}`}>{p}</a>
+      if (!mentionSrc) return <span key={i}>{p}</span>
+      return p.split(new RegExp('(' + mentionSrc + ')', 'g')).map((s, j) =>
+        /^@/.test(s) && names.includes(s.slice(1))
+          ? <span key={`${i}-${j}`} className={`font-semibold ${mine ? 'text-white underline' : 'text-green-700'}`}>{s}</span>
+          : <span key={`${i}-${j}`}>{s}</span>)
+    })
+  }
+
+  function renderReactions(mId: string) {
+    const rs = reactions[mId] || []
+    if (!rs.length) return null
+    const groups: Record<string, { count: number; mine: boolean }> = {}
+    for (const r of rs) { (groups[r.emoji] ||= { count: 0, mine: false }); groups[r.emoji].count++; if (r.user_id === me) groups[r.emoji].mine = true }
+    return (
+      <div className="flex flex-wrap gap-1 mt-1">
+        {Object.entries(groups).map(([e, g]) => (
+          <button key={e} onClick={() => !readOnly && toggleReaction(mId, e)}
+            className={`text-xs px-1.5 py-0.5 rounded-full border ${g.mine ? 'bg-green-50 border-green-300 text-green-700' : 'bg-white border-gray-200 text-gray-600'}`}>{e} {g.count}</button>
+        ))}
+      </div>
+    )
   }
 
   if (profile?.role === 'partner') return (
@@ -264,6 +408,11 @@ export default function ChatPage() {
       <div className="flex-1 flex items-center justify-center text-gray-400 text-sm">접근 권한이 없습니다.</div>
     </div>
   )
+
+  const pinned = messages.filter(m => m.pinned && !m.is_deleted)
+  const shown = searchQ.trim()
+    ? messages.filter(m => !m.is_deleted && (m.content || '').toLowerCase().includes(searchQ.trim().toLowerCase()))
+    : messages
 
   return (
     <div className="flex flex-col md:flex-row min-h-screen">
@@ -318,8 +467,35 @@ export default function ChatPage() {
               <>
                 <header className="bg-white border-b border-gray-200 px-4 py-3 flex items-center gap-2 flex-shrink-0">
                   <button onClick={() => setActive(null)} className="md:hidden text-gray-400 text-sm">←</button>
-                  <span className="font-bold text-gray-900">{active.kind === 'room' ? '# ' : ''}{activeName}</span>
+                  <span className="font-bold text-gray-900 truncate">{active.kind === 'room' ? '# ' : ''}{activeName}</span>
+                  <div className="ml-auto flex items-center gap-1">
+                    <button onClick={() => { setSearchOpen(o => !o); setSearchQ('') }} title="대화 검색"
+                      className={`w-9 h-9 rounded-full flex items-center justify-center text-base hover:bg-gray-100 ${searchOpen ? 'bg-green-50' : ''}`}>🔍</button>
+                    {active.kind === 'room' && !readOnly && (
+                      <button onClick={openRoomSettings} title="방 관리" className="w-9 h-9 rounded-full flex items-center justify-center text-base hover:bg-gray-100">⚙️</button>
+                    )}
+                  </div>
                 </header>
+
+                {searchOpen && (
+                  <div className="bg-white border-b border-gray-200 px-4 py-2 flex items-center gap-2 flex-shrink-0">
+                    <input autoFocus value={searchQ} onChange={e => setSearchQ(e.target.value)} placeholder="대화 내용 검색"
+                      className="flex-1 border border-gray-300 rounded-full px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
+                    {searchQ.trim() && <span className="text-xs text-gray-400 flex-shrink-0">{shown.length}건</span>}
+                  </div>
+                )}
+
+                {pinned.length > 0 && !searchQ.trim() && (
+                  <div className="bg-amber-50 border-b border-amber-200 px-4 py-2 flex items-center gap-2 flex-shrink-0">
+                    <span className="flex-shrink-0">📌</span>
+                    <button onClick={() => jumpTo(pinned[pinned.length - 1].id)} className="text-xs text-amber-800 truncate flex-1 text-left">
+                      {pinned[pinned.length - 1].content || (pinned[pinned.length - 1].image_url ? '사진' : pinned[pinned.length - 1].file_name || '파일')}
+                    </button>
+                    {pinned.length > 1 && <span className="text-[10px] text-amber-600 flex-shrink-0">+{pinned.length - 1}</span>}
+                    {!readOnly && <button onClick={() => togglePin(pinned[pinned.length - 1])} className="text-xs text-amber-600 hover:text-amber-800 flex-shrink-0">해제</button>}
+                  </div>
+                )}
+
                 <div className="relative flex-1 min-h-0 overflow-auto px-4 py-4 bg-gray-50"
                   onDragOver={e => { if (readOnly) return; e.preventDefault(); setDragOver(true) }}
                   onDragLeave={e => { e.preventDefault(); setDragOver(false) }}
@@ -333,39 +509,77 @@ export default function ChatPage() {
                       <p className="text-green-700 font-medium text-sm">여기에 놓으면 파일이 전송돼요 📎</p>
                     </div>
                   )}
-                  {messages.length === 0 ? (
-                    <div className="text-center text-gray-400 py-10 text-sm">아직 대화가 없어요. 첫 메시지를 남겨보세요!<br/><span className="text-xs">파일을 끌어다 놓아도 전송됩니다</span></div>
+                  {shown.length === 0 ? (
+                    <div className="text-center text-gray-400 py-10 text-sm">
+                      {searchQ.trim() ? '검색 결과가 없어요' : <>아직 대화가 없어요. 첫 메시지를 남겨보세요!<br/><span className="text-xs">파일을 끌어다 놓아도 전송됩니다</span></>}
+                    </div>
                   ) : (
                     <div className="flex flex-col gap-2 max-w-2xl mx-auto">
-                      {messages.map(m => {
+                      {shown.map(m => {
                         const mine = m.sender_id === me
+                        const canEditMsg = mine && !m.is_deleted && !!m.content
+                        const canDelMsg = (mine || isAdmin) && !m.is_deleted
+                        const [rpName, ...rpRest] = (m.reply_preview || '').split('|')
                         return (
-                          <div key={m.id} className={`flex flex-col ${mine ? 'items-end' : 'items-start'}`}>
+                          <div key={m.id} id={'msg-' + m.id} className={`group flex flex-col rounded-lg transition-shadow ${mine ? 'items-end' : 'items-start'}`}>
                             {!mine && showSenderName && <span className="text-xs text-gray-500 mb-0.5 ml-1">{m.sender_name || '직원'}</span>}
-                            <div className="flex items-end gap-1.5">
-                              {mine && <span className="text-[10px] text-gray-400">{fmtTime(m.created_at)}</span>}
+                            <div className={`flex items-end gap-1 ${mine ? 'flex-row' : 'flex-row-reverse'}`}>
+                              <span className="text-[10px] text-gray-400 flex-shrink-0">{fmtTime(m.created_at)}{m.edited_at ? ' (수정됨)' : ''}</span>
+                              {!m.is_deleted && !readOnly && (
+                                <button onClick={() => setMenuFor(menuFor === m.id ? null : m.id)}
+                                  className="text-gray-300 hover:text-gray-500 text-sm px-0.5 flex-shrink-0 opacity-100 md:opacity-0 md:group-hover:opacity-100">⋯</button>
+                              )}
                               <div className={`max-w-[75vw] md:max-w-md flex flex-col gap-1 ${mine ? 'items-end' : 'items-start'}`}>
-                                {m.image_url && (
-                                  <img src={m.image_url} alt="" onClick={() => setChatLightbox(m.image_url!)}
-                                    className="rounded-2xl max-w-[220px] max-h-[260px] object-cover cursor-pointer border border-gray-200" />
-                                )}
-                                {m.file_url && (
-                                  <a href={m.file_url} target="_blank" rel="noreferrer" download={m.file_name || true}
-                                    className={`flex items-center gap-2 px-3 py-2.5 rounded-2xl text-sm border max-w-[260px] ${
-                                      mine ? 'bg-green-600 text-white border-green-600' : 'bg-white border-gray-200 text-gray-800'
-                                    }`}>
-                                    <span className="text-lg flex-shrink-0">📎</span>
-                                    <span className="truncate underline">{m.file_name || '파일'}</span>
-                                  </a>
-                                )}
-                                {m.content && (
-                                  <div className={`px-3 py-2 rounded-2xl text-sm whitespace-pre-wrap break-words ${
-                                    mine ? 'bg-green-600 text-white rounded-br-sm' : 'bg-white border border-gray-200 text-gray-800 rounded-bl-sm'
-                                  }`}>{renderContent(m.content, mine)}</div>
+                                {m.is_deleted ? (
+                                  <div className="px-3 py-2 rounded-2xl text-sm italic text-gray-400 bg-gray-100 border border-gray-200">삭제된 메시지입니다</div>
+                                ) : (
+                                  <>
+                                    {m.reply_preview && (
+                                      <button onClick={() => m.reply_to_id && jumpTo(m.reply_to_id)}
+                                        className={`text-left text-xs px-2.5 py-1.5 rounded-lg border-l-2 max-w-[260px] truncate ${mine ? 'bg-green-700/20 border-green-300 text-green-900' : 'bg-gray-100 border-gray-300 text-gray-500'}`}>
+                                        <span className="font-semibold">{rpName}</span> {rpRest.join('|')}
+                                      </button>
+                                    )}
+                                    {m.image_url && (
+                                      <img src={m.image_url} alt="" onClick={() => setChatLightbox(m.image_url!)}
+                                        className="rounded-2xl max-w-[220px] max-h-[260px] object-cover cursor-pointer border border-gray-200" />
+                                    )}
+                                    {m.file_url && (
+                                      <a href={m.file_url} target="_blank" rel="noreferrer" download={m.file_name || true}
+                                        className={`flex items-center gap-2 px-3 py-2.5 rounded-2xl text-sm border max-w-[260px] ${
+                                          mine ? 'bg-green-600 text-white border-green-600' : 'bg-white border-gray-200 text-gray-800'
+                                        }`}>
+                                        <span className="text-lg flex-shrink-0">📎</span>
+                                        <span className="truncate underline">{m.file_name || '파일'}</span>
+                                      </a>
+                                    )}
+                                    {m.content && (
+                                      <div className={`px-3 py-2 rounded-2xl text-sm whitespace-pre-wrap break-words ${
+                                        mine ? 'bg-green-600 text-white rounded-br-sm' : 'bg-white border border-gray-200 text-gray-800 rounded-bl-sm'
+                                      }`}>{renderContent(m.content, mine)}</div>
+                                    )}
+                                    {renderReactions(m.id)}
+                                  </>
                                 )}
                               </div>
-                              {!mine && <span className="text-[10px] text-gray-400">{fmtTime(m.created_at)}</span>}
                             </div>
+
+                            {/* 동작 메뉴 */}
+                            {menuFor === m.id && !m.is_deleted && !readOnly && (
+                              <div className={`mt-1 bg-white border border-gray-200 rounded-xl shadow-lg p-2 flex flex-col gap-1.5 z-20 ${mine ? 'items-end' : 'items-start'}`}>
+                                <div className="flex gap-1">
+                                  {EMOJIS.map(e => (
+                                    <button key={e} onClick={() => toggleReaction(m.id, e)} className="w-8 h-8 rounded-lg hover:bg-gray-100 text-base">{e}</button>
+                                  ))}
+                                </div>
+                                <div className="flex gap-1 flex-wrap justify-end">
+                                  <button onClick={() => startReply(m)} className="text-xs px-2.5 py-1.5 rounded-lg hover:bg-gray-100 text-gray-700">↩ 답장</button>
+                                  <button onClick={() => togglePin(m)} className="text-xs px-2.5 py-1.5 rounded-lg hover:bg-gray-100 text-gray-700">{m.pinned ? '📌 고정해제' : '📌 고정'}</button>
+                                  {canEditMsg && <button onClick={() => startEdit(m)} className="text-xs px-2.5 py-1.5 rounded-lg hover:bg-gray-100 text-gray-700">✏ 수정</button>}
+                                  {canDelMsg && <button onClick={() => deleteMsg(m)} className="text-xs px-2.5 py-1.5 rounded-lg hover:bg-red-50 text-red-600">🗑 삭제</button>}
+                                </div>
+                              </div>
+                            )}
                           </div>
                         )
                       })}
@@ -373,35 +587,57 @@ export default function ChatPage() {
                     </div>
                   )}
                 </div>
+
                 {readOnly ? (
                   <div className="flex-shrink-0 bg-gray-50 border-t border-gray-200 px-4 py-3 text-center text-xs text-gray-400">
                     외부협력업체 계정은 채팅 보기만 가능합니다.
                   </div>
                 ) : (
-                  <form onSubmit={send}
-                    className="flex-shrink-0 bg-white border-t border-gray-200 px-4 py-3 flex gap-2 items-center">
-                    <label className="flex-shrink-0 flex items-center justify-center w-10 h-10 rounded-full border border-gray-300 text-lg cursor-pointer hover:bg-gray-50" title="사진 보내기">
-                      🖼️
-                      <input type="file" accept="image/*" className="hidden"
-                        onChange={e => { const f = e.target.files?.[0]; if (f) sendImage(f); e.currentTarget.value = '' }} />
-                    </label>
-                    <label className="flex-shrink-0 flex items-center justify-center w-10 h-10 rounded-full border border-gray-300 text-lg cursor-pointer hover:bg-gray-50" title="파일 보내기">
-                      📎
-                      <input type="file" className="hidden"
-                        onChange={e => { const f = e.target.files?.[0]; if (f) sendFile(f); e.currentTarget.value = '' }} />
-                    </label>
-                    <input value={text} onChange={e => setText(e.target.value)}
-                      onPaste={e => {
-                        const imgs = Array.from(e.clipboardData?.items || []).filter(it => it.type.startsWith('image/'))
-                        if (imgs.length === 0) return
-                        e.preventDefault()
-                        imgs.forEach(it => { const f = it.getAsFile(); if (f) sendFile(f) })
-                      }}
-                      placeholder="메시지 입력 · 캡처 후 Ctrl+V로 붙여넣기"
-                      className="flex-1 border border-gray-300 rounded-full px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
-                    <button type="submit" disabled={sending || !text.trim()}
-                      className="bg-green-600 text-white px-5 py-2.5 rounded-full text-sm font-medium hover:bg-green-700 disabled:opacity-50 flex-shrink-0">전송</button>
-                  </form>
+                  <div className="flex-shrink-0 bg-white border-t border-gray-200">
+                    {(replyTo || editing) && (
+                      <div className="px-4 pt-2 flex items-center gap-2 text-xs">
+                        <span className="text-gray-400 flex-shrink-0">{editing ? '✏ 수정 중' : '↩ 답장'}</span>
+                        <span className="text-gray-600 truncate flex-1">
+                          {editing ? editing.text : `${replyTo!.sender_name || '직원'}: ${replyTo!.content || (replyTo!.image_url ? '사진' : replyTo!.file_name || '파일')}`}
+                        </span>
+                        <button onClick={() => { setReplyTo(null); setEditing(null); setText('') }} className="text-gray-400 hover:text-gray-600 flex-shrink-0">✕</button>
+                      </div>
+                    )}
+                    {mentionOpen && showSenderName && (
+                      <div className="px-4 pt-2 flex flex-wrap gap-1.5">
+                        {people.map(p => (
+                          <button key={p.id} onClick={() => insertMention(p.name)} className="text-xs bg-gray-100 hover:bg-green-100 text-gray-700 px-2.5 py-1 rounded-full">@{p.name}</button>
+                        ))}
+                      </div>
+                    )}
+                    <form onSubmit={send} className="px-4 py-3 flex gap-2 items-center">
+                      <label className="flex-shrink-0 flex items-center justify-center w-10 h-10 rounded-full border border-gray-300 text-lg cursor-pointer hover:bg-gray-50" title="사진 보내기">
+                        🖼️
+                        <input type="file" accept="image/*" className="hidden"
+                          onChange={e => { const f = e.target.files?.[0]; if (f) sendImage(f); e.currentTarget.value = '' }} />
+                      </label>
+                      <label className="flex-shrink-0 flex items-center justify-center w-10 h-10 rounded-full border border-gray-300 text-lg cursor-pointer hover:bg-gray-50" title="파일 보내기">
+                        📎
+                        <input type="file" className="hidden"
+                          onChange={e => { const f = e.target.files?.[0]; if (f) sendFile(f); e.currentTarget.value = '' }} />
+                      </label>
+                      {showSenderName && (
+                        <button type="button" onClick={() => setMentionOpen(o => !o)} title="멘션"
+                          className={`flex-shrink-0 flex items-center justify-center w-10 h-10 rounded-full border text-base ${mentionOpen ? 'border-green-500 bg-green-50 text-green-700' : 'border-gray-300 text-gray-500 hover:bg-gray-50'}`}>@</button>
+                      )}
+                      <input value={text} onChange={e => setText(e.target.value)}
+                        onPaste={e => {
+                          const imgs = Array.from(e.clipboardData?.items || []).filter(it => it.type.startsWith('image/'))
+                          if (imgs.length === 0) return
+                          e.preventDefault()
+                          imgs.forEach(it => { const f = it.getAsFile(); if (f) sendFile(f) })
+                        }}
+                        placeholder={editing ? '메시지 수정...' : '메시지 입력 · 캡처 후 Ctrl+V'}
+                        className="flex-1 border border-gray-300 rounded-full px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
+                      <button type="submit" disabled={sending || !text.trim()}
+                        className="bg-green-600 text-white px-5 py-2.5 rounded-full text-sm font-medium hover:bg-green-700 disabled:opacity-50 flex-shrink-0">{editing ? '수정' : '전송'}</button>
+                    </form>
+                  </div>
                 )}
               </>
             )}
@@ -447,9 +683,49 @@ export default function ChatPage() {
         </div>
       )}
 
+      {/* 방 관리 모달 */}
+      {showRoomSettings && active?.kind === 'room' && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl w-full max-w-md shadow-xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between px-6 py-5 border-b border-gray-100">
+              <h2 className="text-lg font-bold">방 관리</h2>
+              <button onClick={() => setShowRoomSettings(false)} className="text-gray-400 text-2xl">&times;</button>
+            </div>
+            <div className="px-6 py-5 flex flex-col gap-5">
+              <div>
+                <label className="text-sm font-medium text-gray-700 block mb-1.5">방 이름</label>
+                <div className="flex gap-2">
+                  <input value={renameVal} onChange={e => setRenameVal(e.target.value)}
+                    className="flex-1 border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
+                  <button onClick={saveRoomName} disabled={!renameVal.trim()} className="bg-green-600 text-white px-4 rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-50">저장</button>
+                </div>
+              </div>
+              <div>
+                <label className="text-sm font-medium text-gray-700 block mb-1.5">멤버 ({roomMemberIds.size}명)</label>
+                <div className="border border-gray-200 rounded-lg max-h-60 overflow-auto">
+                  {people.map(p => {
+                    const inRoom = roomMemberIds.has(p.id)
+                    return (
+                      <div key={p.id} className="flex items-center gap-2.5 px-3 py-2.5 border-b border-gray-100 last:border-0">
+                        <span className="w-7 h-7 rounded-full bg-gray-100 text-gray-600 flex items-center justify-center text-xs flex-shrink-0">{p.name?.slice(0, 1) || '?'}</span>
+                        <span className="text-sm text-gray-800 flex-1 truncate">{p.name}</span>
+                        {inRoom
+                          ? <button onClick={() => removeRoomMember(p.id)} className="text-xs text-red-500 hover:text-red-700 flex-shrink-0">내보내기</button>
+                          : <button onClick={() => addRoomMember(p.id)} className="text-xs text-green-600 hover:text-green-800 flex-shrink-0">+ 추가</button>}
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+              <button onClick={leaveRoom} className="text-sm text-red-600 hover:text-red-800 py-2">채팅방 나가기</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 채팅 사진 크게 보기 (좌우 넘김 + 내보내기/저장) */}
       {chatLightbox && (() => {
-        const gallery = messages.filter(m => m.image_url).map(m => m.image_url as string)
+        const gallery = messages.filter(m => m.image_url && !m.is_deleted).map(m => m.image_url as string)
         const idx = gallery.indexOf(chatLightbox)
         const go = (d: number) => { const n = idx + d; if (n >= 0 && n < gallery.length) setChatLightbox(gallery[n]) }
         return (
