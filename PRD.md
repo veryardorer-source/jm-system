@@ -154,8 +154,8 @@ npx vercel --prod
 | `finance_project_profit` | id, project_id, month, revenue, cost, memo |
 | `finance_sales` | id, month, type(매출/매입), amount, file_url, file_name, memo |
 
-**RLS**: 모든 테이블 비활성화 (`ALTER TABLE ... DISABLE ROW LEVEL SECURITY`)
-**Storage**: `uploads` 버킷 — 정책으로 anon 허용. 경로 규칙: `files/{project_id}/...`, `costs/{project_id}/...`, `documents/...`, `finance/sales/...`
+**RLS**: ⚠️ 아래는 옛 상태였음. **2026-07-02 기준 전체 테이블 RLS 활성화 + 계층형 정책 적용됨** — anon 차단, admin전용(민감/재정), 본인데이터(알림·읽음), 역할별(금전·서류·현장자료), 채팅 참여자 기준, pending 업무데이터 차단. 적용 SQL: `db/rls_sensitive.sql`·`db/rls_notifications.sql`·`db/rls_money.sql`·`db/rls_chat.sql`. 상세·검증쿼리·역할 매트릭스: `../관리시스템/docs/security_status.md`, 요약: `CLAUDE.md`.
+**Storage**: `uploads` 버킷 — 현재 public(anon 접근 가능). 계약서·직원자료 등 민감 파일은 **private bucket + signed URL** 전환이 후속 과제(로드맵). 경로 규칙: `files/{project_id}/...`, `costs/{project_id}/...`, `documents/...`, `finance/sales/...`
 
 ### 신규 테이블 생성 SQL (아직 안 만들었다면)
 ```sql
