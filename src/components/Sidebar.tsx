@@ -11,6 +11,7 @@ const NAV_ITEMS = [
   { href: '/', label: '대시보드', icon: '🏠' },
   { href: '/notices', label: '공지사항', icon: '📢' },
   { href: '/projects', label: '현장 관리', icon: '🏗️' },
+  { href: '/estimates', label: '견적서', icon: '📋' },
   { href: '/worklogs', label: '작업일지', icon: '📒' },
   { href: '/receipts', label: '영수증', icon: '🧾' },
   { href: '/withdrawals', label: '출금 요청', icon: '💸' },
@@ -27,7 +28,10 @@ const ADMIN_ITEMS = [
 ]
 
 // 외부협력업체(partner)에게 숨길 메뉴 (금전·내부 자료) — 현장 관련만 보이게
-const PARTNER_HIDDEN = ['/receipts', '/withdrawals', '/payments', '/worklogs', '/documents', '/chat', '/search']
+const PARTNER_HIDDEN = ['/receipts', '/withdrawals', '/payments', '/worklogs', '/documents', '/chat', '/search', '/estimates']
+
+// 현장팀(field)에게 숨길 메뉴 (견적은 금액 정보 — admin/designer 전용)
+const FIELD_HIDDEN = ['/estimates']
 
 // 모바일 하단바에 항상 보일 핵심 메뉴 (나머지는 '더보기'로)
 const MOBILE_PRIMARY = ['/', '/projects', '/chat', '/notifications']
@@ -49,7 +53,10 @@ export default function Sidebar() {
   const { profile, signOut } = useAuth()
   const isAdmin = profile?.role === 'admin'
   const isPartner = profile?.role === 'partner'
-  const navItems = isPartner ? NAV_ITEMS.filter(i => !PARTNER_HIDDEN.includes(i.href)) : NAV_ITEMS
+  const isField = profile?.role === 'field'
+  const navItems = NAV_ITEMS.filter(i =>
+    (!isPartner || !PARTNER_HIDDEN.includes(i.href)) &&
+    (!isField || !FIELD_HIDDEN.includes(i.href)))
   const [unread, setUnread] = useState(0)
   const [chatUnread, setChatUnread] = useState(0)
   const [moreOpen, setMoreOpen] = useState(false)
