@@ -613,7 +613,8 @@ function SalesTab({ list, onRefresh }: { list: SalesRecord[]; onRefresh: () => v
                       {s.file_url ? (
                         <button onClick={() => {
                           const name = s.file_name?.toLowerCase() || ''
-                          if (name.endsWith('.pdf')) window.open(`https://docs.google.com/viewer?url=${encodeURIComponent(s.file_url)}`, '_blank')
+                          if (/\.(xlsx|xls|doc|docx|ppt|pptx)$/.test(name)) window.open(`https://view.officeapps.live.com/op/view.aspx?src=${encodeURIComponent(s.file_url)}`, '_blank')
+                          else if (name.endsWith('.pdf')) window.open(`https://docs.google.com/viewer?url=${encodeURIComponent(s.file_url)}`, '_blank')
                           else window.open(s.file_url, '_blank')
                         }} className="text-xs text-green-600 hover:underline truncate max-w-[140px] inline-block">📎 {s.file_name}</button>
                       ) : <span className="text-xs text-gray-300">-</span>}

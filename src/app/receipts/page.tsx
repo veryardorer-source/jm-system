@@ -5,6 +5,7 @@ import Sidebar from '@/components/Sidebar'
 import { supabase } from '@/lib/supabase'
 import { useAuth, canEdit } from '@/lib/auth-context'
 import { notifyOthers } from '@/lib/notify'
+import { shareUrl, downloadUrl } from '@/lib/media'
 
 type Photo = {
   id: string
@@ -25,6 +26,7 @@ export default function ReceiptsPage() {
   const [uploadedBy, setUploadedBy] = useState('')
   const [uploading, setUploading] = useState(false)
   const [uploadCurrent, setUploadCurrent] = useState(0)
+  const [viewIdx, setViewIdx] = useState<number | null>(null) // 크게 보기
 
   useEffect(() => { fetchPhotos() }, [])
   useEffect(() => { if (profile?.name) setUploadedBy(profile.name) }, [profile?.name])
@@ -109,19 +111,21 @@ export default function ReceiptsPage() {
             </div>
           ) : (
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-              {photos.map(p => (
+              {photos.map((p, i) => (
                 <div key={p.id} className="bg-white rounded-xl border border-gray-200 overflow-hidden group">
-                  <a href={p.image_url} target="_blank" rel="noopener noreferrer">
+                  <button onClick={() => setViewIdx(i)} className="block w-full" title="크게 보기">
                     <img src={p.image_url} alt="영수증" className="w-full aspect-square object-cover" />
-                  </a>
+                  </button>
                   <div className="px-3 py-2">
                     {p.memo && <p className="text-xs text-gray-700 truncate">{p.memo}</p>}
-                    <div className="flex items-center justify-between mt-1">
-                      <span className="text-xs text-gray-400">{p.uploaded_by || ''} {new Date(p.created_at).toLocaleDateString('ko-KR', { month: 'numeric', day: 'numeric' })}</span>
-                      {!readOnly && (
-                        <button onClick={() => deletePhoto(p)}
-                          className="text-xs text-red-500 hover:text-red-700 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">삭제</button>
-                      )}
+                    <div className="flex items-center justify-between mt-1 gap-1">
+                      <span className="text-xs text-gray-400 truncate">{p.uploaded_by || ''} {new Date(p.created_at).toLocaleDateString('ko-KR', { month: 'numeric', day: 'numeric' })}</span>
+                      <div className="flex items-center gap-1.5 flex-shrink-0">
+                        <button onClick={() => shareUrl(p.image_url, `영수증_${p.memo || i + 1}.jpg`)} className="text-xs text-blue-400 hover:text-blue-600">내보내기</button>
+                        {!readOnly && (
+                          <button onClick={() => deletePhoto(p)} className="text-xs text-red-400 hover:text-red-600">삭제</button>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -130,6 +134,27 @@ export default function ReceiptsPage() {
           )}
         </div>
       </div>
+
+      {/* 크게 보기 (다운로드 없이) + 내보내기/저장 */}
+      {viewIdx !== null && photos[viewIdx] && (
+        <div className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-4" onClick={() => setViewIdx(null)}>
+          <img src={photos[viewIdx].image_url} alt="" onClick={e => e.stopPropagation()} className="max-w-full max-h-[85vh] object-contain rounded-lg" />
+          {viewIdx > 0 && (
+            <button onClick={e => { e.stopPropagation(); setViewIdx(viewIdx - 1) }}
+              className="absolute left-2 md:left-6 top-1/2 -translate-y-1/2 w-11 h-11 rounded-full bg-white/20 hover:bg-white/30 text-white text-2xl flex items-center justify-center">‹</button>
+          )}
+          {viewIdx < photos.length - 1 && (
+            <button onClick={e => { e.stopPropagation(); setViewIdx(viewIdx + 1) }}
+              className="absolute right-2 md:right-6 top-1/2 -translate-y-1/2 w-11 h-11 rounded-full bg-white/20 hover:bg-white/30 text-white text-2xl flex items-center justify-center">›</button>
+          )}
+          <div className="absolute bottom-5 left-1/2 -translate-x-1/2 flex items-center gap-2" onClick={e => e.stopPropagation()}>
+            <span className="bg-black/50 text-white text-xs px-3 py-1.5 rounded-full">{viewIdx + 1} / {photos.length}</span>
+            <button onClick={() => shareUrl(photos[viewIdx!].image_url, `영수증_${viewIdx! + 1}.jpg`)} className="bg-white/20 hover:bg-white/30 text-white text-xs px-3 py-1.5 rounded-full">내보내기</button>
+            <button onClick={() => downloadUrl(photos[viewIdx!].image_url, `영수증_${viewIdx! + 1}.jpg`)} className="bg-white/20 hover:bg-white/30 text-white text-xs px-3 py-1.5 rounded-full">저장</button>
+          </div>
+          <button onClick={() => setViewIdx(null)} className="absolute top-4 right-4 text-white text-3xl leading-none">&times;</button>
+        </div>
+      )}
 
       {showForm && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
