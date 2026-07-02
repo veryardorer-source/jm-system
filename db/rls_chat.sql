@@ -82,8 +82,9 @@ using (sender_id = auth.uid() or public.my_role() = 'admin');
 alter table public.chat_rooms enable row level security;
 select public._drop_all_policies('chat_rooms');
 
+-- 생성자도 select 허용: 방 생성 직후(멤버 추가 전) INSERT ... returning 이 막히지 않게
 create policy rooms_select on public.chat_rooms for select to authenticated
-using (public.is_room_member(id) or public.my_role() = 'admin');
+using (public.is_room_member(id) or created_by = auth.uid() or public.my_role() = 'admin');
 
 create policy rooms_insert on public.chat_rooms for insert to authenticated
 with check (public.is_approved() and public.my_role() <> 'partner' and created_by = auth.uid());
