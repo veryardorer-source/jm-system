@@ -35,9 +35,17 @@ npx vercel --prod  # 배포 (jm-system 폴더에서 실행)
 ### 인증
 - `@supabase/ssr` createBrowserClient 사용 (쿠키 기반)
 - 미들웨어에서 인증 처리, public paths: `/login`, `/signup`
-- 직원 가입은 관리자가 `/admin/users`에서 직접 생성
-- 역할: `admin`, `designer`, `field`
-- **RLS 활성화됨(2026-06-22)**: 전체 public 테이블 RLS ON + `authenticated`만 허용(anon 차단). 데이터 클라이언트는 `lib/supabase.ts`의 `createBrowserClient`(쿠키 세션 공유)라 로그인 사용자로 요청됨. 적용 SQL: `db/security_and_realtime.sql`
+- 직원 가입은 관리자가 `/admin/users`에서 직접 생성 (가입 후 승인 전까지는 pending)
+- 역할: `admin`, `designer`, `field`, `partner`(외부협력업체·보기전용) + 미승인(pending=위 4개가 아닌 값). 승인 판정 `isApproved()`/`APPROVED_ROLES`(`lib/auth-context.tsx`)
+- **RLS 계층형 적용(2026-07-02 최신)**: 초기엔 전체 테이블 RLS ON + `authenticated` 전체허용(`auth_all`)이었으나, 이후 테이블별로 세분화. 데이터 클라이언트는 `createBrowserClient`(쿠키 세션)라 로그인 사용자로 요청되고, RLS가 역할/참여자 기준으로 강제한다.
+  - **admin 전용**: employees·employee_salaries·employee_attendance·finance_*(`db/rls_sensitive.sql`)
+  - **본인 데이터만**: notifications(`db/rls_notifications.sql`), chat_reads(본인 읽음행만 upsert)
+  - **역할별 제한**(`db/rls_money.sql`): receipts·withdrawal_requests·payments=admin/designer/field, project_costs=admin/designer, company_documents=admin전체·designer/field는 전체공개만·쓰기 admin, project_files=승인자 읽기·비파트너 쓰기
+  - **채팅 참여자 기준**(`db/rls_chat.sql`): messages/chat_rooms/chat_room_members/message_reactions는 참여자·본인 기준, insert는 승인 실무역할만(partner=보기전용, pending 차단). 헬퍼 `my_role()`/`is_approved()`/`is_room_member()`/`can_see_message()`(security definer)
+  - **partner**: 현장 관련(금전 제외) 보기 전용 — 채팅/금전/서류 insert·update 불가, 화면도 숨김
+  - **pending(미승인)**: 업무 데이터 접근 불가(읽기·쓰기 모두)
+  - ⚠️ 운영 DB에 rls_* SQL 적용 전 **스냅샷/백업 권장**. 파일별 적용 상태는 `../관리시스템/docs/security_status.md` 참고
+- **푸시/알림**(`/api/push/send`): 클라이언트가 대상 지정 못 함. `{event: dm|room|mention|broadcast}`로 서버가 수신자 계산·검증(DM 당사자/방 멤버십/멘션 참여자/승인역할) 후 인앱알림+웹푸시. 헬퍼 `lib/notify.ts`
 
 ### 색상 테마
 - **전체 테마: 초록(green)**
