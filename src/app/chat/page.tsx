@@ -4,7 +4,7 @@ import { useEffect, useState, useRef, useCallback } from 'react'
 import Sidebar from '@/components/Sidebar'
 import { supabase } from '@/lib/supabase'
 import { useAuth, canEdit } from '@/lib/auth-context'
-import { sendPush } from '@/lib/notify'
+import { notifyDM, notifyRoom, notifyMention } from '@/lib/notify'
 import { shareUrl, downloadUrl } from '@/lib/media'
 
 type Message = {
@@ -239,29 +239,19 @@ export default function ChatPage() {
   useEffect(() => { msgsRef.current = messages; reloadReactions() }, [messages, reloadReactions])
   useEffect(() => { scrollToBottom() }, [messages, scrollToBottom])
 
-  async function pushNotif(body: string) {
+  // 알림/푸시는 서버(/api/push/send)가 대상 계산·검증
+  function pushNotif(body: string) {
     if (!active) return
     if (active.kind === 'dm') {
-      const title = `${profile?.name || '직원'} 님의 메시지`
-      await supabase.from('notifications').insert([{ user_id: active.id, type: 'chat', title, body, link: '/chat' }])
-      sendPush([active.id], title, body, '/chat')
+      notifyDM(active.id, `${profile?.name || '직원'} 님의 메시지`, body, '/chat')
     } else if (active.kind === 'room') {
-      const { data: mem } = await supabase.from('chat_room_members').select('user_id').eq('room_id', active.id)
-      const ids = (mem || []).map(x => x.user_id).filter(uid => uid !== me)
-      const title = `${active.name} · ${profile?.name || '직원'}`
-      if (ids.length) {
-        await supabase.from('notifications').insert(ids.map(uid => ({ user_id: uid, type: 'chat', title, body, link: '/chat' })))
-        sendPush(ids, title, body, '/chat')
-      }
+      notifyRoom(active.id, `${active.name} · ${profile?.name || '직원'}`, body, '/chat')
     }
   }
 
-  async function notifyMentions(content: string) {
+  function notifyMentions(content: string) {
     const ids = people.filter(p => p.name && content.includes('@' + p.name)).map(p => p.id)
-    if (!ids.length) return
-    const title = `${profile?.name || '직원'} 님이 회원님을 언급했어요`
-    await supabase.from('notifications').insert(ids.map(uid => ({ user_id: uid, type: 'chat', title, body: content.slice(0, 60), link: '/chat' })))
-    sendPush(ids, title, content.slice(0, 60), '/chat')
+    notifyMention(ids, `${profile?.name || '직원'} 님이 회원님을 언급했어요`, content.slice(0, 60), '/chat')
   }
 
   function replyFields() {
@@ -538,7 +528,7 @@ export default function ChatPage() {
                       {pinned[pinned.length - 1].content || (pinned[pinned.length - 1].image_url ? '사진' : pinned[pinned.length - 1].file_name || '파일')}
                     </button>
                     {pinned.length > 1 && <span className="text-[10px] text-amber-600 flex-shrink-0">+{pinned.length - 1}</span>}
-                    {!readOnly && <button onClick={() => togglePin(pinned[pinned.length - 1])} className="text-xs text-amber-600 hover:text-amber-800 flex-shrink-0">해제</button>}
+                    {!readOnly && (isAdmin || pinned[pinned.length - 1].sender_id === me) && <button onClick={() => togglePin(pinned[pinned.length - 1])} className="text-xs text-amber-600 hover:text-amber-800 flex-shrink-0">해제</button>}
                   </div>
                 )}
 
@@ -623,7 +613,7 @@ export default function ChatPage() {
                                 </div>
                                 <div className="flex gap-1 flex-wrap justify-end">
                                   <button onClick={() => startReply(m)} className="text-xs px-2.5 py-1.5 rounded-lg hover:bg-gray-100 text-gray-700">↩ 답장</button>
-                                  <button onClick={() => togglePin(m)} className="text-xs px-2.5 py-1.5 rounded-lg hover:bg-gray-100 text-gray-700">{m.pinned ? '📌 고정해제' : '📌 고정'}</button>
+                                  {(mine || isAdmin) && <button onClick={() => togglePin(m)} className="text-xs px-2.5 py-1.5 rounded-lg hover:bg-gray-100 text-gray-700">{m.pinned ? '📌 고정해제' : '📌 고정'}</button>}
                                   {canEditMsg && <button onClick={() => startEdit(m)} className="text-xs px-2.5 py-1.5 rounded-lg hover:bg-gray-100 text-gray-700">✏ 수정</button>}
                                   {canDelMsg && <button onClick={() => deleteMsg(m)} className="text-xs px-2.5 py-1.5 rounded-lg hover:bg-red-50 text-red-600">🗑 삭제</button>}
                                 </div>
