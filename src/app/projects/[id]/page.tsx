@@ -97,6 +97,7 @@ export default function ProjectDetail() {
   const [collapsedZones, setCollapsedZones] = useState<Record<string, boolean>>({})
   const [photoGroup, setPhotoGroup] = useState<'date' | 'zone'>('date') // 사진 정렬: 날짜별/구역별
   const [selectedFileIds, setSelectedFileIds] = useState<Set<string>>(new Set())
+  const [selectMode, setSelectMode] = useState(false) // 켜면 사진을 탭해서 선택(모바일 편의)
   const [hoveredFileId, setHoveredFileId] = useState<string | null>(null)
 
   const [showScheduleForm, setShowScheduleForm] = useState(false)
@@ -269,13 +270,16 @@ export default function ProjectDetail() {
 
   const isMobile = () => typeof window !== 'undefined' && window.matchMedia('(hover: none)').matches
 
+  // canShare가 없는 브라우저도 있어 존재 여부부터 확인(없으면 그냥 공유 시도)
+  const canShareFiles = (fs: File[]) => !('canShare' in navigator) || (navigator.canShare?.({ files: fs }) ?? true)
+
   async function shareFile(file: ProjectFile) {
     if (isMobile() && navigator.share) {
       try {
         const res = await fetch(file.file_url, { mode: 'cors', credentials: 'omit' })
         const blob = await res.blob()
         const fileObj = new File([blob], file.file_name, { type: blob.type })
-        if (navigator.canShare({ files: [fileObj] })) {
+        if (canShareFiles([fileObj])) {
           await navigator.share({ files: [fileObj], title: file.file_name })
           return
         }
@@ -287,6 +291,7 @@ export default function ProjectDetail() {
   }
 
   async function shareFiles(fileList: ProjectFile[]) {
+    if (fileList.length === 0) return
     if (isMobile() && navigator.share) {
       try {
         const fileObjects = await Promise.all(fileList.map(async f => {
@@ -294,14 +299,23 @@ export default function ProjectDetail() {
           const blob = await res.blob()
           return new File([blob], f.file_name, { type: blob.type })
         }))
-        if (navigator.canShare({ files: fileObjects })) {
+        // 1) 한 번에 전부 공유
+        if (canShareFiles(fileObjects)) {
           await navigator.share({ files: fileObjects, title: 'JM 자료' })
           return
         }
+        // 2) 한 번에 안 되면 나눠서 공유(다운로드 대신 공유 유지) — 카톡 등 공유창이 여러 번 열림
+        const chunk = 10
+        for (let i = 0; i < fileObjects.length; i += chunk) {
+          const part = fileObjects.slice(i, i + chunk).filter(fo => canShareFiles([fo]))
+          if (part.length) await navigator.share({ files: part, title: 'JM 자료' })
+        }
+        return
       } catch (e: unknown) {
         if (e instanceof Error && e.name === 'AbortError') return
       }
     }
+    // 공유 미지원(주로 데스크톱) → 다운로드
     for (const f of fileList) {
       await downloadFile(f)
       await new Promise(r => setTimeout(r, 300))
@@ -378,10 +392,12 @@ export default function ProjectDetail() {
       next.has(fileId) ? next.delete(fileId) : next.add(fileId)
       return next
     })
+    setSelectMode(true) // 한 번 선택을 시작하면 탭으로 계속 선택되게
   }
 
   function clearSelection() {
     setSelectedFileIds(new Set())
+    setSelectMode(false)
   }
 
   async function handleSchedule(e: React.FormEvent) {
@@ -498,13 +514,13 @@ export default function ProjectDetail() {
         onMouseLeave={() => setHoveredFileId(null)}>
         {isVideoFile(f) ? (
           <video src={f.file_url} muted playsInline preload="metadata"
-            onClick={() => setLightbox(f.file_url)}
+            onClick={() => (selectMode && !readOnly) ? toggleSelectFile(f.id) : setLightbox(f.file_url)}
             className={`w-full h-full object-cover rounded-lg border cursor-pointer transition-all ${
               isSelected ? 'border-green-500 ring-2 ring-green-500 brightness-90' : 'border-gray-200'
             }`} />
         ) : (
           <HeicImg src={f.file_url} alt={f.file_name}
-            onClick={() => setLightbox(f.file_url)}
+            onClick={() => (selectMode && !readOnly) ? toggleSelectFile(f.id) : setLightbox(f.file_url)}
             className={`w-full h-full object-cover rounded-lg border cursor-pointer transition-all ${
               isSelected ? 'border-green-500 ring-2 ring-green-500 brightness-90' : 'border-gray-200'
             }`} />
@@ -519,8 +535,8 @@ export default function ProjectDetail() {
         <button
           onClick={e => { e.stopPropagation(); toggleSelectFile(f.id) }}
           title="선택"
-          className={`absolute top-1.5 left-1.5 w-6 h-6 rounded-full border-2 flex items-center justify-center text-xs font-bold transition-all shadow-sm z-10 ${
-            isSelected ? 'bg-green-500 border-green-500 text-white' : 'bg-white/80 border-gray-300 opacity-100 md:opacity-0 md:group-hover:opacity-100'
+          className={`absolute top-1.5 left-1.5 w-7 h-7 rounded-full border-2 flex items-center justify-center text-sm font-bold transition-all shadow-sm z-10 ${
+            isSelected ? 'bg-green-500 border-green-500 text-white' : `bg-white/80 border-gray-300 ${selectMode ? 'opacity-100' : 'opacity-100 md:opacity-0 md:group-hover:opacity-100'}`
           }`}>
           {isSelected ? '✓' : ''}
         </button>
@@ -788,10 +804,12 @@ export default function ProjectDetail() {
             <div>
               <div className="flex items-center justify-between mb-4 gap-2 flex-wrap">
                 <div className="flex gap-2 items-center">
-                  {selectedFileIds.size > 0 && (
-                    <button onClick={clearSelection}
-                      className="border border-gray-300 text-gray-600 px-4 py-2 rounded-lg text-sm hover:bg-gray-50">
-                      선택 취소
+                  {!readOnly && (
+                    <button onClick={() => { setSelectMode(m => !m); if (selectMode) setSelectedFileIds(new Set()) }}
+                      className={`px-4 py-2 rounded-lg text-sm font-medium border transition-colors ${
+                        selectMode ? 'bg-green-600 text-white border-green-600' : 'border-gray-300 text-gray-600 hover:bg-gray-50'
+                      }`}>
+                      {selectMode ? '선택 완료' : '☑︎ 사진 선택'}
                     </button>
                   )}
                   {/* 사진 정렬: 날짜별 / 구역별 */}
