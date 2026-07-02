@@ -67,10 +67,26 @@ export async function POST(req: NextRequest) {
     if (!ids.includes(user.id)) return NextResponse.json({ error: '방 멤버 아님' }, { status: 403 })
     recipients = ids.filter(id => id !== user.id)
   } else if (event === 'mention') {
-    const want = Array.isArray(recipientIds) ? recipientIds.slice(0, 50) : []
+    const want = (Array.isArray(recipientIds) ? recipientIds.slice(0, 50) : []).filter(id => id !== user.id)
     if (want.length === 0) return NextResponse.json({ ok: true, sent: 0, notified: 0 })
-    const { data: profs } = await admin.from('profiles').select('id').in('id', want)
-    recipients = (profs || []).map(p => p.id).filter(id => id !== user.id)   // 실재 사용자만
+    if (roomId) {
+      // 방 멘션: 발신자·대상 모두 방 멤버여야 함
+      const { data: mem } = await admin.from('chat_room_members').select('user_id').eq('room_id', roomId)
+      const memIds = new Set((mem || []).map(m => m.user_id))
+      if (!memIds.has(user.id)) return NextResponse.json({ error: '방 멤버 아님' }, { status: 403 })
+      recipients = want.filter(id => memIds.has(id))
+    } else if (recipientId) {
+      // DM 멘션: 대상은 DM 상대 한 명뿐
+      const target = want.filter(id => id === recipientId)
+      if (target.length) {
+        const { data: r } = await admin.from('profiles').select('id').eq('id', recipientId).maybeSingle()
+        recipients = r ? target : []
+      }
+    } else {
+      // 전체 채팅 멘션: 승인된 사용자만
+      const { data: profs } = await admin.from('profiles').select('id, role').in('id', want)
+      recipients = (profs || []).filter(p => APPROVED.includes(p.role)).map(p => p.id)
+    }
   } else if (event === 'broadcast') {
     if (meProf.role === 'partner') return NextResponse.json({ error: '권한 없음' }, { status: 403 })
     const { data: profs } = await admin.from('profiles').select('id')

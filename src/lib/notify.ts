@@ -39,8 +39,13 @@ export function notifyRoom(roomId: string, title: string, body: string, link: st
   postNotify({ event: 'room', roomId, notifType: 'chat', title, body, link })
 }
 
-// @멘션 알림 (서버가 실재 사용자만 필터)
-export function notifyMention(recipientIds: string[], title: string, body: string, link: string) {
+// @멘션 알림 — 대화 맥락(roomId=방 / recipientId=DM / 둘 다 없음=전체채팅)을 함께 전달.
+// 서버가 그 대화의 참여자인지까지 검증해 임의 대상 멘션을 차단한다.
+export function notifyMention(
+  recipientIds: string[],
+  ctx: { roomId?: string; recipientId?: string },
+  title: string, body: string, link: string
+) {
   if (!recipientIds.length) return
-  postNotify({ event: 'mention', recipientIds, notifType: 'chat', title, body, link })
+  postNotify({ event: 'mention', recipientIds, roomId: ctx.roomId, recipientId: ctx.recipientId, notifType: 'chat', title, body, link })
 }

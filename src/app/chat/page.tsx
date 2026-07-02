@@ -250,8 +250,13 @@ export default function ChatPage() {
   }
 
   function notifyMentions(content: string) {
+    if (!active) return
     const ids = people.filter(p => p.name && content.includes('@' + p.name)).map(p => p.id)
-    notifyMention(ids, `${profile?.name || '직원'} 님이 회원님을 언급했어요`, content.slice(0, 60), '/chat')
+    if (!ids.length) return
+    const ctx = active.kind === 'room' ? { roomId: active.id }
+      : active.kind === 'dm' ? { recipientId: active.id }
+      : {}
+    notifyMention(ids, ctx, `${profile?.name || '직원'} 님이 회원님을 언급했어요`, content.slice(0, 60), '/chat')
   }
 
   function replyFields() {
