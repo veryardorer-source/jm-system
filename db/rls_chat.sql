@@ -56,11 +56,12 @@ using (
   )
 );
 
--- 보내기: 본인 명의 + 승인된 실무역할만(파트너=보기전용, pending=미승인 모두 차단) + 보이는 대화로만
+-- 보내기: 승인자 + 본인 명의 + 파트너(보기전용)·pending(미승인) 차단 + 보이는 대화로만
 create policy messages_insert on public.messages for insert to authenticated
 with check (
-  sender_id = auth.uid()
-  and public.my_role() in ('admin','designer','field')
+  public.is_approved()
+  and sender_id = auth.uid()
+  and public.my_role() <> 'partner'
   and (
     (room_id is null and recipient_id is null)
     or (recipient_id is not null)
@@ -124,7 +125,7 @@ create policy reactions_select on public.message_reactions for select to authent
 using (public.is_approved() and public.can_see_message(message_id));
 
 create policy reactions_insert on public.message_reactions for insert to authenticated
-with check (user_id = auth.uid() and public.my_role() in ('admin','designer','field') and public.can_see_message(message_id));
+with check (public.is_approved() and user_id = auth.uid() and public.my_role() <> 'partner' and public.can_see_message(message_id));
 
 create policy reactions_delete on public.message_reactions for delete to authenticated
 using (user_id = auth.uid());
