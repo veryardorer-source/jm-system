@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import Sidebar from '@/components/Sidebar'
 import { useAuth } from '@/lib/auth-context'
 import { notifyOthers } from '@/lib/notify'
+import FileDropInput from '@/components/FileDropInput'
 import { supabase, CompanyDocument, DOC_CATEGORY_LIST, DocVisibility } from '@/lib/supabase'
 
 const EMPTY_FORM = { title: '', category: DOC_CATEGORY_LIST[0] as string, visibility: '전체공개' as DocVisibility, memo: '' }
@@ -237,8 +238,7 @@ export default function DocumentsPage() {
                 <label className="text-sm font-medium text-gray-700 block mb-1.5">
                   파일 {editing ? <span className="text-gray-400 font-normal">(변경 시에만 선택, 현재: {editing.file_name})</span> : '*'}
                 </label>
-                <input type="file" onChange={e => setFile(e.target.files?.[0] || null)}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:bg-green-50 file:text-green-700 file:text-xs" />
+                <FileDropInput onFile={f => setFile(f)} currentName={file?.name} hint="PDF·엑셀·사진 등" />
               </div>
               <div>
                 <label className="text-sm font-medium text-gray-700 block mb-1.5">메모</label>

@@ -5,6 +5,7 @@ import Sidebar from '@/components/Sidebar'
 import { supabase } from '@/lib/supabase'
 import { useAuth, canEdit } from '@/lib/auth-context'
 import { sendPush } from '@/lib/notify'
+import { shareUrl, downloadUrl } from '@/lib/media'
 
 type Message = {
   id: string
@@ -56,6 +57,7 @@ export default function ChatPage() {
   const me = profile?.id
   const readOnly = !canEdit(profile)
   const [unread, setUnread] = useState<Record<string, number>>({})
+  const [chatLightbox, setChatLightbox] = useState<string | null>(null)
   const [dragOver, setDragOver] = useState(false)
   const [people, setPeople] = useState<Person[]>([])
   const [rooms, setRooms] = useState<Room[]>([])
@@ -344,7 +346,7 @@ export default function ChatPage() {
                               {mine && <span className="text-[10px] text-gray-400">{fmtTime(m.created_at)}</span>}
                               <div className={`max-w-[75vw] md:max-w-md flex flex-col gap-1 ${mine ? 'items-end' : 'items-start'}`}>
                                 {m.image_url && (
-                                  <img src={m.image_url} alt="" onClick={() => window.open(m.image_url!, '_blank')}
+                                  <img src={m.image_url} alt="" onClick={() => setChatLightbox(m.image_url!)}
                                     className="rounded-2xl max-w-[220px] max-h-[260px] object-cover cursor-pointer border border-gray-200" />
                                 )}
                                 {m.file_url && (
@@ -444,6 +446,26 @@ export default function ChatPage() {
           </div>
         </div>
       )}
+
+      {/* 채팅 사진 크게 보기 (좌우 넘김 + 내보내기/저장) */}
+      {chatLightbox && (() => {
+        const gallery = messages.filter(m => m.image_url).map(m => m.image_url as string)
+        const idx = gallery.indexOf(chatLightbox)
+        const go = (d: number) => { const n = idx + d; if (n >= 0 && n < gallery.length) setChatLightbox(gallery[n]) }
+        return (
+          <div className="fixed inset-0 bg-black/90 z-[60] flex items-center justify-center p-4" onClick={() => setChatLightbox(null)}>
+            <img src={chatLightbox} alt="" onClick={e => e.stopPropagation()} className="max-w-full max-h-[85vh] object-contain rounded-lg" />
+            {idx > 0 && <button onClick={e => { e.stopPropagation(); go(-1) }} className="absolute left-2 md:left-6 top-1/2 -translate-y-1/2 w-11 h-11 rounded-full bg-white/20 hover:bg-white/30 text-white text-2xl flex items-center justify-center">‹</button>}
+            {idx < gallery.length - 1 && <button onClick={e => { e.stopPropagation(); go(1) }} className="absolute right-2 md:right-6 top-1/2 -translate-y-1/2 w-11 h-11 rounded-full bg-white/20 hover:bg-white/30 text-white text-2xl flex items-center justify-center">›</button>}
+            <div className="absolute bottom-5 left-1/2 -translate-x-1/2 flex items-center gap-2" onClick={e => e.stopPropagation()}>
+              {gallery.length > 1 && <span className="bg-black/50 text-white text-xs px-3 py-1.5 rounded-full">{idx + 1} / {gallery.length}</span>}
+              <button onClick={() => shareUrl(chatLightbox!, '사진.jpg')} className="bg-white/20 hover:bg-white/30 text-white text-xs px-3 py-1.5 rounded-full">내보내기</button>
+              <button onClick={() => downloadUrl(chatLightbox!, '사진.jpg')} className="bg-white/20 hover:bg-white/30 text-white text-xs px-3 py-1.5 rounded-full">저장</button>
+            </div>
+            <button onClick={() => setChatLightbox(null)} className="absolute top-4 right-4 text-white text-3xl leading-none">&times;</button>
+          </div>
+        )
+      })()}
     </div>
   )
 }

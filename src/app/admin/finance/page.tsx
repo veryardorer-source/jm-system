@@ -7,6 +7,7 @@ import { useAuth } from '@/lib/auth-context'
 import { createClient } from '@/lib/supabase-browser'
 import { FixedCost, Payroll, ProjectProfit, SalesRecord, Project, supabase } from '@/lib/supabase'
 import { parseExcelRows, parseExcelTotal, ParsedRow, parsePayrollLedger, PayrollLedger } from '@/lib/excel-parse'
+import FileDropInput from '@/components/FileDropInput'
 
 const TAB_LIST = ['고정지출', '급여내역', '현장별 이익', '매출매입', '견적서'] as const
 type Tab = typeof TAB_LIST[number]
@@ -648,14 +649,14 @@ function SalesTab({ list, onRefresh }: { list: SalesRecord[]; onRefresh: () => v
           <NumberInput label="금액 *" required value={form.amount} onChange={v => setForm({ ...form, amount: v })} />
           <div>
             <label className="text-sm font-medium text-gray-700 block mb-1.5">자료 첨부 <span className="text-gray-400 font-normal">(엑셀이면 금액 자동 인식)</span></label>
-            <input type="file" onChange={async e => {
-              const f = e.target.files?.[0] || null
-              setFile(f)
-              if (f && /\.(xlsx|xls)$/i.test(f.name)) {
-                const total = await parseExcelTotal(f).catch(() => null)
-                if (total) setForm(prev => ({ ...prev, amount: String(total) }))
-              }
-            }} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:bg-green-50 file:text-green-700 file:text-xs" />
+            <FileDropInput currentName={file?.name} hint="엑셀·PDF·사진 등"
+              onFile={async f => {
+                setFile(f)
+                if (/\.(xlsx|xls)$/i.test(f.name)) {
+                  const total = await parseExcelTotal(f).catch(() => null)
+                  if (total) setForm(prev => ({ ...prev, amount: String(total) }))
+                }
+              }} />
           </div>
           <TextInput label="메모" value={form.memo} onChange={v => setForm({ ...form, memo: v })} />
         </FormModal>
@@ -767,8 +768,7 @@ function QuoteTab({ list, onRefresh }: { list: Quote[]; onRefresh: () => void })
             <label className="text-sm font-medium text-gray-700 block mb-1.5">
               첨부파일 {editing?.file_name ? <span className="text-gray-400 font-normal">(변경 시에만 · 현재: {editing.file_name})</span> : <span className="text-gray-400 font-normal">(PDF·엑셀·사진)</span>}
             </label>
-            <input type="file" onChange={e => setFile(e.target.files?.[0] || null)}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:bg-green-50 file:text-green-700 file:text-xs" />
+            <FileDropInput onFile={f => setFile(f)} currentName={file?.name} hint="PDF·엑셀·사진 등" />
           </div>
         </FormModal>
       )}
