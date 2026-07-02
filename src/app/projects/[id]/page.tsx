@@ -498,13 +498,13 @@ export default function ProjectDetail() {
         onMouseLeave={() => setHoveredFileId(null)}>
         {isVideoFile(f) ? (
           <video src={f.file_url} muted playsInline preload="metadata"
-            onClick={() => readOnly ? setLightbox(f.file_url) : toggleSelectFile(f.id)}
+            onClick={() => setLightbox(f.file_url)}
             className={`w-full h-full object-cover rounded-lg border cursor-pointer transition-all ${
               isSelected ? 'border-green-500 ring-2 ring-green-500 brightness-90' : 'border-gray-200'
             }`} />
         ) : (
           <HeicImg src={f.file_url} alt={f.file_name}
-            onClick={() => readOnly ? setLightbox(f.file_url) : toggleSelectFile(f.id)}
+            onClick={() => setLightbox(f.file_url)}
             className={`w-full h-full object-cover rounded-lg border cursor-pointer transition-all ${
               isSelected ? 'border-green-500 ring-2 ring-green-500 brightness-90' : 'border-gray-200'
             }`} />
@@ -518,8 +518,9 @@ export default function ProjectDetail() {
         {!readOnly && (
         <button
           onClick={e => { e.stopPropagation(); toggleSelectFile(f.id) }}
+          title="선택"
           className={`absolute top-1.5 left-1.5 w-6 h-6 rounded-full border-2 flex items-center justify-center text-xs font-bold transition-all shadow-sm z-10 ${
-            isSelected ? 'bg-green-500 border-green-500 text-white' : 'bg-white/80 border-gray-300 opacity-0 group-hover:opacity-100'
+            isSelected ? 'bg-green-500 border-green-500 text-white' : 'bg-white/80 border-gray-300 opacity-100 md:opacity-0 md:group-hover:opacity-100'
           }`}>
           {isSelected ? '✓' : ''}
         </button>
@@ -1268,7 +1269,10 @@ export default function ProjectDetail() {
         const cur = files.find(f => f.file_url === lightbox)
         const gallery = (cur ? files.filter(f => f.category === cur.category) : [])
           .filter(f => (f.file_type || '') !== 'link' && (isVideoFile(f) || (f.file_type || '').startsWith('image') || PHOTO_CATS.includes(f.category)))
-          .sort((a, b) => (a.file_name || '').localeCompare(b.file_name || '', undefined, { numeric: true }))
+          .sort((a, b) => {
+            if (photoGroup === 'date') { const d = fileDate(b).localeCompare(fileDate(a)); if (d !== 0) return d }
+            return (a.file_name || '').localeCompare(b.file_name || '', undefined, { numeric: true })
+          })
           .map(f => f.file_url)
         const idx = gallery.indexOf(lightbox)
         const go = (d: number) => { const n = idx + d; if (n >= 0 && n < gallery.length) setLightbox(gallery[n]) }
