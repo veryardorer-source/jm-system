@@ -9,7 +9,6 @@ import { supabase } from '@/lib/supabase'
 
 const NAV_ITEMS = [
   { href: '/', label: '대시보드', icon: '🏠' },
-  { href: '/search', label: '통합 검색', icon: '🔍' },
   { href: '/notices', label: '공지사항', icon: '📢' },
   { href: '/projects', label: '현장 관리', icon: '🏗️' },
   { href: '/worklogs', label: '작업일지', icon: '📒' },
@@ -208,6 +207,15 @@ export default function Sidebar() {
               className="mt-3 w-full text-center text-sm text-red-500 py-2.5 border-t border-gray-100">로그아웃</button>
           </div>
         </div>
+      )}
+
+      {/* 통합 검색 — 항상 보이는 고정 버튼 (오른쪽 아래) */}
+      {!isPartner && pathname !== '/search' && (
+        <Link href="/search" title="통합 검색"
+          className="fixed bottom-20 right-4 md:bottom-6 md:right-6 z-40 w-14 h-14 rounded-full bg-green-600 text-white shadow-xl flex items-center justify-center text-2xl hover:bg-green-700 active:scale-95 transition-transform"
+          aria-label="통합 검색">
+          🔍
+        </Link>
       )}
     </>
   )
