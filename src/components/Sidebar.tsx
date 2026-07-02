@@ -9,6 +9,7 @@ import { supabase } from '@/lib/supabase'
 
 const NAV_ITEMS = [
   { href: '/', label: '대시보드', icon: '🏠' },
+  { href: '/search', label: '통합 검색', icon: '🔍' },
   { href: '/notices', label: '공지사항', icon: '📢' },
   { href: '/projects', label: '현장 관리', icon: '🏗️' },
   { href: '/worklogs', label: '작업일지', icon: '📒' },
@@ -27,7 +28,7 @@ const ADMIN_ITEMS = [
 ]
 
 // 외부협력업체(partner)에게 숨길 메뉴 (금전·내부 자료) — 현장 관련만 보이게
-const PARTNER_HIDDEN = ['/receipts', '/withdrawals', '/payments', '/worklogs', '/documents', '/chat']
+const PARTNER_HIDDEN = ['/receipts', '/withdrawals', '/payments', '/worklogs', '/documents', '/chat', '/search']
 
 // 모바일 하단바에 항상 보일 핵심 메뉴 (나머지는 '더보기'로)
 const MOBILE_PRIMARY = ['/', '/projects', '/chat', '/notifications']
