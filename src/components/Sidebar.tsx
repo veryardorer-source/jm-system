@@ -210,7 +210,7 @@ export default function Sidebar() {
       )}
 
       {/* 통합 검색 — 항상 보이는 고정 버튼 (오른쪽 아래) */}
-      {!isPartner && pathname !== '/search' && (
+      {!isPartner && pathname !== '/search' && pathname !== '/chat' && (
         <Link href="/search" title="통합 검색"
           className="fixed bottom-20 right-4 md:bottom-6 md:right-6 z-40 w-14 h-14 rounded-full bg-green-600 text-white shadow-xl flex items-center justify-center text-2xl hover:bg-green-700 active:scale-95 transition-transform"
           aria-label="통합 검색">
