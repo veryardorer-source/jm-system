@@ -12,7 +12,7 @@ const TAB_LIST = ['현황', '자료', '공정', '비용', 'SNS']
 const PHOTO_CATS = ['시공전사진', '시공사진', '마감사진']
 const isVideoUrl = (url: string) => /\.(mp4|mov|webm|m4v|ogg|avi|mkv)$/i.test((url || '').split('?')[0])
 const isVideoFile = (f: ProjectFile) => (f.file_type || '').startsWith('video') || isVideoUrl(f.file_url)
-const CATEGORY_LIST = ['시공전사진', '시공사진', '마감사진', '도면', '3D', '미팅내용', '고객요청', '구매링크', '기타']
+const CATEGORY_LIST = ['시공전사진', '시공사진', '마감사진', '도면', '3D', '견적서', '계약서', '미팅내용', '고객요청', '구매링크', '기타']
 
 function isHeic(file: File) {
   return /\.(heic|heif)$/i.test(file.name) || /^image\/hei(c|f)/i.test(file.type)
