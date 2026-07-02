@@ -158,6 +158,7 @@ npx vercel --prod
 **Storage**: `uploads` 버킷 — 현재 public(anon 접근 가능). 계약서·직원자료 등 민감 파일은 **private bucket + signed URL** 전환이 후속 과제(로드맵). 경로 규칙: `files/{project_id}/...`, `costs/{project_id}/...`, `documents/...`, `finance/sales/...`
 
 ### 신규 테이블 생성 SQL (아직 안 만들었다면)
+> ⚠️ **주의(2026-07-02):** 아래 초기 SQL의 `DISABLE ROW LEVEL SECURITY` 줄은 **더 이상 실행하지 마세요.** 현재는 RLS를 켜고 역할별 정책을 적용한 상태라, 이 줄을 실행하면 보안이 풀립니다. 그래서 아래에서는 주석 처리해 두었습니다. (실제 RLS는 `db/rls_sensitive.sql`·`db/rls_money.sql`·`db/rls_chat.sql`·`db/rls_notifications.sql` 참고)
 ```sql
 -- 회사 서류
 CREATE TABLE company_documents (
@@ -171,7 +172,7 @@ CREATE TABLE company_documents (
   uploaded_by text DEFAULT '',
   created_at timestamptz DEFAULT now()
 );
-ALTER TABLE company_documents DISABLE ROW LEVEL SECURITY;
+-- (구) ALTER TABLE company_documents DISABLE ROW LEVEL SECURITY;  ← 실행 금지: 현재 RLS 적용됨
 
 -- 재정관리
 CREATE TABLE finance_fixed_costs (
@@ -196,10 +197,7 @@ CREATE TABLE finance_sales (
   file_url text DEFAULT '', file_name text DEFAULT '', memo text DEFAULT '',
   created_at timestamptz DEFAULT now()
 );
-ALTER TABLE finance_fixed_costs DISABLE ROW LEVEL SECURITY;
-ALTER TABLE finance_payroll DISABLE ROW LEVEL SECURITY;
-ALTER TABLE finance_project_profit DISABLE ROW LEVEL SECURITY;
-ALTER TABLE finance_sales DISABLE ROW LEVEL SECURITY;
+-- (구) finance_* DISABLE ROW LEVEL SECURITY ← 실행 금지: 현재 admin 전용 RLS 적용됨(db/rls_sensitive.sql)
 
 -- 직원정보내역
 CREATE TABLE employees (
@@ -210,7 +208,7 @@ CREATE TABLE employees (
   employment_type text NOT NULL DEFAULT '상용직', is_active boolean DEFAULT true,
   memo text DEFAULT '', created_at timestamptz DEFAULT now()
 );
-ALTER TABLE employees DISABLE ROW LEVEL SECURITY;
+-- (구) ALTER TABLE employees DISABLE ROW LEVEL SECURITY;  ← 실행 금지: 현재 admin 전용 RLS 적용됨
 
 -- 현장별 비용(월별 자료)
 CREATE TABLE project_costs (
@@ -220,7 +218,7 @@ CREATE TABLE project_costs (
   file_url text DEFAULT '', file_name text DEFAULT '', memo text DEFAULT '',
   created_at timestamptz DEFAULT now()
 );
-ALTER TABLE project_costs DISABLE ROW LEVEL SECURITY;
+-- (구) ALTER TABLE project_costs DISABLE ROW LEVEL SECURITY;  ← 실행 금지: 현재 admin/designer RLS 적용됨(db/rls_money.sql)
 ```
 
 ---
