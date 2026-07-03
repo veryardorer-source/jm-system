@@ -13,12 +13,17 @@ type Photo = {
   images?: string[] | null
   reason: string
   requested_by: string
+  status?: string | null   // '요청'(대기) | '처리완료'
   created_at: string
 }
+
+const isDone = (p: Photo) => p.status === '처리완료'
 
 export default function WithdrawalsPage() {
   const { profile } = useAuth()
   const readOnly = !canEdit(profile)
+  const isAdmin = profile?.role === 'admin'
+  const [filter, setFilter] = useState<'all' | 'todo' | 'done'>('all')
   const [photos, setPhotos] = useState<Photo[]>([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
@@ -131,6 +136,15 @@ export default function WithdrawalsPage() {
     fetchPhotos()
   }
 
+  // 처리 여부 토글 (관리자 전용) — 처리완료 ↔ 대기
+  async function toggleDone(p: Photo) {
+    const next = isDone(p) ? '요청' : '처리완료'
+    const { error } = await supabase.from('withdrawal_requests').update({ status: next }).eq('id', p.id)
+    if (error) { alert('변경 실패: ' + error.message); return }
+    setPhotos(ps => ps.map(x => x.id === p.id ? { ...x, status: next } : x))
+    if (viewer?.id === p.id) setViewer(v => v ? { ...v, status: next } : v)
+  }
+
   async function deletePhoto(photo: Photo) {
     if (!confirm('삭제할까요?')) return
     const imgs = (photo.images && photo.images.length ? photo.images : [photo.image_url]).filter(Boolean)
@@ -151,17 +165,34 @@ export default function WithdrawalsPage() {
     <div className="flex flex-col md:flex-row min-h-screen">
       <Sidebar />
       <div className="flex-1 flex flex-col">
-        <header className="bg-white border-b border-gray-200 px-4 md:px-8 py-4 md:py-5 flex items-center justify-between flex-shrink-0">
-          <div>
-            <h1 className="text-xl font-bold text-gray-900">출금 요청</h1>
-            <p className="text-sm text-gray-500 mt-0.5">총 {photos.length}건 · 사진과 글을 한 번에 등록</p>
+        <header className="bg-white border-b border-gray-200 px-4 md:px-8 py-4 md:py-5 flex-shrink-0">
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-xl font-bold text-gray-900">출금 요청</h1>
+              <p className="text-sm text-gray-500 mt-0.5">
+                총 {photos.length}건
+                {photos.filter(p => !isDone(p)).length > 0 && (
+                  <span className="text-amber-600 font-medium"> · 대기 {photos.filter(p => !isDone(p)).length}건</span>
+                )}
+              </p>
+            </div>
+            {!readOnly && (
+              <button onClick={() => setShowForm(true)}
+                className="bg-green-600 text-white px-4 py-2.5 rounded-lg text-sm font-medium hover:bg-green-700">
+                + 출금 추가
+              </button>
+            )}
           </div>
-          {!readOnly && (
-            <button onClick={() => setShowForm(true)}
-              className="bg-green-600 text-white px-4 py-2.5 rounded-lg text-sm font-medium hover:bg-green-700">
-              + 출금 추가
-            </button>
-          )}
+          <div className="flex gap-1.5 mt-3">
+            {([['all', '전체'], ['todo', '⏳ 대기'], ['done', '✅ 처리완료']] as const).map(([k, label]) => (
+              <button key={k} onClick={() => setFilter(k)}
+                className={`text-xs px-3 py-1.5 rounded-full border font-medium transition-colors ${
+                  filter === k ? 'bg-green-600 text-white border-green-600' : 'bg-white text-gray-500 border-gray-300 hover:border-green-400'
+                }`}>
+                {label}
+              </button>
+            ))}
+          </div>
         </header>
 
         <div className="flex-1 overflow-auto px-4 md:px-8 py-4 md:py-6 pb-20 md:pb-6">
@@ -175,10 +206,11 @@ export default function WithdrawalsPage() {
             </div>
           ) : (
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-              {photos.map(p => {
+              {photos.filter(p => filter === 'all' ? true : filter === 'done' ? isDone(p) : !isDone(p)).map(p => {
                 const imgs = (p.images && p.images.length ? p.images : [p.image_url]).filter(Boolean)
+                const done = isDone(p)
                 return (
-                <div key={p.id} className="bg-white rounded-xl border border-gray-200 overflow-hidden group">
+                <div key={p.id} className={`bg-white rounded-xl border overflow-hidden group ${done ? 'border-gray-200 opacity-75' : 'border-amber-300'}`}>
                   <button onClick={() => openViewer(p)} className="relative block w-full">
                     {imgs.length > 0 ? (
                       <>
@@ -192,6 +224,10 @@ export default function WithdrawalsPage() {
                         <p className="text-xs text-amber-900 whitespace-pre-wrap line-clamp-6 text-left">{p.reason || '📝 글 메모'}</p>
                       </div>
                     )}
+                    {/* 처리 상태 배지 */}
+                    <span className={`absolute top-1.5 left-1.5 text-xs px-2 py-0.5 rounded-full font-medium ${
+                      done ? 'bg-green-600 text-white' : 'bg-amber-400 text-amber-950'
+                    }`}>{done ? '✅ 처리완료' : '⏳ 대기'}</span>
                   </button>
                   <div className="px-3 py-2">
                     {p.reason && <p className="text-xs text-gray-700 line-clamp-2 whitespace-pre-wrap">{p.reason}</p>}
@@ -202,6 +238,14 @@ export default function WithdrawalsPage() {
                           className="text-xs text-red-500 hover:text-red-700 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity px-2 py-0.5">삭제</button>
                       )}
                     </div>
+                    {isAdmin && (
+                      <button onClick={() => toggleDone(p)}
+                        className={`w-full mt-1.5 text-xs py-1.5 rounded-lg font-medium border transition-colors ${
+                          done ? 'border-gray-300 text-gray-500 hover:bg-gray-50' : 'bg-green-600 text-white border-green-600 hover:bg-green-700'
+                        }`}>
+                        {done ? '↩ 대기로 되돌리기' : '✓ 처리완료'}
+                      </button>
+                    )}
                   </div>
                 </div>
               )})}
@@ -214,6 +258,20 @@ export default function WithdrawalsPage() {
         <div className="fixed inset-0 bg-black/80 z-50 overflow-auto p-4" onClick={() => setViewer(null)}>
           <button onClick={() => setViewer(null)} className="fixed top-4 right-4 text-white text-3xl leading-none z-10">&times;</button>
           <div className="max-w-2xl mx-auto flex flex-col gap-3 py-2" onClick={e => e.stopPropagation()}>
+            {/* 처리 상태 */}
+            <div className="bg-white rounded-xl px-4 py-3 flex items-center justify-between">
+              <span className={`text-sm font-semibold ${isDone(viewer) ? 'text-green-600' : 'text-amber-600'}`}>
+                {isDone(viewer) ? '✅ 처리완료' : '⏳ 처리 대기'}
+              </span>
+              {isAdmin && (
+                <button onClick={() => toggleDone(viewer)}
+                  className={`text-sm px-4 py-2 rounded-lg font-medium border transition-colors ${
+                    isDone(viewer) ? 'border-gray-300 text-gray-500 hover:bg-gray-50' : 'bg-green-600 text-white border-green-600 hover:bg-green-700'
+                  }`}>
+                  {isDone(viewer) ? '↩ 대기로 되돌리기' : '✓ 처리완료로 변경'}
+                </button>
+              )}
+            </div>
             {/* 글 추가/수정 + 건 삭제 */}
             <div className="bg-white rounded-xl px-4 py-3">
               <label className="text-sm font-semibold text-gray-700 block mb-1.5">사유 / 내용</label>
