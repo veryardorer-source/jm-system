@@ -127,3 +127,67 @@ export async function parsePayrollLedger(file: File): Promise<PayrollLedger | nu
   }
   return result.length ? { month, rows: result } : null
 }
+
+// ── 급여대장 전체 시트 (지급·공제 모든 항목) ──
+export type PayrollLedgerFull = {
+  month: string            // 'YYYY-MM'
+  headers: string[]        // 성명 ~ 차감지급액 구간의 항목명
+  rows: string[][]         // 직원별 값(표시 문자열 그대로)
+  total: string[] | null   // '총 합계' 행
+}
+
+/** '급여대장' 시트를 통째로 읽어 성명~차감지급액 구간의 모든 컬럼(수당·공제 포함)을 반환.
+ *  뒤쪽 참고용 컬럼(연금상한 등)과 빈 헤더 컬럼은 제외. 실패 시 null. */
+export async function parsePayrollLedgerFull(file: File): Promise<PayrollLedgerFull | null> {
+  const rows = await readNamedSheet(file, '급여대장')
+
+  // 월 찾기 (parsePayrollLedger와 동일 규칙)
+  let month = ''
+  for (let r = 0; r < Math.min(rows.length, 10); r++) {
+    for (const cell of rows[r] || []) {
+      const m = String(cell ?? '').match(/(20\d{2})\s*[년.\-/]\s*(\d{1,2})\s*월?/)
+      if (m) { const mm = Number(m[2]); if (mm >= 1 && mm <= 12) { month = `${m[1]}-${String(mm).padStart(2, '0')}`; break } }
+    }
+    if (month) break
+  }
+
+  // 헤더 행 + 성명/차감지급액 컬럼 위치
+  const clean = (v: unknown) => String(v ?? '').replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ').trim()
+  let headerIdx = -1, nameCol = -1, endCol = -1
+  for (let r = 0; r < Math.min(rows.length, 15); r++) {
+    const row = (rows[r] || []).map(c => clean(c).replace(/\s/g, ''))
+    const nc = row.findIndex(c => c === '성명' || c === '이름')
+    if (nc < 0 || !row.some(c => c.includes('급여합계'))) continue
+    headerIdx = r; nameCol = nc
+    endCol = row.findIndex(c => c.includes('차감지급'))
+    if (endCol < 0) endCol = row.findIndex(c => c.includes('공제합계'))
+    if (endCol < 0) endCol = row.findIndex(c => c.includes('급여합계'))
+    break
+  }
+  if (headerIdx < 0 || endCol < nameCol) return null
+
+  // 성명~차감지급액 구간에서 헤더가 비어있지 않은 컬럼만
+  const headerRow = rows[headerIdx] || []
+  const cols: number[] = []
+  for (let c = nameCol; c <= endCol; c++) if (clean(headerRow[c])) cols.push(c)
+  const headers = cols.map(c => clean(headerRow[c]))
+
+  const body: string[][] = []
+  let total: string[] | null = null
+  for (let r = headerIdx + 1; r < rows.length; r++) {
+    const row = rows[r]
+    if (!row) continue
+    const first = clean(row[nameCol])
+    if (first.includes('합계') || first.includes('총계') || clean(row[0]).includes('합계')) {
+      if (!total) total = cols.map(c => clean(row[c]))
+      continue
+    }
+    // 유효 직원 행: 이름이 있고 '0'이 아니며 급여합계 컬럼에 값이 있는 행
+    if (!first || first === '0' || /^[0-9]+$/.test(first)) continue
+    const grossIdx = headers.findIndex(h => h.replace(/\s/g, '').includes('급여합계'))
+    const vals = cols.map(c => clean(row[c]))
+    if (grossIdx >= 0 && !numOf(vals[grossIdx])) continue
+    body.push(vals)
+  }
+  return body.length ? { month, headers, rows: body, total } : null
+}

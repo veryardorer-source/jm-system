@@ -6,7 +6,7 @@ import Sidebar from '@/components/Sidebar'
 import { useAuth } from '@/lib/auth-context'
 import { createClient } from '@/lib/supabase-browser'
 import { FixedCost, Payroll, ProjectProfit, SalesRecord, Project, supabase } from '@/lib/supabase'
-import { parseExcelRows, parseExcelTotal, ParsedRow, parsePayrollLedger, PayrollLedger } from '@/lib/excel-parse'
+import { parseExcelRows, parseExcelTotal, ParsedRow, parsePayrollLedger, PayrollLedger, parsePayrollLedgerFull, PayrollLedgerFull } from '@/lib/excel-parse'
 import FileDropInput from '@/components/FileDropInput'
 
 const TAB_LIST = ['고정지출', '급여내역', '현장별 이익', '매출매입', '견적서'] as const
@@ -200,8 +200,9 @@ function PayrollTab({ list, onRefresh }: { list: Payroll[]; onRefresh: () => voi
   const [editing, setEditing] = useState<Payroll | null>(null)
   const [form, setForm] = useState({ month: '', employee_name: '', amount: '', memo: '' })
   const [saving, setSaving] = useState(false)
-  const [view, setView] = useState<'month' | 'person'>('month')
+  const [view, setView] = useState<'month' | 'person' | 'ledger'>('month')
   const [showLedger, setShowLedger] = useState(false)
+  const [ledgerRefresh, setLedgerRefresh] = useState(0)
 
   async function bulkSave(month: string, rows: ParsedRow[]) {
     const sb = createClient()
@@ -213,8 +214,8 @@ function PayrollTab({ list, onRefresh }: { list: Payroll[]; onRefresh: () => voi
     onRefresh()
   }
 
-  // 급여대장 업로드 → 그 달 데이터를 새 내용으로 교체 후 저장
-  async function ledgerSave(data: PayrollLedger) {
+  // 급여대장 업로드 → 그 달 데이터를 새 내용으로 교체 후 저장 (+ 전체 시트 원본도 보관)
+  async function ledgerSave(data: PayrollLedger, full: PayrollLedgerFull | null) {
     const sb = createClient()
     const monthKey = data.month + '-01'
     await sb.from('finance_payroll').delete().eq('month', monthKey) // 같은 달 기존 것 교체
@@ -227,7 +228,15 @@ function PayrollTab({ list, onRefresh }: { list: Payroll[]; onRefresh: () => voi
       }))
     )
     if (error) { alert('저장 실패: ' + error.message); return }
+    // 전체 시트(수당·공제 항목 포함) 저장 — '급여대장' 보기에서 사용
+    if (full) {
+      const { error: le } = await sb.from('finance_payroll_ledger').upsert({
+        month: data.month, headers: full.headers, rows: full.rows, total: full.total, updated_at: new Date().toISOString(),
+      }, { onConflict: 'month' })
+      if (le) alert('요약은 저장됐지만 전체 시트 저장에 실패했어요.\n(관리자에게: db/payroll_ledger.sql 실행 필요)\n' + le.message)
+    }
     setShowLedger(false)
+    setLedgerRefresh(n => n + 1)
     onRefresh()
   }
 
@@ -266,6 +275,7 @@ function PayrollTab({ list, onRefresh }: { list: Payroll[]; onRefresh: () => voi
         <div className="flex rounded-lg border border-gray-200 overflow-hidden text-sm">
           <button onClick={() => setView('month')} className={`px-4 py-2 font-medium ${view === 'month' ? 'bg-green-600 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}>월별</button>
           <button onClick={() => setView('person')} className={`px-4 py-2 font-medium border-l border-gray-200 ${view === 'person' ? 'bg-green-600 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}>개인별</button>
+          <button onClick={() => setView('ledger')} className={`px-4 py-2 font-medium border-l border-gray-200 ${view === 'ledger' ? 'bg-green-600 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}>급여대장</button>
         </div>
         <div className="flex gap-2">
           <button onClick={() => setShowLedger(true)}
@@ -276,7 +286,9 @@ function PayrollTab({ list, onRefresh }: { list: Payroll[]; onRefresh: () => voi
             className="border border-gray-300 text-gray-600 px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-50">+ 직접</button>
         </div>
       </div>
-      {list.length === 0 ? (
+      {view === 'ledger' ? (
+        <LedgerView refresh={ledgerRefresh} />
+      ) : list.length === 0 ? (
         <EmptyState icon="💵" text="등록된 급여내역이 없어요. '급여대장 업로드'로 엑셀을 올려보세요." />
       ) : view === 'month' ? (
         <>
@@ -353,9 +365,95 @@ function PayrollPivot({ list }: { list: Payroll[] }) {
   )
 }
 
+// ── 급여대장 전체 보기 (수당·공제 모든 항목) ──
+type LedgerRec = { month: string; headers: string[]; rows: string[][]; total: string[] | null }
+const DEDUCT_KEYS = ['건강보험', '장기요양', '국민연금', '고용보험', '소득세', '주민세', '공제', '두리누리', '정산']
+function LedgerView({ refresh }: { refresh: number }) {
+  const [ledgers, setLedgers] = useState<LedgerRec[]>([])
+  const [sel, setSel] = useState('')
+  const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState('')
+
+  useEffect(() => {
+    let on = true
+    const sb = createClient()
+    sb.from('finance_payroll_ledger').select('*').order('month', { ascending: false }).then(({ data, error }) => {
+      if (!on) return
+      setLoading(false)
+      if (error) { setLoadError(error.message); return }
+      const list = (data || []) as LedgerRec[]
+      setLedgers(list)
+      setSel(s => s && list.some(l => l.month === s) ? s : (list[0]?.month || ''))
+    })
+    return () => { on = false }
+  }, [refresh])
+
+  if (loading) return <EmptyState icon="⏳" text="불러오는 중..." />
+  if (loadError) return <EmptyState icon="⚠️" text={`급여대장 테이블을 읽지 못했어요 — db/payroll_ledger.sql 실행이 필요할 수 있어요. (${loadError})`} />
+  if (ledgers.length === 0) return <EmptyState icon="📋" text="저장된 급여대장이 없어요. '📋 급여대장 업로드'로 엑셀을 올리면 전체 시트(수당·공제 포함)가 여기 보관돼요." />
+
+  const cur = ledgers.find(l => l.month === sel) || ledgers[0]
+  const isNum = (v: string) => /^-?[\d,.\s]+$/.test(v || '') || v === '-'
+  const colClass = (h: string) => {
+    const k = h.replace(/\s/g, '')
+    if (k.includes('차감지급')) return 'text-green-700 font-bold bg-green-50'
+    if (k.includes('공제합계')) return 'text-red-600 font-bold bg-red-50'
+    if (DEDUCT_KEYS.some(d => k.includes(d))) return 'text-red-500'
+    if (k.includes('급여합계') || k.includes('지급총액')) return 'font-semibold text-gray-900'
+    return 'text-gray-700'
+  }
+  return (
+    <div>
+      <div className="flex gap-1.5 mb-3 flex-wrap">
+        {ledgers.map(l => (
+          <button key={l.month} onClick={() => setSel(l.month)}
+            className={`text-xs px-3 py-1.5 rounded-full border font-medium ${sel === l.month ? 'bg-green-600 text-white border-green-600' : 'bg-white text-gray-500 border-gray-300 hover:border-green-400'}`}>
+            {l.month}
+          </button>
+        ))}
+      </div>
+      <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto">
+        <p className="text-xs text-gray-400 px-4 pt-3">
+          {cur.month} 급여대장 원본 · <span className="text-red-500">빨강=공제 항목</span> · <span className="text-green-700 font-medium">초록=차감지급액(실지급)</span>
+        </p>
+        <table className="w-full whitespace-nowrap text-sm mt-2">
+          <thead>
+            <tr className="border-b border-gray-100 bg-gray-50">
+              {cur.headers.map((h, i) => (
+                <th key={i} className={`text-xs font-semibold px-3 py-2 ${i === 0 ? 'text-left sticky left-0 bg-gray-50' : 'text-right'} ${DEDUCT_KEYS.some(d => h.replace(/\s/g, '').includes(d)) ? 'text-red-400' : 'text-gray-400'}`}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {cur.rows.map((row, r) => (
+              <tr key={r} className="border-b border-gray-50 hover:bg-gray-50">
+                {row.map((v, c) => (
+                  <td key={c} className={`px-3 py-2 ${c === 0 ? 'text-left font-medium sticky left-0 bg-white' : 'text-right'} ${c === 0 ? 'text-gray-800' : colClass(cur.headers[c])}`}>
+                    {v || '-'}
+                  </td>
+                ))}
+              </tr>
+            ))}
+            {cur.total && (
+              <tr className="border-t-2 border-gray-200 bg-gray-50 font-semibold">
+                {cur.total.map((v, c) => (
+                  <td key={c} className={`px-3 py-2 ${c === 0 ? 'text-left sticky left-0 bg-gray-50 text-gray-700' : 'text-right'} ${c === 0 ? '' : colClass(cur.headers[c])}`}>
+                    {c === 0 ? '총 합계' : (isNum(v) ? v : v) || '-'}
+                  </td>
+                ))}
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
 // 급여대장 엑셀 업로드 (해당 시트 자동 인식 → 미리보기 → 저장)
-function LedgerUploadModal({ onClose, onSave }: { onClose: () => void; onSave: (d: PayrollLedger) => Promise<void> }) {
+function LedgerUploadModal({ onClose, onSave }: { onClose: () => void; onSave: (d: PayrollLedger, full: PayrollLedgerFull | null) => Promise<void> }) {
   const [data, setData] = useState<PayrollLedger | null>(null)
+  const [full, setFull] = useState<PayrollLedgerFull | null>(null)
   const [month, setMonth] = useState('') // 'YYYY-MM' (자동 인식 또는 직접 선택)
   const [parsing, setParsing] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -363,17 +461,19 @@ function LedgerUploadModal({ onClose, onSave }: { onClose: () => void; onSave: (
 
   async function handleFile(file: File | null) {
     if (!file) return
-    setParsing(true); setError(''); setData(null)
+    setParsing(true); setError(''); setData(null); setFull(null)
     const parsed = await parsePayrollLedger(file).catch(() => null)
+    const parsedFull = await parsePayrollLedgerFull(file).catch(() => null)
     setParsing(false)
     if (!parsed) { setError('급여대장 시트에서 성명/급여합계를 찾지 못했어요. 파일에 "급여대장" 시트와 성명·급여합계 열이 있는지 확인해주세요.'); return }
     setData(parsed)
+    setFull(parsedFull)
     setMonth(parsed.month || month)
   }
   async function handleSave() {
     if (!data || !month) return
     setSaving(true)
-    await onSave({ month, rows: data.rows })
+    await onSave({ month, rows: data.rows }, full ? { ...full, month } : null)
     setSaving(false)
   }
   const total = data?.rows.reduce((s, r) => s + r.gross, 0) || 0
@@ -425,6 +525,11 @@ function LedgerUploadModal({ onClose, onSave }: { onClose: () => void; onSave: (
                 </table>
               </div>
             </div>
+            {full && (
+              <p className="text-xs text-green-700 bg-green-50 px-3 py-2 rounded-lg">
+                ✓ 전체 시트 {full.headers.length}개 항목(수당·공제 포함)도 함께 저장돼요 — 급여내역의 <b>급여대장</b> 보기에서 확인
+              </p>
+            )}
             </>
           )}
           <div className="flex gap-3 mt-1">
