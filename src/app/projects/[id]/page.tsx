@@ -411,6 +411,7 @@ export default function ProjectDetail() {
       setEditingSchedule(null)
     } else {
       await supabase.from('schedules').insert([{ project_id: id, ...sForm, end_date: sForm.end_date || null }])
+      notifyOthers(profile?.id, { type: 'schedule', title: `${project?.name || '현장'} · 공정 추가`, body: `${sForm.task_name} (${sForm.scheduled_date})`, link: `/projects/${id}` })
     }
     setSForm({ task_name: '', scheduled_date: '', end_date: '', manager: '' })
     setShowScheduleForm(false)
@@ -464,6 +465,8 @@ export default function ProjectDetail() {
       setEditingCost(null)
     } else {
       await supabase.from('project_costs').insert([{ project_id: id, ...payload }])
+      // 금액은 알림에 노출하지 않음 (금액 숨김 대상 직원도 알림은 받으므로)
+      notifyOthers(profile?.id, { type: 'cost', title: `${project?.name || '현장'} · 비용 자료 등록`, body: `${cForm.month}${file_name ? ` · ${file_name}` : ''}`, link: `/projects/${id}` })
     }
     setCForm({ month: '', amount: '', memo: '' })
     setCostFile(null)

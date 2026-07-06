@@ -5,6 +5,7 @@ import Link from 'next/link'
 import Sidebar from '@/components/Sidebar'
 import { supabase, Project, STATUS_LIST, STATUS_COLOR, HIDDEN_STATUSES } from '@/lib/supabase'
 import { useAuth, canEdit } from '@/lib/auth-context'
+import { notifyOthers } from '@/lib/notify'
 
 const EMPTY_FORM = {
   name: '', client_name: '', address: '', manager: '',
@@ -53,6 +54,7 @@ export default function ProjectsPage() {
     }
     const { error } = await supabase.from('projects').insert([payload])
     if (error) { setError(error.message); setSaving(false); return }
+    notifyOthers(profile?.id, { type: 'project', title: `새 현장 등록 · ${form.name}`, body: [form.client_name, form.address].filter(Boolean).join(' · '), link: '/projects' })
     setForm(EMPTY_FORM)
     setShowForm(false)
     setSaving(false)

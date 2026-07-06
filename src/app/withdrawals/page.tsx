@@ -95,6 +95,7 @@ export default function WithdrawalsPage() {
     const next = [...viewerImages, ...added]
     setViewerImages(next)
     await applyViewer(next, viewerReason)
+    if (added.length) notifyOthers(profile?.id, { type: 'withdrawal', title: `출금요청 사진 ${added.length}장 추가`, body: (viewer.reason || '').slice(0, 40), link: '/withdrawals' })
     setViewerBusy(false)
   }
 

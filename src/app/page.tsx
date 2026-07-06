@@ -5,6 +5,7 @@ import Link from 'next/link'
 import Sidebar from '@/components/Sidebar'
 import { supabase, Project, ProjectAssignment, Schedule, STATUS_COLOR, STATUS_LIST, HIDDEN_STATUSES } from '@/lib/supabase'
 import { useAuth, canEdit } from '@/lib/auth-context'
+import { notifyOthers } from '@/lib/notify'
 
 type ViewMode = 'card' | 'timeline'
 
@@ -267,6 +268,8 @@ function TimelineView({ projects, schedules, onRefresh, readOnly }: {
       scheduled_date: addForm.scheduled_date,
       end_date: addForm.end_date || null,
     }])
+    const projName = projects.find(p => p.id === showAddForm)?.name || '현장'
+    notifyOthers(undefined, { type: 'schedule', title: `${projName} · 공정 추가`, body: `${addForm.task_name} (${addForm.scheduled_date})`, link: '/' })
     setSaving(false)
     setShowAddForm(null)
     setAddForm({ task_name: '', scheduled_date: '', end_date: '' })
