@@ -77,6 +77,18 @@ function readNamedSheet(file: File, keyword: string): Promise<unknown[][]> {
 
 const numOf = (v: unknown) => Number(String(v ?? '').replace(/[^0-9.-]/g, '')) || 0
 
+/** 파일명에서 월 추출 — "2026년 5월", "2026-05", "5월 급여" 등. 연도 없으면 fallbackYear(또는 올해). */
+function monthFromFileName(name: string, fallbackYear?: string): string {
+  const full = name.match(/(20\d{2})\s*[년.\-_/]?\s*(\d{1,2})\s*월/)
+  if (full) { const mm = Number(full[2]); if (mm >= 1 && mm <= 12) return `${full[1]}-${String(mm).padStart(2, '0')}` }
+  const only = name.match(/(\d{1,2})\s*월/)
+  if (only) {
+    const mm = Number(only[1])
+    if (mm >= 1 && mm <= 12) return `${fallbackYear || String(new Date().getFullYear())}-${String(mm).padStart(2, '0')}`
+  }
+  return ''
+}
+
 /** '급여대장' 시트를 읽어 월(YYYY-MM)과 직원별 (기본급/급여합계/차감지급액)을 추출. 실패 시 null. */
 export async function parsePayrollLedger(file: File): Promise<PayrollLedger | null> {
   const rows = await readNamedSheet(file, '급여대장')
@@ -94,6 +106,10 @@ export async function parsePayrollLedger(file: File): Promise<PayrollLedger | nu
     }
     if (month) break
   }
+
+  // 시트 안 월 표시가 '오늘 날짜' 수식인 파일이 있어, 파일명의 월(예: "5월 급여")을 우선한다
+  const fileMonth = monthFromFileName(file.name, month ? month.slice(0, 4) : undefined)
+  if (fileMonth) month = fileMonth
 
   // 헤더 행: '성명'과 '급여합계'가 있는 행
   let headerIdx = -1, nameCol = -1, baseCol = -1, grossCol = -1, netCol = -1
@@ -150,6 +166,10 @@ export async function parsePayrollLedgerFull(file: File): Promise<PayrollLedgerF
     }
     if (month) break
   }
+
+  // 파일명의 월 우선 (시트 월 칸이 '오늘 날짜' 수식인 경우 대비)
+  const fileMonth = monthFromFileName(file.name, month ? month.slice(0, 4) : undefined)
+  if (fileMonth) month = fileMonth
 
   // 헤더 행 + 성명/차감지급액 컬럼 위치
   const clean = (v: unknown) => String(v ?? '').replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ').trim()

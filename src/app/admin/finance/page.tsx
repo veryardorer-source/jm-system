@@ -218,7 +218,10 @@ function PayrollTab({ list, onRefresh }: { list: Payroll[]; onRefresh: () => voi
   async function ledgerSave(data: PayrollLedger, full: PayrollLedgerFull | null) {
     const sb = createClient()
     const monthKey = data.month + '-01'
-    await sb.from('finance_payroll').delete().eq('month', monthKey) // 같은 달 기존 것 교체
+    // 같은 달 기존 것 전부 삭제 후 교체 — 삭제 실패 시 중단(중복 방지)
+    const { error: delErr } = await sb.from('finance_payroll').delete()
+      .gte('month', data.month + '-01').lte('month', data.month + '-31')
+    if (delErr) { alert('기존 자료 삭제 실패(중복 방지를 위해 중단): ' + delErr.message); return }
     const { error } = await sb.from('finance_payroll').insert(
       data.rows.map(r => ({
         month: monthKey,
@@ -490,7 +493,7 @@ function LedgerUploadModal({ onClose, onSave }: { onClose: () => void; onSave: (
             <label className="text-sm font-medium text-gray-700 block mb-1.5">급여대장 엑셀 파일 *</label>
             <input type="file" accept=".xlsx,.xls" onChange={e => handleFile(e.target.files?.[0] || null)}
               className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:bg-green-50 file:text-green-700 file:text-xs" />
-            <p className="text-xs text-gray-400 mt-1">여러 시트 중 <b>&quot;급여대장&quot;</b> 시트를 자동으로 읽어요. 월은 &quot;2026년 7월&quot; 같은 표기에서 인식합니다.</p>
+            <p className="text-xs text-gray-400 mt-1">여러 시트 중 <b>&quot;급여대장&quot;</b> 시트를 자동으로 읽어요. 월은 <b>파일명</b>(예: &quot;5월 급여&quot;)에서 우선 인식하니, 저장 전 아래에서 월이 맞는지 확인하세요.</p>
           </div>
           {parsing && <p className="text-sm text-gray-400">분석 중...</p>}
           {error && <p className="text-sm text-red-500 bg-red-50 px-3 py-2 rounded-lg">{error}</p>}
