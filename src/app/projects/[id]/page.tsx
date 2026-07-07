@@ -885,11 +885,13 @@ export default function ProjectDetail() {
                           <div className="border-t border-gray-100 p-3">
                             {isPhoto ? (
                               photoGroup === 'date' ? (
-                                // 📅 날짜순 정렬 (묶지 않고 평평하게, 최신 먼저)
+                                // 📅 날짜순 정렬 (묶지 않고 평평하게, 먼저 올린 사진이 위)
                                 <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-2">
                                   {[...catFiles].sort((a, b) => {
-                                    const d = fileDate(b).localeCompare(fileDate(a))
-                                    return d !== 0 ? d : (a.file_name || '').localeCompare(b.file_name || '', undefined, { numeric: true })
+                                    const d = fileDate(a).localeCompare(fileDate(b))
+                                    if (d !== 0) return d
+                                    const c = (a.created_at || '').localeCompare(b.created_at || '') // 같은 날짜면 올린 순서
+                                    return c !== 0 ? c : (a.file_name || '').localeCompare(b.file_name || '', undefined, { numeric: true })
                                   }).map(f => renderPhotoTile(f))}
                                 </div>
                               ) : (() => {
@@ -1291,7 +1293,10 @@ export default function ProjectDetail() {
         const gallery = (cur ? files.filter(f => f.category === cur.category) : [])
           .filter(f => (f.file_type || '') !== 'link' && (isVideoFile(f) || (f.file_type || '').startsWith('image') || PHOTO_CATS.includes(f.category)))
           .sort((a, b) => {
-            if (photoGroup === 'date') { const d = fileDate(b).localeCompare(fileDate(a)); if (d !== 0) return d }
+            if (photoGroup === 'date') {
+              const d = fileDate(a).localeCompare(fileDate(b)); if (d !== 0) return d
+              const c = (a.created_at || '').localeCompare(b.created_at || ''); if (c !== 0) return c
+            }
             return (a.file_name || '').localeCompare(b.file_name || '', undefined, { numeric: true })
           })
           .map(f => f.file_url)
