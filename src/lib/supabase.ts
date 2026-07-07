@@ -145,6 +145,8 @@ export type ProjectProfit = {
   revenue: number
   cost: number
   memo: string
+  file_url?: string | null   // 손익표 엑셀/PDF 첨부
+  file_name?: string | null
   created_at: string
 }
 

@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { useRouter } from 'next/navigation'
 import Sidebar from '@/components/Sidebar'
 import { useAuth } from '@/lib/auth-context'
@@ -570,6 +570,7 @@ function ProfitTab({ list, projects, onRefresh }: { list: ProjectProfit[]; proje
   const [showForm, setShowForm] = useState(false)
   const [editing, setEditing] = useState<ProjectProfit | null>(null)
   const [form, setForm] = useState({ project_id: '', month: '', revenue: '', cost: '', memo: '' })
+  const [profitFile, setProfitFile] = useState<File | null>(null)
   const [saving, setSaving] = useState(false)
   const [filterProject, setFilterProject] = useState('전체')
 
@@ -578,14 +579,33 @@ function ProfitTab({ list, projects, onRefresh }: { list: ProjectProfit[]; proje
     if (!form.project_id || !form.month) return
     setSaving(true)
     const sb = createClient()
-    const payload = { project_id: form.project_id, month: form.month + '-01', revenue: Number(form.revenue) || 0, cost: Number(form.cost) || 0, memo: form.memo }
+    // 손익표 파일(엑셀/PDF) 첨부
+    let file_url = editing?.file_url || '', file_name = editing?.file_name || ''
+    if (profitFile) {
+      const ext = profitFile.name.split('.').pop() || 'bin'
+      const path = `finance/profit/${Date.now()}.${ext}`
+      const { error: upErr } = await sb.storage.from('uploads').upload(path, profitFile, { contentType: profitFile.type || 'application/octet-stream', upsert: true })
+      if (upErr) { alert('파일 업로드 실패: ' + upErr.message); setSaving(false); return }
+      file_url = sb.storage.from('uploads').getPublicUrl(path).data.publicUrl
+      file_name = profitFile.name
+    }
+    const payload = { project_id: form.project_id, month: form.month + '-01', revenue: Number(form.revenue) || 0, cost: Number(form.cost) || 0, memo: form.memo, file_url, file_name }
     const { error } = editing
       ? await sb.from('finance_project_profit').update(payload).eq('id', editing.id)
       : await sb.from('finance_project_profit').insert([payload])
     if (error) { alert('저장 실패: ' + error.message); setSaving(false); return }
     setForm({ project_id: '', month: '', revenue: '', cost: '', memo: '' })
+    setProfitFile(null)
     setEditing(null); setShowForm(false); setSaving(false)
     onRefresh()
+  }
+
+  function openFile(p: ProjectProfit) {
+    if (!p.file_url) return
+    const name = (p.file_name || p.file_url).toLowerCase()
+    if (/\.(xlsx|xls|xlsb|xlsm|doc|docx|ppt|pptx)$/.test(name)) window.open(`https://view.officeapps.live.com/op/view.aspx?src=${encodeURIComponent(p.file_url)}`, '_blank')
+    else if (name.endsWith('.pdf')) window.open(`https://docs.google.com/viewer?url=${encodeURIComponent(p.file_url)}`, '_blank')
+    else window.open(p.file_url, '_blank')
   }
 
   async function del(p: ProjectProfit) {
@@ -622,13 +642,17 @@ function ProfitTab({ list, projects, onRefresh }: { list: ProjectProfit[]; proje
         <>
           <ChartCard title="월별 이익(매출-비용) 추이" data={byMonth} />
           <SimpleTable
-            cols={['현장', '월', '매출', '비용', '이익', '메모']}
+            cols={['현장', '월', '매출', '비용', '이익', '첨부', '메모']}
             rows={filtered.map(c => [
               projectName(c.project_id), c.month?.slice(0,7),
               c.revenue.toLocaleString() + '원', c.cost.toLocaleString() + '원',
-              (c.revenue - c.cost).toLocaleString() + '원', c.memo || '-'
+              (c.revenue - c.cost).toLocaleString() + '원',
+              c.file_url
+                ? <button key="f" onClick={() => openFile(c)} className="text-xs text-blue-500 hover:text-blue-700 underline max-w-[160px] truncate inline-block align-middle" title={c.file_name || ''}>📎 {c.file_name || '열기'}</button>
+                : '-',
+              c.memo || '-'
             ])}
-            onEdit={i => { const c = filtered[i]; setEditing(c); setForm({ project_id: c.project_id, month: c.month?.slice(0,7) || '', revenue: String(c.revenue), cost: String(c.cost), memo: c.memo || '' }); setShowForm(true) }}
+            onEdit={i => { const c = filtered[i]; setEditing(c); setProfitFile(null); setForm({ project_id: c.project_id, month: c.month?.slice(0,7) || '', revenue: String(c.revenue), cost: String(c.cost), memo: c.memo || '' }); setShowForm(true) }}
             onDelete={i => del(filtered[i])}
           />
         </>
@@ -647,6 +671,10 @@ function ProfitTab({ list, projects, onRefresh }: { list: ProjectProfit[]; proje
           <div className="grid grid-cols-2 gap-3">
             <NumberInput label="매출 *" required value={form.revenue} onChange={v => setForm({ ...form, revenue: v })} />
             <NumberInput label="비용 *" required value={form.cost} onChange={v => setForm({ ...form, cost: v })} />
+          </div>
+          <div>
+            <label className="text-sm font-medium text-gray-700 block mb-1.5">손익표 첨부 <span className="text-gray-400 font-normal">(엑셀·PDF — 열기는 표에서 📎 클릭)</span></label>
+            <FileDropInput onFile={f => setProfitFile(f)} currentName={profitFile?.name || (editing?.file_name || undefined)} hint="엑셀(xlsb 포함)·PDF" />
           </div>
           <TextInput label="메모" value={form.memo} onChange={v => setForm({ ...form, memo: v })} />
         </FormModal>
@@ -918,7 +946,7 @@ function ChartCard({ title, data }: { title: string; data: { label: string; valu
   )
 }
 
-function SimpleTable({ cols, rows, onEdit, onDelete }: { cols: string[]; rows: (string | number)[][]; onEdit: (i: number) => void; onDelete: (i: number) => void }) {
+function SimpleTable({ cols, rows, onEdit, onDelete }: { cols: string[]; rows: ReactNode[][]; onEdit: (i: number) => void; onDelete: (i: number) => void }) {
   return (
     <div className="bg-white rounded-xl border border-gray-200 overflow-hidden overflow-x-auto">
       <table className="w-full whitespace-nowrap">
