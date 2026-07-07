@@ -322,15 +322,31 @@ function PayrollTab({ list, onRefresh }: { list: Payroll[]; onRefresh: () => voi
   )
 }
 
-// 개인별 급여 변동 (직원 × 월 표) — 전월 대비 변동 강조
+// 개인별 급여 변동 (직원 × 월 표) — 전월 대비 변동 강조. 기본은 실지급(공제 후).
 function PayrollPivot({ list }: { list: Payroll[] }) {
+  const [mode, setMode] = useState<'net' | 'gross'>('net')
   const months = Array.from(new Set(list.map(p => p.month?.slice(0, 7)).filter(Boolean))).sort() as string[]
   const names = Array.from(new Set(list.map(p => p.employee_name).filter(Boolean)))
-  const amt = (name: string, m: string) => list.find(p => p.employee_name === name && p.month?.slice(0, 7) === m)?.amount
+  // 실지급: 급여대장 업로드 시 메모에 저장된 "실지급 X원"에서 추출. 없으면(직접 입력 건) 급여합계로 대체.
+  const netOf = (p: Payroll) => {
+    const m = (p.memo || '').match(/실지급\s*([\d,]+)\s*원/)
+    return m ? Number(m[1].replace(/,/g, '')) : p.amount
+  }
+  const valOf = (p: Payroll) => mode === 'net' ? netOf(p) : p.amount
+  const amt = (name: string, m: string) => {
+    const p = list.find(x => x.employee_name === name && x.month?.slice(0, 7) === m)
+    return p ? valOf(p) : undefined
+  }
   if (months.length === 0) return <EmptyState icon="📈" text="자료가 없어요" />
   return (
     <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto">
-      <p className="text-xs text-gray-400 px-4 pt-3">직원별 월 급여(급여합계). 전월과 다르면 색으로 표시돼요. (▲증가 ▼감소)</p>
+      <div className="flex items-center justify-between px-4 pt-3 gap-2 flex-wrap">
+        <p className="text-xs text-gray-400">직원별 월 {mode === 'net' ? '실지급액(공제 후)' : '급여합계(세전)'}. 전월과 다르면 색으로 표시돼요. (▲증가 ▼감소)</p>
+        <div className="flex rounded-lg border border-gray-200 overflow-hidden text-xs flex-shrink-0">
+          <button onClick={() => setMode('net')} className={`px-3 py-1.5 font-medium ${mode === 'net' ? 'bg-green-600 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}>실지급</button>
+          <button onClick={() => setMode('gross')} className={`px-3 py-1.5 font-medium border-l border-gray-200 ${mode === 'gross' ? 'bg-green-600 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}>세전(급여합계)</button>
+        </div>
+      </div>
       <table className="w-full whitespace-nowrap text-sm mt-2">
         <thead>
           <tr className="border-b border-gray-100 bg-gray-50">
@@ -358,7 +374,7 @@ function PayrollPivot({ list }: { list: Payroll[] }) {
           <tr className="border-t-2 border-gray-200 bg-gray-50 font-semibold">
             <td className="px-4 py-2 text-gray-700 sticky left-0 bg-gray-50">월 합계</td>
             {months.map(m => {
-              const total = list.filter(p => p.month?.slice(0, 7) === m).reduce((s, p) => s + p.amount, 0)
+              const total = list.filter(p => p.month?.slice(0, 7) === m).reduce((s, p) => s + valOf(p), 0)
               return <td key={m} className="px-4 py-2 text-right text-gray-900">{total.toLocaleString()}</td>
             })}
           </tr>
