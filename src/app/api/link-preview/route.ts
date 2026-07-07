@@ -62,7 +62,8 @@ export async function GET(req: NextRequest) {
     clearTimeout(timer)
     const ctype = res.headers.get('content-type') || ''
     if (!res.ok || !ctype.includes('html')) return NextResponse.json({ url: raw })
-    const html = (await res.text()).slice(0, 400000)
+    // 유튜브 등은 og 태그가 60만자 이후에 나옴 → 넉넉히 읽기
+    const html = (await res.text()).slice(0, 2000000)
 
     const title = metaContent(html, 'og:title') || decodeEntities((html.match(/<title[^>]*>([^<]*)<\/title>/i)?.[1] || '').trim())
     const description = metaContent(html, 'og:description') || metaContent(html, 'description')
