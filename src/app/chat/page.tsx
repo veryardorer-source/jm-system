@@ -122,6 +122,7 @@ export default function ChatPage() {
   // 상대가 어디까지 읽었는지 불러오기
   const loadReads = useCallback(async (a: Active) => {
     if (!a || a.kind === 'all' || !me) { setReads([]); setParticipants(0); return }
+    if (a.kind === 'dm' && a.id === me) { setReads([]); setParticipants(0); return } // 나와의 채팅: 읽음표시 없음
     if (a.kind === 'dm') {
       const { data } = await supabase.from('chat_reads').select('last_read_at').eq('user_id', a.id).eq('conv_key', 'dm:' + me).maybeSingle()
       setParticipants(1); setReads(data?.last_read_at ? [data.last_read_at] : [])
@@ -239,10 +240,11 @@ export default function ChatPage() {
   useEffect(() => { msgsRef.current = messages; reloadReactions() }, [messages, reloadReactions])
   useEffect(() => { scrollToBottom() }, [messages, scrollToBottom])
 
-  // 알림/푸시는 서버(/api/push/send)가 대상 계산·검증
+  // 알림/푸시는 서버(/api/push/send)가 대상 계산·검증. 나와의 채팅은 알림 없음.
   function pushNotif(body: string) {
     if (!active) return
     if (active.kind === 'dm') {
+      if (active.id === me) return // 나와의 채팅
       notifyDM(active.id, `${profile?.name || '직원'} 님의 메시지`, body, '/chat')
     } else if (active.kind === 'room') {
       notifyRoom(active.id, `${active.name} · ${profile?.name || '직원'}`, body, '/chat')
@@ -251,6 +253,7 @@ export default function ChatPage() {
 
   function notifyMentions(content: string) {
     if (!active) return
+    if (active.kind === 'dm' && active.id === me) return // 나와의 채팅
     const ids = people.filter(p => p.name && content.includes('@' + p.name)).map(p => p.id)
     if (!ids.length) return
     const ctx = active.kind === 'room' ? { roomId: active.id }
@@ -476,6 +479,18 @@ export default function ChatPage() {
                 </div>
                 {badge(unread['all'] || 0)}
               </button>
+
+              {/* 나와의 채팅 — 메모·자료 보관함 */}
+              {me && (
+                <button onClick={() => setActive({ kind: 'dm', id: me, name: '나와의 채팅' })}
+                  className={`w-full text-left px-4 py-3 border-b border-gray-100 hover:bg-gray-50 flex items-center gap-2.5 ${active?.kind === 'dm' && active.id === me ? 'bg-green-50' : ''}`}>
+                  <span className="w-8 h-8 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center text-sm flex-shrink-0">📝</span>
+                  <div className="min-w-0">
+                    <span className="text-sm font-medium text-gray-800">나와의 채팅</span>
+                    <p className="text-xs text-gray-400 mt-0.5">메모·사진·파일 보관함</p>
+                  </div>
+                </button>
+              )}
 
               {rooms.length > 0 && <div className="px-4 pt-3 pb-1 text-xs text-gray-400 font-semibold">채팅방</div>}
               {rooms.map(r => (
