@@ -471,7 +471,7 @@ function LedgerUploadModal({ onClose, onSave }: { onClose: () => void; onSave: (
     if (!parsed) { setError('급여대장 시트에서 성명/급여합계를 찾지 못했어요. 파일에 "급여대장" 시트와 성명·급여합계 열이 있는지 확인해주세요.'); return }
     setData(parsed)
     setFull(parsedFull)
-    setMonth(parsed.month || month)
+    // 월은 자동 입력하지 않음 — 사용자가 직접 선택 (잘못된 달로 저장 방지)
   }
   async function handleSave() {
     if (!data || !month) return
@@ -493,14 +493,14 @@ function LedgerUploadModal({ onClose, onSave }: { onClose: () => void; onSave: (
             <label className="text-sm font-medium text-gray-700 block mb-1.5">급여대장 엑셀 파일 *</label>
             <input type="file" accept=".xlsx,.xls" onChange={e => handleFile(e.target.files?.[0] || null)}
               className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:bg-green-50 file:text-green-700 file:text-xs" />
-            <p className="text-xs text-gray-400 mt-1">여러 시트 중 <b>&quot;급여대장&quot;</b> 시트를 자동으로 읽어요. 월은 <b>파일명</b>(예: &quot;5월 급여&quot;)에서 우선 인식하니, 저장 전 아래에서 월이 맞는지 확인하세요.</p>
+            <p className="text-xs text-gray-400 mt-1">여러 시트 중 <b>&quot;급여대장&quot;</b> 시트를 자동으로 읽어요. 파일 선택 후 <b>어느 달 급여인지 직접 선택</b>하고 저장하세요.</p>
           </div>
           {parsing && <p className="text-sm text-gray-400">분석 중...</p>}
           {error && <p className="text-sm text-red-500 bg-red-50 px-3 py-2 rounded-lg">{error}</p>}
           {data && (
             <>
             <div>
-              <label className="text-sm font-medium text-gray-700 block mb-1.5">급여 월 * {data.month ? <span className="text-green-600 font-normal">(자동 인식됨)</span> : <span className="text-amber-600 font-normal">(자동 인식 실패 — 직접 선택)</span>}</label>
+              <label className="text-sm font-medium text-gray-700 block mb-1.5">급여 월 * <span className="text-amber-600 font-normal">— 어느 달 급여인지 직접 선택하세요</span></label>
               <input type="month" value={month} onChange={e => setMonth(e.target.value)}
                 className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
             </div>
