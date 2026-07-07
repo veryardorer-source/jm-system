@@ -111,17 +111,24 @@ export default function WithdrawalsPage() {
     // 사진이 없어도 글(사유)만 있으면 저장 가능
     if (selectedFiles.length === 0 && !reason.trim()) return
     setUploading(true)
-    const urls: string[] = []
-    for (let i = 0; i < selectedFiles.length; i++) {
-      setUploadCurrent(i + 1)
-      const file = selectedFiles[i]
-      const ext = file.name.split('.').pop() || 'jpg'
-      const path = `withdrawals/${Date.now()}_${i}.${ext}`
-      const { data: uploadData } = await supabase.storage.from('uploads').upload(path, file, {
-        contentType: file.type || 'image/jpeg',
-      })
-      if (uploadData) urls.push(supabase.storage.from('uploads').getPublicUrl(path).data.publicUrl)
+    // 3장씩 동시에 올려 속도 개선 (원본 그대로, 순서 유지)
+    const slots: (string | null)[] = new Array(selectedFiles.length).fill(null)
+    const CONC = 3
+    let done = 0
+    for (let i = 0; i < selectedFiles.length; i += CONC) {
+      const chunk = selectedFiles.slice(i, i + CONC)
+      await Promise.all(chunk.map(async (file, j) => {
+        const ext = file.name.split('.').pop() || 'jpg'
+        const path = `withdrawals/${Date.now()}_${i + j}.${ext}`
+        const { data: uploadData } = await supabase.storage.from('uploads').upload(path, file, {
+          contentType: file.type || 'image/jpeg',
+        })
+        if (uploadData) slots[i + j] = supabase.storage.from('uploads').getPublicUrl(path).data.publicUrl
+        done++
+        setUploadCurrent(done)
+      }))
     }
+    const urls = slots.filter(Boolean) as string[]
     if (urls.length > 0 || reason.trim()) {
       await supabase.from('withdrawal_requests').insert([{
         image_url: urls[0] || '', images: urls, reason, requested_by: requestedBy, status: '요청', amount: 0, recipient: '',

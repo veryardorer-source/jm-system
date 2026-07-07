@@ -114,24 +114,32 @@ export default function SharePage() {
     }
     setUploading(true)
     const who = profile?.name || ''
-    const wUrls: string[] = []  // 출금요청: 여러 장을 한 건으로 묶음
-    for (let i = 0; i < files.length; i++) {
-      setProgress(Math.round((i / files.length) * 100))
-      const file = files[i]
-      if (dest === 'project') {
-        const url = await uploadOne(file, i, `files/${projectId}`)
-        if (url) await supabase.from('project_files').insert([{
-          project_id: projectId, file_name: file.name, file_url: url,
-          file_type: file.type || '', category, memo: memo || '', uploaded_by: who,
-        }])
-      } else if (dest === 'receipt') {
-        const url = await uploadOne(file, i, 'receipts')
-        if (url) await supabase.from('receipts').insert([{ image_url: url, memo: reason || '', uploaded_by: who }])
-      } else {
-        const url = await uploadOne(file, i, 'withdrawals')
-        if (url) wUrls.push(url)
-      }
+    // 3장씩 동시에 올려 속도 개선 (원본 그대로, 순서 유지)
+    const wSlots: (string | null)[] = new Array(files.length).fill(null)  // 출금요청: 여러 장을 한 건으로 묶음
+    const CONC = 3
+    let done = 0
+    for (let i = 0; i < files.length; i += CONC) {
+      const chunk = files.slice(i, i + CONC)
+      await Promise.all(chunk.map(async (file, j) => {
+        const idx = i + j
+        if (dest === 'project') {
+          const url = await uploadOne(file, idx, `files/${projectId}`)
+          if (url) await supabase.from('project_files').insert([{
+            project_id: projectId, file_name: file.name, file_url: url,
+            file_type: file.type || '', category, memo: memo || '', uploaded_by: who,
+          }])
+        } else if (dest === 'receipt') {
+          const url = await uploadOne(file, idx, 'receipts')
+          if (url) await supabase.from('receipts').insert([{ image_url: url, memo: reason || '', uploaded_by: who }])
+        } else {
+          const url = await uploadOne(file, idx, 'withdrawals')
+          if (url) wSlots[idx] = url
+        }
+        done++
+        setProgress(Math.round((done / files.length) * 100))
+      }))
     }
+    const wUrls = wSlots.filter(Boolean) as string[]
     if (dest === 'withdrawal' && wUrls.length > 0) {
       await supabase.from('withdrawal_requests').insert([{
         image_url: wUrls[0], images: wUrls, reason: reason || '', requested_by: who, status: '요청', amount: 0, recipient: '',

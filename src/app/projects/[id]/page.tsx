@@ -212,33 +212,37 @@ export default function ProjectDetail() {
     }
 
     setUploading(true)
-    for (let i = 0; i < uploadList.length; i++) {
-      setUploadCurrent(i + 1)
-      setUploadProgress(Math.round((i / uploadList.length) * 100))
-      const { file, ext } = await toBrowserSafeImage(uploadList[i])
-      const path = `files/${id}/${Date.now()}_${i}.${ext}`
-      const { error: uploadError } = await supabase.storage.from('uploads').upload(path, file, {
-        contentType: file.type || 'application/octet-stream',
-        upsert: true,
-      })
-      if (uploadError) {
-        alert('스토리지 업로드 실패: ' + uploadError.message)
-        continue
-      }
-      const { data: urlData } = supabase.storage.from('uploads').getPublicUrl(path)
-      const { error: insertError } = await supabase.from('project_files').insert([{
-        project_id: id,
-        file_name: file.name,
-        file_url: urlData.publicUrl,
-        file_type: file.type || '',
-        category: fileForm.category.trim() || '기타',
-        memo: fileForm.memo || '',
-        uploaded_by: profile?.name || '',
-      }])
-      if (insertError) {
-        alert('DB 저장 실패: ' + insertError.message)
-      }
+    // 원본 화질 그대로, 3장씩 동시에 올려 속도 개선
+    const CONC = 3
+    let done = 0
+    let failMsg = ''
+    for (let i = 0; i < uploadList.length; i += CONC) {
+      const chunk = uploadList.slice(i, i + CONC)
+      await Promise.all(chunk.map(async (orig, j) => {
+        const { file, ext } = await toBrowserSafeImage(orig)
+        const path = `files/${id}/${Date.now()}_${i + j}.${ext}`
+        const { error: uploadError } = await supabase.storage.from('uploads').upload(path, file, {
+          contentType: file.type || 'application/octet-stream',
+          upsert: true,
+        })
+        if (uploadError) { failMsg = uploadError.message; return }
+        const { data: urlData } = supabase.storage.from('uploads').getPublicUrl(path)
+        const { error: insertError } = await supabase.from('project_files').insert([{
+          project_id: id,
+          file_name: file.name,
+          file_url: urlData.publicUrl,
+          file_type: file.type || '',
+          category: fileForm.category.trim() || '기타',
+          memo: fileForm.memo || '',
+          uploaded_by: profile?.name || '',
+        }])
+        if (insertError) { failMsg = insertError.message; return }
+        done++
+        setUploadCurrent(done)
+        setUploadProgress(Math.round((done / uploadList.length) * 100))
+      }))
     }
+    if (failMsg && done < uploadList.length) alert(`${uploadList.length - done}장 업로드 실패: ${failMsg}`)
     setUploadProgress(100)
     notifyOthers(profile?.id, { type: 'file', title: `${project?.name || '현장'} · 새 자료 ${uploadList.length}건`, body: `${fileForm.category} 자료가 업로드되었습니다`, link: `/projects/${id}` })
     setFileForm({ category: '시공전사진', memo: '', linkUrl: '', linkTitle: '' })
