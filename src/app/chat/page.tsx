@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase'
 import { useAuth, canEdit } from '@/lib/auth-context'
 import { notifyDM, notifyRoom, notifyMention } from '@/lib/notify'
 import { shareUrl, downloadUrl } from '@/lib/media'
+import LinkPreview from '@/components/LinkPreview'
 
 type Message = {
   id: string
@@ -617,6 +618,7 @@ export default function ChatPage() {
                                         mine ? 'bg-green-600 text-white rounded-br-sm' : 'bg-white border border-gray-200 text-gray-800 rounded-bl-sm'
                                       }`}>{renderContent(m.content, mine)}</div>
                                     )}
+                                    {(() => { const u = (m.content || '').match(/https?:\/\/[^\s]+/)?.[0]; return u ? <LinkPreview url={u} /> : null })()}
                                     {renderReactions(m.id)}
                                   </>
                                 )}
