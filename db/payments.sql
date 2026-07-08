@@ -1,5 +1,6 @@
 -- 수금 관리(payments) — jm-todolist 앱에서 이전
 -- jm-system Supabase(btpgmtuvtkhdifpaynes)에서 1회 실행
+-- ⚠️ 선행: db/rls_helpers.sql 먼저 실행 (public.my_role() 함수 필요)
 
 -- 1) 테이블
 create table if not exists public.payments (

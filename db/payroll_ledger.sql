@@ -1,6 +1,7 @@
 -- 급여대장 전체 시트 저장 (월별 1행: 항목명 + 직원별 값 + 총합계)
 -- 수당·공제 모든 항목을 그대로 보관해 앱에서 원본 표로 조회.
 -- Supabase SQL Editor에서 한 번 실행하세요.
+-- ⚠️ 선행: db/rls_helpers.sql 먼저 실행 (public.my_role() 함수 필요)
 
 create table if not exists public.finance_payroll_ledger (
   month      text primary key,          -- 'YYYY-MM'

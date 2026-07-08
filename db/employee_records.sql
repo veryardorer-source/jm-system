@@ -1,4 +1,5 @@
 -- 직원별 급여 + 근태 — jm-system Supabase에서 1회 실행
+-- ⚠️ 선행: db/rls_helpers.sql 먼저 실행 (public.my_role() 함수 필요)
 
 -- 급여 내역 (직원별 월 급여)
 create table if not exists public.employee_salaries (

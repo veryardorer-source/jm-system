@@ -1,13 +1,19 @@
 -- =============================================================
 -- ⚠️ 구버전 정리됨 (2026-07-07) — 재실행해도 보안이 느슨해지지 않게 수정.
 -- 원본(2026-06-22 적용)은 전체 테이블에 authenticated 전체허용(auth_all)을 걸었으나,
--- 이후 테이블별 세분화 RLS로 대체됨. 현재 기준:
---   · 민감(employees/급여/근태/finance_*)  → db/rls_sensitive.sql (admin 전용)
---   · 금전/서류/현장자료                    → db/rls_money.sql
---   · 채팅(messages/rooms/members/반응/읽음) → db/rls_chat.sql
---   · 알림(notifications)                   → db/rls_notifications.sql
+-- 이후 테이블별 세분화 RLS로 대체됨.
 -- 이 파일은 ①기본 테이블 생성 ②의도적으로 전직원(authenticated) 공용인
--- 테이블의 정책 ③realtime 발행만 담당한다. 적용 현황: 관리시스템/docs/security_status.md
+-- 테이블의 정책 ③realtime 발행만 담당한다.
+--
+-- ‼️ 이 파일만 실행하면 채팅·알림은 "RLS 켜짐 + 정책 없음" 상태가 되어 접근이
+--    전부 차단됩니다. 반드시 아래를 이어서 실행하세요:
+--    1. db/rls_helpers.sql        ← 사실 이 파일보다 먼저 (공통 함수)
+--    2. (이 파일)
+--    3. db/rls_notifications.sql  ← 필수: 알림 정책 (없으면 알림 전면 차단)
+--    4. db/rls_chat.sql           ← 필수: 채팅 정책 (없으면 채팅 전면 차단)
+--    5. db/rls_sensitive.sql      ← 급여/재무/직원 민감정보 admin 전용
+--    6. db/rls_money.sql          ← 영수증/출금/수금/비용/서류/현장자료 역할별
+--    전체 순서는 db/rls_helpers.sql 상단 참고. 적용 현황: 관리시스템/docs/security_status.md
 -- =============================================================
 
 -- ① 전직원 공용 테이블만 auth_all 유지 (금전·민감·채팅 테이블 아님)

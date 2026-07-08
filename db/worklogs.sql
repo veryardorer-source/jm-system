@@ -1,4 +1,5 @@
 -- 작업일지(work_logs) — jm-system Supabase에서 1회 실행
+-- ⚠️ 선행: db/rls_helpers.sql 먼저 실행 (public.my_role() 함수 필요)
 create table if not exists public.work_logs (
   id            uuid primary key default gen_random_uuid(),
   log_date      date not null default current_date,
