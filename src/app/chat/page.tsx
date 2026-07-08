@@ -367,7 +367,8 @@ export default function ChatPage() {
     if (el) { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); el.classList.add('ring-2', 'ring-green-400'); setTimeout(() => el.classList.remove('ring-2', 'ring-green-400'), 1500) }
   }
 
-  sendFileRef.current = sendFile
+  // 렌더 후 ref에 최신 sendFile 유지 (렌더 중 직접 갱신은 lint 위반)
+  useEffect(() => { sendFileRef.current = sendFile })
 
   async function createRoom(e: React.FormEvent) {
     e.preventDefault()
