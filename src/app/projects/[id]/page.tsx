@@ -182,6 +182,22 @@ export default function ProjectDetail() {
       return
     }
 
+    // 미팅내용: 파일 없이 글만 저장 가능
+    if (selectedFiles.length === 0 && fileForm.category === '미팅내용' && fileForm.memo.trim()) {
+      const text = fileForm.memo.trim()
+      const title = text.split('\n')[0].slice(0, 30) || '미팅내용'
+      const { error } = await supabase.from('project_files').insert([{
+        project_id: id, file_name: title, file_url: '', file_type: 'text',
+        category: '미팅내용', memo: text, uploaded_by: profile?.name || '',
+      }])
+      if (error) { alert('저장 실패: ' + error.message); return }
+      notifyOthers(profile?.id, { type: 'file', title: `${project?.name || '현장'} · 미팅내용 등록`, body: title, link: `/projects/${id}` })
+      setFileForm({ category: '시공전사진', memo: '', linkUrl: '', linkTitle: '' })
+      setShowFileForm(false)
+      fetchAll()
+      return
+    }
+
     if (selectedFiles.length === 0) return
     const tooBig = selectedFiles.filter(f => f.size > 500 * 1024 * 1024)
     if (tooBig.length > 0) {
@@ -948,12 +964,14 @@ export default function ProjectDetail() {
                                       {isSelected && <span className="text-xs font-bold">✓</span>}
                                     </button>
                                     )}
-                                    <span className="text-lg flex-shrink-0">{f.file_type === 'link' ? '🔗' : f.file_type?.includes('pdf') ? '📄' : f.file_type?.includes('image') ? '🖼️' : '📎'}</span>
-                                    {/* 파일명 클릭 = 열기 */}
+                                    <span className="text-lg flex-shrink-0">{f.file_type === 'text' ? '📝' : f.file_type === 'link' ? '🔗' : f.file_type?.includes('pdf') ? '📄' : f.file_type?.includes('image') ? '🖼️' : '📎'}</span>
+                                    {/* 파일명 클릭 = 열기 (글 메모는 내용이 아래에 그대로 보임) */}
                                     <button onClick={() => {
                                       const type = f.file_type?.toLowerCase() || ''
                                       const name = f.file_name?.toLowerCase() || ''
-                                      if (type === 'link') {
+                                      if (type === 'text' || !f.file_url) {
+                                        // 글만 있는 항목 — 열 것 없음
+                                      } else if (type === 'link') {
                                         window.open(f.file_url, '_blank')
                                       } else if (type.startsWith('video') || /\.(mp4|mov|webm|m4v|ogg)$/.test(name)) {
                                         setLightbox(f.file_url)
@@ -966,10 +984,10 @@ export default function ProjectDetail() {
                                       }
                                     }} className="flex-1 min-w-0 text-left">
                                       <p className="text-sm font-medium text-gray-800 hover:text-green-600 truncate">{f.file_name}</p>
-                                      {f.memo && <p className="text-xs text-gray-400">{f.memo}</p>}
+                                      {f.memo && <p className={`text-xs text-gray-400 ${f.file_type === 'text' ? 'whitespace-pre-wrap' : ''}`}>{f.memo}</p>}
                                     </button>
                                     <span className="text-xs text-gray-400 flex-shrink-0 hidden sm:block">{f.uploaded_by ? `${f.uploaded_by} · ` : ''}{new Date(f.created_at).toLocaleDateString('ko-KR')}</span>
-                                    {f.file_type !== 'link' && (<>
+                                    {f.file_type !== 'link' && f.file_type !== 'text' && f.file_url && (<>
                                       <button onClick={() => shareFile(f)}
                                         className="text-xs text-blue-400 hover:text-blue-600 flex-shrink-0">내보내기</button>
                                       {/* 저장: 직접 다운로드 */}
@@ -1226,19 +1244,27 @@ export default function ProjectDetail() {
                 </>
               ) : (
                 <div>
-                  <label className="text-sm font-medium text-gray-700 block mb-1.5">파일 선택 * <span className="text-gray-400 font-normal">(여러 장 동시 선택 가능)</span></label>
+                  <label className="text-sm font-medium text-gray-700 block mb-1.5">
+                    파일 선택 {fileForm.category === '미팅내용' ? <span className="text-gray-400 font-normal">(선택 — 글만 저장도 가능)</span> : <>* <span className="text-gray-400 font-normal">(여러 장 동시 선택 가능)</span></>}
+                  </label>
                   <DropZone files={selectedFiles} onChange={setSelectedFiles} />
                 </div>
               )}
 
               <div>
                 <label className="text-sm font-medium text-gray-700 block mb-1.5">
-                  {PHOTO_CATS.includes(fileForm.category) ? '구역/공간' : '메모'}
+                  {PHOTO_CATS.includes(fileForm.category) ? '구역/공간' : fileForm.category === '미팅내용' ? '미팅 내용' : '메모'}
                   {PHOTO_CATS.includes(fileForm.category) && <span className="text-gray-400 font-normal ml-1">(같은 이름끼리 묶여요)</span>}
                 </label>
-                <input value={fileForm.memo} onChange={e => setFileForm({...fileForm, memo: e.target.value})}
-                  placeholder={PHOTO_CATS.includes(fileForm.category) ? '예) 거실, 주방, 화장실, 1층' : '예) 평면도 v2'}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
+                {fileForm.category === '미팅내용' ? (
+                  <textarea value={fileForm.memo} onChange={e => setFileForm({...fileForm, memo: e.target.value})} rows={5}
+                    placeholder="미팅에서 나온 내용을 입력하세요 (파일 없이 글만 저장해도 돼요)"
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 resize-y leading-relaxed" />
+                ) : (
+                  <input value={fileForm.memo} onChange={e => setFileForm({...fileForm, memo: e.target.value})}
+                    placeholder={PHOTO_CATS.includes(fileForm.category) ? '예) 거실, 주방, 화장실, 1층' : '예) 평면도 v2'}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
+                )}
               </div>
 
               {/* 업로드 진행바 */}
@@ -1258,9 +1284,12 @@ export default function ProjectDetail() {
                 <button type="button" onClick={() => { setShowFileForm(false); setSelectedFiles([]) }}
                   className="flex-1 border border-gray-300 text-gray-700 py-2.5 rounded-lg text-sm font-medium">취소</button>
                 <button type="submit"
-                  disabled={uploading || (fileForm.category !== '구매링크' && selectedFiles.length === 0) || (fileForm.category === '구매링크' && !fileForm.linkUrl.trim())}
+                  disabled={uploading
+                    || (fileForm.category === '구매링크' && !fileForm.linkUrl.trim())
+                    || (fileForm.category === '미팅내용' && selectedFiles.length === 0 && !fileForm.memo.trim())
+                    || (fileForm.category !== '구매링크' && fileForm.category !== '미팅내용' && selectedFiles.length === 0)}
                   className="flex-1 bg-green-600 text-white py-2.5 rounded-lg text-sm font-medium disabled:opacity-50">
-                  {uploading ? `업로드 중...` : selectedFiles.length > 1 ? `${selectedFiles.length}개 업로드` : '업로드'}
+                  {uploading ? `업로드 중...` : selectedFiles.length > 1 ? `${selectedFiles.length}개 업로드` : selectedFiles.length === 1 ? '업로드' : fileForm.category === '미팅내용' ? '글 저장' : '업로드'}
                 </button>
               </div>
             </form>
