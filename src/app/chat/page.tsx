@@ -241,6 +241,26 @@ export default function ChatPage() {
   useEffect(() => { msgsRef.current = messages; reloadReactions() }, [messages, reloadReactions])
   useEffect(() => { scrollToBottom() }, [messages, scrollToBottom])
 
+  // 파일 드래그를 채팅 화면 어디에 놓아도 전송되게 (벗어나 놓으면 브라우저가 파일을 열어버리는 문제 방지)
+  const sendFileRef = useRef<(f: File) => void>(() => {})
+  useEffect(() => {
+    if (readOnly) return
+    const hasFiles = (e: DragEvent) => Array.from(e.dataTransfer?.types || []).includes('Files')
+    const over = (e: DragEvent) => { if (!hasFiles(e)) return; e.preventDefault(); if (activeRef.current) setDragOver(true) }
+    const leave = (e: DragEvent) => { if (!e.relatedTarget) setDragOver(false) }
+    const drop = (e: DragEvent) => {
+      if (!hasFiles(e)) return
+      e.preventDefault()
+      setDragOver(false)
+      if (!activeRef.current) return
+      Array.from(e.dataTransfer?.files || []).forEach(f => sendFileRef.current(f))
+    }
+    window.addEventListener('dragover', over)
+    window.addEventListener('dragleave', leave)
+    window.addEventListener('drop', drop)
+    return () => { window.removeEventListener('dragover', over); window.removeEventListener('dragleave', leave); window.removeEventListener('drop', drop) }
+  }, [readOnly])
+
   // 알림/푸시는 서버(/api/push/send)가 대상 계산·검증. 나와의 채팅은 알림 없음.
   function pushNotif(body: string) {
     if (!active) return
@@ -346,6 +366,8 @@ export default function ChatPage() {
     const el = document.getElementById('msg-' + id)
     if (el) { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); el.classList.add('ring-2', 'ring-green-400'); setTimeout(() => el.classList.remove('ring-2', 'ring-green-400'), 1500) }
   }
+
+  sendFileRef.current = sendFile
 
   async function createRoom(e: React.FormEvent) {
     e.preventDefault()
@@ -553,14 +575,7 @@ export default function ChatPage() {
                   </div>
                 )}
 
-                <div className="relative flex-1 min-h-0 overflow-auto px-4 py-4 bg-gray-50"
-                  onDragOver={e => { if (readOnly) return; e.preventDefault(); setDragOver(true) }}
-                  onDragLeave={e => { e.preventDefault(); setDragOver(false) }}
-                  onDrop={e => {
-                    e.preventDefault(); setDragOver(false)
-                    if (readOnly) return
-                    Array.from(e.dataTransfer.files).forEach(f => sendFile(f))
-                  }}>
+                <div className="relative flex-1 min-h-0 overflow-auto px-4 py-4 bg-gray-50">
                   {dragOver && !readOnly && (
                     <div className="absolute inset-2 z-10 border-2 border-dashed border-green-500 bg-green-50/80 rounded-xl flex items-center justify-center pointer-events-none">
                       <p className="text-green-700 font-medium text-sm">여기에 놓으면 파일이 전송돼요 📎</p>
