@@ -10,7 +10,10 @@ create table if not exists public.work_logs (
   created_at    timestamptz not null default now()
 );
 
+-- RLS: 내부 업무기록 → admin/designer/field만 (partner·pending 차단. 구버전 전체허용 폐기 — 2026-07-07)
 alter table public.work_logs enable row level security;
 drop policy if exists "work_logs auth all" on public.work_logs;
-create policy "work_logs auth all" on public.work_logs
-  for all to authenticated using (true) with check (true);
+drop policy if exists worklogs_staff on public.work_logs;
+create policy worklogs_staff on public.work_logs for all to authenticated
+  using (public.my_role() in ('admin','designer','field'))
+  with check (public.my_role() in ('admin','designer','field'));

@@ -9,6 +9,9 @@ create table if not exists public.finance_quotes (
   file_name   text,
   created_at  timestamptz not null default now()
 );
+-- RLS: 재무 자료 → 관리자 전용 (rls_sensitive.sql 기준. 구버전 전체허용 폐기 — 2026-07-07)
 alter table public.finance_quotes enable row level security;
 drop policy if exists "finance_quotes auth all" on public.finance_quotes;
-create policy "finance_quotes auth all" on public.finance_quotes for all to authenticated using (true) with check (true);
+drop policy if exists "admin only" on public.finance_quotes;
+create policy "admin only" on public.finance_quotes for all to authenticated
+  using (public.my_role() = 'admin') with check (public.my_role() = 'admin');

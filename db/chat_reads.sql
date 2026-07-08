@@ -8,9 +8,9 @@ create table if not exists chat_reads (
   primary key (user_id, conv_key)
 );
 
+-- RLS: (구) 전체허용 폐기(2026-07-07) — 본인/참여자 기준 정책은 db/rls_chat.sql 실행으로 적용.
 alter table chat_reads enable row level security;
 drop policy if exists chat_reads_all on chat_reads;
-create policy chat_reads_all on chat_reads for all using (true) with check (true);
 
 -- 실시간 반영 (이미 추가돼 있으면 에러가 나도 무시하세요)
 alter publication supabase_realtime add table chat_reads;

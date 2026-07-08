@@ -1,19 +1,21 @@
 -- =============================================================
--- 2026-06-22 적용됨 (Supabase SQL Editor에서 직접 실행)
--- ① 보안: 전체 public 테이블 RLS 활성화 + authenticated 만 허용 (anon 차단)
--- ② 채팅/알림 테이블 + 실시간(realtime)
--- 데이터 클라이언트는 createBrowserClient(쿠키 세션) 이므로 로그인 사용자로 요청됨.
+-- ⚠️ 구버전 정리됨 (2026-07-07) — 재실행해도 보안이 느슨해지지 않게 수정.
+-- 원본(2026-06-22 적용)은 전체 테이블에 authenticated 전체허용(auth_all)을 걸었으나,
+-- 이후 테이블별 세분화 RLS로 대체됨. 현재 기준:
+--   · 민감(employees/급여/근태/finance_*)  → db/rls_sensitive.sql (admin 전용)
+--   · 금전/서류/현장자료                    → db/rls_money.sql
+--   · 채팅(messages/rooms/members/반응/읽음) → db/rls_chat.sql
+--   · 알림(notifications)                   → db/rls_notifications.sql
+-- 이 파일은 ①기본 테이블 생성 ②의도적으로 전직원(authenticated) 공용인
+-- 테이블의 정책 ③realtime 발행만 담당한다. 적용 현황: 관리시스템/docs/security_status.md
 -- =============================================================
 
--- ① 기존 15개 테이블 RLS ON + 정책
+-- ① 전직원 공용 테이블만 auth_all 유지 (금전·민감·채팅 테이블 아님)
 do $$
 declare t text;
 begin
   foreach t in array array[
-    'company_documents','employees','finance_fixed_costs','finance_payroll',
-    'finance_project_profit','finance_sales','notices','profiles',
-    'project_assignments','project_costs','project_files','projects',
-    'receipts','schedules','withdrawal_requests'
+    'notices','profiles','project_assignments','projects','schedules'
   ] loop
     execute format('alter table public.%I enable row level security;', t);
     execute format('drop policy if exists auth_all on public.%I;', t);
@@ -21,7 +23,7 @@ begin
   end loop;
 end $$;
 
--- ② 채팅(messages)
+-- ② 채팅(messages) — 테이블 생성만. 정책은 db/rls_chat.sql 실행 (여기서 만들지 않음)
 create table if not exists public.messages (
   id uuid primary key default gen_random_uuid(),
   sender_id uuid references public.profiles(id) on delete set null,
@@ -30,10 +32,10 @@ create table if not exists public.messages (
   created_at timestamptz not null default now()
 );
 alter table public.messages enable row level security;
+-- (구) auth_all 정책 제거 — 참여자 기준 정책은 rls_chat.sql
 drop policy if exists auth_all on public.messages;
-create policy auth_all on public.messages for all to authenticated using (true) with check (true);
 
--- ② 알림(notifications)
+-- ② 알림(notifications) — 테이블 생성만. 정책은 db/rls_notifications.sql 실행
 create table if not exists public.notifications (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null,
@@ -47,13 +49,12 @@ create table if not exists public.notifications (
 create index if not exists idx_notif_user on public.notifications(user_id, is_read);
 alter table public.notifications enable row level security;
 drop policy if exists auth_all on public.notifications;
-create policy auth_all on public.notifications for all to authenticated using (true) with check (true);
 
--- ② 실시간 발행(publication)
-alter publication supabase_realtime add table public.messages;
-alter publication supabase_realtime add table public.notifications;
+-- ② 실시간 발행(publication) — 이미 추가돼 있으면 에러 무시 가능
+do $$ begin alter publication supabase_realtime add table public.messages; exception when duplicate_object then null; end $$;
+do $$ begin alter publication supabase_realtime add table public.notifications; exception when duplicate_object then null; end $$;
 
--- ③ 채팅 1:1 + 채팅방(그룹) — 추가 적용됨
+-- ③ 채팅 1:1 + 채팅방(그룹) — 테이블/인덱스 생성만. 정책은 db/rls_chat.sql
 alter table public.messages add column if not exists recipient_id uuid;  -- 1:1 (null=전체/방)
 create index if not exists idx_messages_recipient on public.messages(recipient_id);
 alter table public.messages add column if not exists room_id uuid;        -- 채팅방
@@ -65,10 +66,7 @@ create table if not exists public.chat_room_members (
   created_at timestamptz not null default now(), primary key (room_id, user_id));
 alter table public.chat_rooms enable row level security;
 drop policy if exists auth_all on public.chat_rooms;
-create policy auth_all on public.chat_rooms for all to authenticated using (true) with check (true);
 alter table public.chat_room_members enable row level security;
 drop policy if exists auth_all on public.chat_room_members;
-create policy auth_all on public.chat_room_members for all to authenticated using (true) with check (true);
-
--- 참고(향후): 역할별 세부 제한(현장팀은 employees 주민번호/계좌·finance_* 차단 등)은
---           authenticated 단일 정책을 role 기반으로 세분화하여 적용 예정.
+-- ⚠️ 위 채팅/알림 테이블에 정책이 하나도 없으면 접근이 전부 차단됨 —
+--     새 DB에 세팅할 때는 이 파일 실행 후 반드시 rls_chat.sql / rls_notifications.sql 실행.

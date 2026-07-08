@@ -19,9 +19,10 @@ create table if not exists message_reactions (
   unique (message_id, user_id, emoji)
 );
 
+-- RLS: (구) 전체허용 폐기(2026-07-07) — 참여자 기준 정책은 db/rls_chat.sql 실행으로 적용.
+--      정책 없이 RLS만 켜두면 전부 차단되므로, 새 DB 세팅 시 반드시 rls_chat.sql까지 실행할 것.
 alter table message_reactions enable row level security;
 drop policy if exists reactions_all on message_reactions;
-create policy reactions_all on message_reactions for all using (true) with check (true);
 
 -- 3) 실시간 반영 (이미 추가돼 있으면 에러가 나도 무시하세요)
 alter publication supabase_realtime add table message_reactions;
