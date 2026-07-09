@@ -2,19 +2,19 @@ import { createServerClient } from '@supabase/ssr'
 import { NextRequest, NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
 import webpush from 'web-push'
-import { createAdminClient } from '@/lib/supabase-admin'
+import { createAdminClient, cleanEnv } from '@/lib/supabase-admin'
 
 export const runtime = 'nodejs'
 
 const APPROVED = ['admin', 'designer', 'field', 'partner']
 
-// VAPID 키가 있을 때만 설정(빌드/키 미설정 환경에서 안전).
+// VAPID 키가 있을 때만 설정(빌드/키 미설정 환경에서 안전). BOM·공백 제거 후 사용.
 function ensureVapid(): boolean {
-  const pub = process.env.VAPID_PUBLIC_KEY
-  const priv = process.env.VAPID_PRIVATE_KEY
+  const pub = cleanEnv(process.env.VAPID_PUBLIC_KEY)
+  const priv = cleanEnv(process.env.VAPID_PRIVATE_KEY)
   if (!pub || !priv) return false
   try {
-    webpush.setVapidDetails(process.env.VAPID_SUBJECT || 'mailto:admin@example.com', pub, priv)
+    webpush.setVapidDetails(cleanEnv(process.env.VAPID_SUBJECT) || 'mailto:admin@example.com', pub, priv)
     return true
   } catch { return false }
 }
