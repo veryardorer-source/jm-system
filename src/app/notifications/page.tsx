@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import Sidebar from '@/components/Sidebar'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/lib/auth-context'
-import { subscribeToPush, pushSupported } from '@/lib/push'
+import { subscribeToPush, unsubscribeFromPush, isPushSubscribed, pushSupported } from '@/lib/push'
 
 type AppNotification = {
   id: string
@@ -22,18 +22,30 @@ export default function NotificationsPage() {
   const router = useRouter()
   const [items, setItems] = useState<AppNotification[]>([])
   const [loading, setLoading] = useState(true)
-  const [perm, setPerm] = useState<'granted' | 'denied' | 'default' | 'unsupported'>('default')
+  // 푸시 상태: 권한만이 아니라 "실제 구독 여부" 기준
+  const [pushState, setPushState] = useState<'checking' | 'on' | 'off' | 'denied' | 'unsupported'>('checking')
   const [enabling, setEnabling] = useState(false)
 
-  useEffect(() => {
-    if (!pushSupported()) { setPerm('unsupported'); return }
-    setPerm(Notification.permission)
-  }, [])
+  async function refreshPushState() {
+    if (!pushSupported()) { setPushState('unsupported'); return }
+    if (Notification.permission === 'denied') { setPushState('denied'); return }
+    setPushState((await isPushSubscribed()) ? 'on' : 'off')
+  }
+  useEffect(() => { refreshPushState() }, [])
 
   async function enablePush() {
     setEnabling(true)
-    await subscribeToPush(profile?.id || '')
-    if (pushSupported()) setPerm(Notification.permission)
+    const res = await subscribeToPush(profile?.id || '')
+    if (!res.ok) alert('알림 켜기 실패: ' + (res.reason || '알 수 없는 오류'))
+    await refreshPushState()
+    setEnabling(false)
+  }
+
+  async function disablePush() {
+    setEnabling(true)
+    const res = await unsubscribeFromPush()
+    if (!res.ok) alert('알림 끄기 실패: ' + (res.reason || '알 수 없는 오류'))
+    await refreshPushState()
     setEnabling(false)
   }
 
@@ -80,21 +92,26 @@ export default function NotificationsPage() {
         </header>
 
         <div className="flex-1 overflow-auto px-4 md:px-8 py-4 md:py-6 pb-20 md:pb-6">
-          {/* 이 기기에서 OS 알림 받기 */}
+          {/* 이 기기에서 OS 알림 받기 — 실제 구독 여부 기준, 켜기/끄기 토글 */}
           <div className="max-w-2xl mb-4">
-            {perm === 'granted' ? (
+            {pushState === 'checking' ? (
+              <div className="bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm text-gray-400">알림 상태 확인 중...</div>
+            ) : pushState === 'on' ? (
               <div className="bg-green-50 border border-green-200 rounded-xl px-4 py-3 flex items-center gap-3">
                 <span className="text-lg">✅</span>
                 <div className="flex-1 text-sm text-green-800">이 기기에서 알림을 받고 있어요. (앱을 꺼도 PC·휴대폰에 팝업)</div>
-                <button onClick={enablePush} disabled={enabling} className="text-xs text-green-700 underline disabled:opacity-50">다시 확인</button>
+                <button onClick={disablePush} disabled={enabling}
+                  className="text-xs border border-gray-300 text-gray-500 px-3 py-1.5 rounded-lg hover:bg-gray-50 disabled:opacity-50 flex-shrink-0">
+                  {enabling ? '처리 중...' : '알림 끄기'}
+                </button>
               </div>
-            ) : perm === 'denied' ? (
+            ) : pushState === 'denied' ? (
               <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-700">
                 🔕 이 브라우저에서 알림이 <b>차단</b>돼 있어요. 주소창 왼쪽 <b>자물쇠(🔒) 아이콘 → 알림 → 허용</b>으로 바꾼 뒤 새로고침해 주세요.
               </div>
-            ) : perm === 'unsupported' ? (
+            ) : pushState === 'unsupported' ? (
               <div className="bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm text-gray-500">
-                이 브라우저는 OS 알림을 지원하지 않아요. (아이폰은 <b>홈 화면에 앱 설치</b> 후 이용 가능)
+                이 브라우저는 OS 알림을 지원하지 않아요. (아이폰·아이패드는 <b>홈 화면에 앱 설치</b> 후 이용 가능)
               </div>
             ) : (
               <div className="bg-green-600 text-white rounded-xl px-4 py-3 flex items-center gap-3 shadow-sm">

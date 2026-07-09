@@ -29,8 +29,8 @@ export default function NotifPopup() {
 
   async function enablePush() {
     if (!profile?.id) return
-    const ok = await subscribeToPush(profile.id)
-    setNeedEnable(!ok && Notification.permission === 'default')
+    const res = await subscribeToPush(profile.id)
+    setNeedEnable(!res.ok && Notification.permission === 'default')
   }
 
   useEffect(() => {
