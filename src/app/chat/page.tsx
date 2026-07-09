@@ -228,6 +228,10 @@ export default function ChatPage() {
         const m = payload.new as Message
         setMessages(prev => prev.map(x => x.id === m.id ? m : x))
       })
+      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'messages' }, payload => {
+        const old = payload.old as { id?: string }
+        if (old?.id) setMessages(prev => prev.filter(x => x.id !== old.id))
+      })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'message_reactions' }, () => {
         reloadReactions()
       })
@@ -291,8 +295,12 @@ export default function ChatPage() {
 
   async function send(e: React.FormEvent) {
     e.preventDefault()
+    await doSend()
+  }
+
+  async function doSend() {
     const content = text.trim()
-    if (!content || !active) return
+    if (!content || !active || sending) return
     setSending(true)
     if (editing) {
       const { error } = await supabase.from('messages').update({ content, edited_at: new Date().toISOString() }).eq('id', editing.id)
@@ -353,10 +361,18 @@ export default function ChatPage() {
   }
   function startReply(m: Message) { setReplyTo(m); setEditing(null); setMenuFor(null) }
   function startEdit(m: Message) { setEditing({ id: m.id, text: m.content }); setText(m.content); setReplyTo(null); setMenuFor(null) }
+  // 완전 삭제 — 잘못 쓴 메시지는 흔적 없이 제거 (첨부 파일·반응도 정리)
   async function deleteMsg(m: Message) {
     if (!confirm('이 메시지를 삭제할까요?')) return
     setMenuFor(null)
-    await supabase.from('messages').update({ is_deleted: true, content: '', image_url: null, file_url: null, file_name: null }).eq('id', m.id)
+    for (const url of [m.image_url, m.file_url]) {
+      const path = url?.split('/uploads/')[1]
+      if (path) await supabase.storage.from('uploads').remove([path])
+    }
+    await supabase.from('message_reactions').delete().eq('message_id', m.id)
+    const { error } = await supabase.from('messages').delete().eq('id', m.id)
+    if (error) { alert('삭제 실패: ' + error.message); return }
+    setMessages(prev => prev.filter(x => x.id !== m.id))
   }
   async function togglePin(m: Message) {
     setMenuFor(null)
@@ -687,7 +703,7 @@ export default function ChatPage() {
                         ))}
                       </div>
                     )}
-                    <form onSubmit={send} className="px-4 py-3 flex gap-2 items-center">
+                    <form onSubmit={send} className="px-4 py-3 flex gap-2 items-end">
                       <label className="flex-shrink-0 flex items-center justify-center w-10 h-10 rounded-full border border-gray-300 text-lg cursor-pointer hover:bg-gray-50" title="사진 보내기">
                         🖼️
                         <input type="file" accept="image/*" className="hidden"
@@ -702,15 +718,24 @@ export default function ChatPage() {
                         <button type="button" onClick={() => setMentionOpen(o => !o)} title="멘션"
                           className={`flex-shrink-0 flex items-center justify-center w-10 h-10 rounded-full border text-base ${mentionOpen ? 'border-green-500 bg-green-50 text-green-700' : 'border-gray-300 text-gray-500 hover:bg-gray-50'}`}>@</button>
                       )}
-                      <input value={text} onChange={e => setText(e.target.value)}
+                      <textarea value={text} onChange={e => setText(e.target.value)}
+                        rows={Math.min(5, Math.max(1, text.split('\n').length))}
+                        onKeyDown={e => {
+                          // PC: Enter=전송, Shift+Enter=줄바꿈. 모바일: Enter=줄바꿈(전송 버튼으로 보냄)
+                          if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing
+                              && window.matchMedia('(hover: hover)').matches) {
+                            e.preventDefault()
+                            doSend()
+                          }
+                        }}
                         onPaste={e => {
                           const imgs = Array.from(e.clipboardData?.items || []).filter(it => it.type.startsWith('image/'))
                           if (imgs.length === 0) return
                           e.preventDefault()
                           imgs.forEach(it => { const f = it.getAsFile(); if (f) sendFile(f) })
                         }}
-                        placeholder={editing ? '메시지 수정...' : '메시지 입력 · 캡처 후 Ctrl+V'}
-                        className="flex-1 border border-gray-300 rounded-full px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
+                        placeholder={editing ? '메시지 수정...' : '메시지 입력 · Shift+Enter 줄바꿈 · 캡처 Ctrl+V'}
+                        className="flex-1 border border-gray-300 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 resize-none leading-relaxed" />
                       <button type="submit" disabled={sending || !text.trim()}
                         className="bg-green-600 text-white px-5 py-2.5 rounded-full text-sm font-medium hover:bg-green-700 disabled:opacity-50 flex-shrink-0">{editing ? '수정' : '전송'}</button>
                     </form>
