@@ -1,4 +1,5 @@
 import { createServerClient } from '@supabase/ssr'
+import { createAdminClient } from '@/lib/supabase-admin'
 import { createClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
@@ -30,11 +31,7 @@ export async function POST(req: NextRequest) {
   }
 
   // service role key로 사용자 생성
-  const adminClient = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
-    { auth: { autoRefreshToken: false, persistSession: false } }
-  )
+  const adminClient = createAdminClient()
 
   const { data: newUser, error: createError } = await adminClient.auth.admin.createUser({
     email,

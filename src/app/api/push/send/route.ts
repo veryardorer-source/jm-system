@@ -1,8 +1,8 @@
 import { createServerClient } from '@supabase/ssr'
-import { createClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
 import webpush from 'web-push'
+import { createAdminClient } from '@/lib/supabase-admin'
 
 export const runtime = 'nodejs'
 
@@ -41,11 +41,7 @@ export async function POST(req: NextRequest) {
   const { data: { user } } = await authClient.auth.getUser()
   if (!user) return NextResponse.json({ error: '인증 필요' }, { status: 401 })
 
-  const admin = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
-    { auth: { autoRefreshToken: false, persistSession: false } }
-  )
+  const admin = createAdminClient()
 
   // 2) 발신자 권한 확인 (승인된 사용자만)
   const { data: meProf } = await admin.from('profiles').select('id, role, name').eq('id', user.id).single()

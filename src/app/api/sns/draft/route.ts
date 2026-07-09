@@ -1,4 +1,5 @@
 import { createServerClient } from '@supabase/ssr'
+import { createAdminClient } from '@/lib/supabase-admin'
 import { createClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
@@ -30,11 +31,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: '잘못된 요청' }, { status: 400 })
   }
 
-  const adminClient = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
-    { auth: { autoRefreshToken: false, persistSession: false } }
-  )
+  const adminClient = createAdminClient()
 
   const { data: project } = await adminClient.from('projects').select('name, client_name, address').eq('id', projectId).single()
   if (!project) return NextResponse.json({ error: '현장을 찾을 수 없어요' }, { status: 404 })
