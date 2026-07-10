@@ -25,12 +25,16 @@ async function toBrowserSafeImage(file: File): Promise<{ file: File; ext: string
   if (!isHeic(file)) return { file, ext }
   try {
     const heic2any = (await import('heic2any')).default
-    const result = await heic2any({ blob: file, toType: 'image/jpeg', quality: 0.85 })
+    // 30초 넘게 걸리면 포기하고 원본 업로드 (변환이 멈춰서 업로드 전체가 안 되는 것 방지)
+    const result = await Promise.race([
+      heic2any({ blob: file, toType: 'image/jpeg', quality: 0.85 }),
+      new Promise<never>((_, rej) => setTimeout(() => rej(new Error('heic timeout')), 30000)),
+    ])
     const blob = Array.isArray(result) ? result[0] : result
     const newName = file.name.replace(/\.(heic|heif)$/i, '.jpg')
-    return { file: new File([blob], newName, { type: 'image/jpeg' }), ext: 'jpg' }
+    return { file: new File([blob as Blob], newName, { type: 'image/jpeg' }), ext: 'jpg' }
   } catch {
-    return { file, ext } // 변환 실패 시 원본 그대로 업로드 (다운로드는 가능)
+    return { file, ext } // 변환 실패 시 원본 그대로 업로드 (다운로드는 가능, 화면엔 HeicImg가 표시)
   }
 }
 
@@ -236,18 +240,34 @@ export default function ProjectDetail() {
     }
 
     setUploading(true)
-    // 원본 화질 그대로, 3장씩 동시에 올려 속도 개선
+    // 3장씩 동시에 올려 속도 개선. HEIC 무거운 변환(heic2any)은 메모리 보호를 위해 한 장씩만.
     const CONC = 3
     let done = 0
     let failMsg = ''
+    let heicChain: Promise<unknown> = Promise.resolve()
+    const convertHeicSerial = (f: File) => {
+      const run = heicChain.then(() => toBrowserSafeImage(f))
+      heicChain = run.catch(() => {})
+      return run as Promise<{ file: File; ext: string }>
+    }
     for (let i = 0; i < uploadList.length; i += CONC) {
       const chunk = uploadList.slice(i, i + CONC)
       await Promise.all(chunk.map(async (orig, j) => {
-        let { file, ext } = await toBrowserSafeImage(orig)
-        // 빠른 업로드: 사진 크기 축소(카톡 방식) — 실패 시 자동으로 원본 사용
+        let file = orig
+        let ext = orig.name.split('.').pop() || 'bin'
+        // 1) 빠른 업로드: 기기 내장 변환으로 축소 시도 (아이폰 사파리는 HEIC도 여기서 즉시 JPEG化 — 매우 빠름)
         if (photoQuality === 'fast') {
-          const c = await compressImage(file)
-          if (c !== file) { file = c; ext = 'jpg' }
+          const c = await compressImage(orig)
+          if (c !== orig) { file = c; ext = 'jpg' }
+        }
+        // 2) 아직 HEIC 그대로면(내장 변환 미지원 브라우저) heic2any로 — 한 장씩 순차 처리
+        if (file === orig && isHeic(orig)) {
+          const r = await convertHeicSerial(orig)
+          file = r.file; ext = r.ext
+          if (photoQuality === 'fast' && r.ext === 'jpg') {
+            const c2 = await compressImage(file)
+            if (c2 !== file) { file = c2; ext = 'jpg' }
+          }
         }
         const path = `files/${id}/${Date.now()}_${i + j}.${ext}`
         const { error: uploadError } = await supabase.storage.from('uploads').upload(path, file, {
