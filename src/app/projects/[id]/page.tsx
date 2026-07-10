@@ -6,6 +6,7 @@ import Sidebar from '@/components/Sidebar'
 import { supabase, Project, ProjectFile, Schedule, ProjectCost, ProjectAssignment, STATUS_LIST, STATUS_COLOR } from '@/lib/supabase'
 import { useAuth, canEdit } from '@/lib/auth-context'
 import { notifyOthers, notifyDM, notifyRoom } from '@/lib/notify'
+import { compressImage } from '@/lib/image'
 import SnsTab from '@/components/SnsTab'
 
 const TAB_LIST = ['현황', '자료', '공정', '비용', 'SNS']
@@ -98,6 +99,7 @@ export default function ProjectDetail() {
   const [photoGroup, setPhotoGroup] = useState<'date' | 'zone'>('date') // 사진 정렬: 날짜별/구역별
   const [selectedFileIds, setSelectedFileIds] = useState<Set<string>>(new Set())
   const [selectMode, setSelectMode] = useState(false) // 켜면 사진을 탭해서 선택(모바일 편의)
+  const [photoQuality, setPhotoQuality] = useState<'fast' | 'original'>('fast') // 빠른 업로드(크기 축소) / 원본
   const [showMove, setShowMove] = useState(false)         // 분류/현장 이동 모달
   const [showChatShare, setShowChatShare] = useState(false) // 채팅으로 공유 모달
   const [moveProjects, setMoveProjects] = useState<{ id: string; name: string }[]>([])
@@ -241,7 +243,12 @@ export default function ProjectDetail() {
     for (let i = 0; i < uploadList.length; i += CONC) {
       const chunk = uploadList.slice(i, i + CONC)
       await Promise.all(chunk.map(async (orig, j) => {
-        const { file, ext } = await toBrowserSafeImage(orig)
+        let { file, ext } = await toBrowserSafeImage(orig)
+        // 빠른 업로드: 사진 크기 축소(카톡 방식) — 실패 시 자동으로 원본 사용
+        if (photoQuality === 'fast') {
+          const c = await compressImage(file)
+          if (c !== file) { file = c; ext = 'jpg' }
+        }
         const path = `files/${id}/${Date.now()}_${i + j}.${ext}`
         const { error: uploadError } = await supabase.storage.from('uploads').upload(path, file, {
           contentType: file.type || 'application/octet-stream',
@@ -1319,6 +1326,24 @@ export default function ProjectDetail() {
                     파일 선택 {fileForm.category === '미팅내용' ? <span className="text-gray-400 font-normal">(선택 — 글만 저장도 가능)</span> : <>* <span className="text-gray-400 font-normal">(여러 장 동시 선택 가능)</span></>}
                   </label>
                   <DropZone files={selectedFiles} onChange={setSelectedFiles} />
+                  {/* 사진 업로드 속도/화질 선택 */}
+                  <div className="mt-2">
+                    <div className="flex rounded-lg border border-gray-200 overflow-hidden text-xs">
+                      <button type="button" onClick={() => setPhotoQuality('fast')}
+                        className={`flex-1 py-2 font-medium ${photoQuality === 'fast' ? 'bg-green-600 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}>
+                        🚀 빠른 업로드 (권장)
+                      </button>
+                      <button type="button" onClick={() => setPhotoQuality('original')}
+                        className={`flex-1 py-2 font-medium border-l border-gray-200 ${photoQuality === 'original' ? 'bg-green-600 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}>
+                        원본 그대로 (느림)
+                      </button>
+                    </div>
+                    <p className="text-[11px] text-gray-400 mt-1">
+                      {photoQuality === 'fast'
+                        ? '사진 크기를 줄여 5~10배 빨라요. 압축파일이 아니라 바로 보이고, 화면·인쇄에 충분한 화질이에요. (동영상·문서는 그대로)'
+                        : '촬영 원본 그대로 올려요. 용량이 커서 장당 수십 초 걸릴 수 있어요.'}
+                    </p>
+                  </div>
                 </div>
               )}
 
