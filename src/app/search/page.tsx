@@ -59,6 +59,14 @@ export default function SearchPage() {
       sub: (l.today_work || l.special_notes || l.memo || '').slice(0, 40), href: '/worklogs',
     }))
 
+    // 거래처
+    const { data: contacts } = await supabase.from('contacts').select('*')
+      .or(`company.ilike.${like},person.ilike.${like},phone.ilike.${like},category.ilike.${like},memo.ilike.${like}`).limit(15)
+    ;(contacts || []).forEach(c => results.push({
+      kind: '거래처', icon: '📇', title: `${c.company}${c.person ? ` · ${c.person}` : ''}`,
+      sub: [c.category, c.phone].filter(Boolean).join(' · '), href: '/contacts',
+    }))
+
     // 금전 자료 (금액 볼 수 있는 사람만)
     if (canMoney) {
       const { data: receipts } = await supabase.from('receipts').select('*').or(`memo.ilike.${like},uploaded_by.ilike.${like}`).limit(15)

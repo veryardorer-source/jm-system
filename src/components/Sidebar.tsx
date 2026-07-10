@@ -16,6 +16,7 @@ const NAV_ITEMS = [
   { href: '/withdrawals', label: '출금 요청', icon: '💸' },
   { href: '/payments', label: '수금 관리', icon: '💰' },
   { href: '/documents', label: '회사 서류', icon: '🗂️' },
+  { href: '/contacts', label: '거래처', icon: '📇' },
   { href: '/chat', label: '채팅', icon: '💬' },
   { href: '/notifications', label: '알림', icon: '🔔' },
 ]
@@ -27,7 +28,7 @@ const ADMIN_ITEMS = [
 ]
 
 // 외부협력업체(partner)에게 숨길 메뉴 (금전·내부 자료) — 현장 관련만 보이게
-const PARTNER_HIDDEN = ['/receipts', '/withdrawals', '/payments', '/worklogs', '/documents', '/chat', '/search']
+const PARTNER_HIDDEN = ['/receipts', '/withdrawals', '/payments', '/worklogs', '/documents', '/contacts', '/chat', '/search']
 
 // 모바일 하단바에 항상 보일 핵심 메뉴 (나머지는 '더보기'로)
 const MOBILE_PRIMARY = ['/', '/projects', '/chat', '/notifications']
