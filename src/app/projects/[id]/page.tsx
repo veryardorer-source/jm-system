@@ -5,7 +5,7 @@ import { useParams, useRouter } from 'next/navigation'
 import Sidebar from '@/components/Sidebar'
 import { supabase, Project, ProjectFile, Schedule, ProjectCost, ProjectAssignment, STATUS_LIST, STATUS_COLOR } from '@/lib/supabase'
 import { useAuth, canEdit } from '@/lib/auth-context'
-import { notifyOthers } from '@/lib/notify'
+import { notifyOthers, notifyDM, notifyRoom } from '@/lib/notify'
 import SnsTab from '@/components/SnsTab'
 
 const TAB_LIST = ['현황', '자료', '공정', '비용', 'SNS']
@@ -98,6 +98,12 @@ export default function ProjectDetail() {
   const [photoGroup, setPhotoGroup] = useState<'date' | 'zone'>('date') // 사진 정렬: 날짜별/구역별
   const [selectedFileIds, setSelectedFileIds] = useState<Set<string>>(new Set())
   const [selectMode, setSelectMode] = useState(false) // 켜면 사진을 탭해서 선택(모바일 편의)
+  const [showMove, setShowMove] = useState(false)         // 분류/현장 이동 모달
+  const [showChatShare, setShowChatShare] = useState(false) // 채팅으로 공유 모달
+  const [moveProjects, setMoveProjects] = useState<{ id: string; name: string }[]>([])
+  const [chatPeople, setChatPeople] = useState<{ id: string; name: string }[]>([])
+  const [chatRooms, setChatRooms] = useState<{ id: string; name: string }[]>([])
+  const [moving, setMoving] = useState(false)
   const [hoveredFileId, setHoveredFileId] = useState<string | null>(null)
 
   const [showScheduleForm, setShowScheduleForm] = useState(false)
@@ -418,6 +424,71 @@ export default function ProjectDetail() {
   function clearSelection() {
     setSelectedFileIds(new Set())
     setSelectMode(false)
+  }
+
+  // ── 선택 자료 이동/공유 ──
+  useEffect(() => {
+    if (!showMove) return
+    supabase.from('projects').select('id, name').neq('id', id).order('name').then(({ data }) => setMoveProjects(data || []))
+  }, [showMove, id])
+
+  useEffect(() => {
+    if (!showChatShare || !profile?.id) return
+    supabase.from('profiles').select('id, name').neq('id', profile.id).then(({ data }) => setChatPeople(data || []))
+    supabase.from('chat_room_members').select('room_id').eq('user_id', profile.id).then(async ({ data }) => {
+      const ids = (data || []).map(m => m.room_id)
+      if (!ids.length) { setChatRooms([]); return }
+      const { data: rooms } = await supabase.from('chat_rooms').select('id, name').in('id', ids)
+      setChatRooms(rooms || [])
+    })
+  }, [showChatShare, profile?.id])
+
+  async function moveToCategory(cat: string) {
+    if (moving) return
+    setMoving(true)
+    const { error } = await supabase.from('project_files').update({ category: cat }).in('id', Array.from(selectedFileIds))
+    setMoving(false)
+    if (error) { alert('이동 실패: ' + error.message); return }
+    setShowMove(false)
+    clearSelection()
+    fetchAll()
+  }
+
+  async function moveToProject(pid: string, pname: string) {
+    if (moving) return
+    if (!confirm(`선택한 ${selectedFileIds.size}건을 "${pname}" 현장으로 옮길까요?`)) return
+    setMoving(true)
+    const { error } = await supabase.from('project_files').update({ project_id: pid }).in('id', Array.from(selectedFileIds))
+    setMoving(false)
+    if (error) { alert('이동 실패: ' + error.message); return }
+    setShowMove(false)
+    clearSelection()
+    fetchAll()
+  }
+
+  // 선택 자료를 채팅으로 보내기 — 파일을 다시 올리지 않고 기존 URL 그대로 메시지로 전송
+  async function sendToChat(target: { kind: 'all' | 'dm' | 'room'; id?: string; name: string }) {
+    if (moving || !profile?.id) return
+    const sel = files.filter(f => selectedFileIds.has(f.id) && f.file_type !== 'link' && f.file_url)
+    if (!sel.length) { alert('보낼 수 있는 파일이 없어요 (링크 항목은 제외됩니다)'); return }
+    setMoving(true)
+    const isImg = (f: ProjectFile) => (f.file_type || '').startsWith('image') || /\.(jpg|jpeg|png|gif|webp|heic)$/i.test(f.file_name || '')
+    const recipient_id = target.kind === 'dm' ? target.id : null
+    const room_id = target.kind === 'room' ? target.id : null
+    const rows = sel.map(f => ({
+      sender_id: profile.id, sender_name: profile.name || '직원', recipient_id, room_id,
+      content: '',
+      ...(isImg(f) ? { image_url: f.file_url } : { file_url: f.file_url, file_name: f.file_name }),
+    }))
+    const { error } = await supabase.from('messages').insert(rows)
+    setMoving(false)
+    if (error) { alert('공유 실패: ' + error.message); return }
+    const body = `${project?.name || '현장'} 자료 ${sel.length}건`
+    if (target.kind === 'dm' && target.id && target.id !== profile.id) notifyDM(target.id, `${profile.name || '직원'} 님의 메시지`, body, '/chat')
+    else if (target.kind === 'room' && target.id) notifyRoom(target.id, `${target.name} · ${profile.name || '직원'}`, body, '/chat')
+    setShowChatShare(false)
+    clearSelection()
+    alert(`${sel.length}건을 "${target.name}"(으)로 보냈어요. 채팅에서 확인하세요!`)
   }
 
   async function handleSchedule(e: React.FormEvent) {
@@ -1299,23 +1370,99 @@ export default function ProjectDetail() {
 
       {/* 선택 플로팅 액션바 */}
       {selectedFileIds.size > 0 && (
-        <div className="fixed bottom-20 md:bottom-6 left-1/2 -translate-x-1/2 z-40 bg-gray-900 text-white rounded-2xl shadow-2xl px-4 py-3 flex items-center gap-2 min-w-[300px] max-w-[92vw]">
-          <span className="text-sm font-semibold text-green-300 whitespace-nowrap mr-1">{selectedFileIds.size}개 선택</span>
-          <div className="flex-1 flex gap-2 justify-end">
-            <button onClick={() => shareFiles(files.filter(f => selectedFileIds.has(f.id)))}
-              className="bg-white/10 hover:bg-white/20 text-white text-sm px-3 py-1.5 rounded-lg transition-colors">
-              내보내기
-            </button>
-            <button onClick={() => saveAll(files.filter(f => selectedFileIds.has(f.id)))}
-              className="bg-white/10 hover:bg-white/20 text-white text-sm px-3 py-1.5 rounded-lg transition-colors">
-              저장
-            </button>
-            <button onClick={deleteSelectedFiles}
-              className="bg-red-500 hover:bg-red-600 text-white text-sm px-3 py-1.5 rounded-lg transition-colors">
-              삭제
-            </button>
-            <button onClick={clearSelection}
-              className="text-gray-400 hover:text-white text-lg leading-none px-1 transition-colors">&times;</button>
+        <div className="fixed bottom-20 md:bottom-6 left-1/2 -translate-x-1/2 z-40 bg-gray-900 text-white rounded-2xl shadow-2xl px-3 py-2.5 flex items-center gap-1.5 max-w-[95vw] flex-wrap justify-center">
+          <span className="text-sm font-semibold text-green-300 whitespace-nowrap mr-1">{selectedFileIds.size}개</span>
+          <button onClick={() => setShowMove(true)}
+            className="bg-white/10 hover:bg-white/20 text-white text-sm px-2.5 py-1.5 rounded-lg transition-colors">📁 이동</button>
+          <button onClick={() => setShowChatShare(true)}
+            className="bg-white/10 hover:bg-white/20 text-white text-sm px-2.5 py-1.5 rounded-lg transition-colors">💬 채팅</button>
+          <button onClick={() => shareFiles(files.filter(f => selectedFileIds.has(f.id)))}
+            className="bg-white/10 hover:bg-white/20 text-white text-sm px-2.5 py-1.5 rounded-lg transition-colors">내보내기</button>
+          <button onClick={() => saveAll(files.filter(f => selectedFileIds.has(f.id)))}
+            className="bg-white/10 hover:bg-white/20 text-white text-sm px-2.5 py-1.5 rounded-lg transition-colors">저장</button>
+          <button onClick={deleteSelectedFiles}
+            className="bg-red-500 hover:bg-red-600 text-white text-sm px-2.5 py-1.5 rounded-lg transition-colors">삭제</button>
+          <button onClick={clearSelection}
+            className="text-gray-400 hover:text-white text-lg leading-none px-1 transition-colors">&times;</button>
+        </div>
+      )}
+
+      {/* 분류/현장 이동 모달 */}
+      {showMove && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={() => setShowMove(false)}>
+          <div className="bg-white rounded-2xl w-full max-w-sm shadow-xl max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-6 py-5 border-b border-gray-100 sticky top-0 bg-white">
+              <h2 className="text-lg font-bold">{selectedFileIds.size}개 이동</h2>
+              <button onClick={() => setShowMove(false)} className="text-gray-400 text-2xl">&times;</button>
+            </div>
+            <div className="px-6 py-5 flex flex-col gap-5">
+              <div>
+                <p className="text-sm font-semibold text-gray-700 mb-2">다른 분류로 이동</p>
+                <div className="flex gap-1.5 flex-wrap">
+                  {allCategories.filter(c => c !== '구매링크').map(c => (
+                    <button key={c} onClick={() => moveToCategory(c)} disabled={moving}
+                      className="text-sm px-3 py-1.5 rounded-full border border-gray-300 text-gray-600 hover:border-green-500 hover:text-green-700 hover:bg-green-50 disabled:opacity-50">
+                      {c}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-gray-700 mb-2">다른 현장으로 이동</p>
+                <div className="border border-gray-200 rounded-lg max-h-48 overflow-auto">
+                  {moveProjects.map(p => (
+                    <button key={p.id} onClick={() => moveToProject(p.id, p.name)} disabled={moving}
+                      className="w-full text-left px-3 py-2.5 text-sm text-gray-700 border-b border-gray-100 last:border-0 hover:bg-green-50 disabled:opacity-50">
+                      🏗️ {p.name}
+                    </button>
+                  ))}
+                  {moveProjects.length === 0 && <p className="text-center text-xs text-gray-400 py-4">다른 현장이 없어요</p>}
+                </div>
+              </div>
+              {moving && <p className="text-xs text-green-600 text-center">이동 중...</p>}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 채팅으로 공유 모달 */}
+      {showChatShare && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={() => setShowChatShare(false)}>
+          <div className="bg-white rounded-2xl w-full max-w-sm shadow-xl max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-6 py-5 border-b border-gray-100 sticky top-0 bg-white">
+              <h2 className="text-lg font-bold">{selectedFileIds.size}개 채팅으로 보내기</h2>
+              <button onClick={() => setShowChatShare(false)} className="text-gray-400 text-2xl">&times;</button>
+            </div>
+            <div className="px-4 py-3">
+              <p className="text-xs text-gray-400 px-2 pb-2">다시 업로드하지 않고 바로 전송돼요 (링크 항목 제외)</p>
+              <button onClick={() => sendToChat({ kind: 'dm', id: profile?.id, name: '나와의 채팅' })} disabled={moving}
+                className="w-full flex items-center gap-2.5 px-3 py-3 text-left rounded-lg hover:bg-gray-50 disabled:opacity-50">
+                <span className="w-8 h-8 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center text-sm flex-shrink-0">📝</span>
+                <span className="text-sm font-medium text-gray-800">나와의 채팅</span>
+              </button>
+              <button onClick={() => sendToChat({ kind: 'all', name: '전체 채팅방' })} disabled={moving}
+                className="w-full flex items-center gap-2.5 px-3 py-3 text-left rounded-lg hover:bg-gray-50 disabled:opacity-50">
+                <span className="w-8 h-8 rounded-full bg-green-100 text-green-700 flex items-center justify-center text-sm flex-shrink-0">📢</span>
+                <span className="text-sm font-medium text-gray-800">전체 채팅방</span>
+              </button>
+              {chatRooms.length > 0 && <p className="text-xs text-gray-400 font-semibold px-2 pt-2 pb-1">채팅방</p>}
+              {chatRooms.map(r => (
+                <button key={r.id} onClick={() => sendToChat({ kind: 'room', id: r.id, name: r.name })} disabled={moving}
+                  className="w-full flex items-center gap-2.5 px-3 py-3 text-left rounded-lg hover:bg-gray-50 disabled:opacity-50">
+                  <span className="w-8 h-8 rounded-full bg-green-100 text-green-700 flex items-center justify-center text-sm flex-shrink-0">#</span>
+                  <span className="text-sm font-medium text-gray-800 truncate">{r.name}</span>
+                </button>
+              ))}
+              <p className="text-xs text-gray-400 font-semibold px-2 pt-2 pb-1">직원 (1:1)</p>
+              {chatPeople.map(p => (
+                <button key={p.id} onClick={() => sendToChat({ kind: 'dm', id: p.id, name: p.name })} disabled={moving}
+                  className="w-full flex items-center gap-2.5 px-3 py-3 text-left rounded-lg hover:bg-gray-50 disabled:opacity-50">
+                  <span className="w-8 h-8 rounded-full bg-gray-100 text-gray-600 flex items-center justify-center text-sm flex-shrink-0">{p.name?.slice(0, 1) || '?'}</span>
+                  <span className="text-sm font-medium text-gray-800 truncate">{p.name}</span>
+                </button>
+              ))}
+              {moving && <p className="text-xs text-green-600 text-center py-2">보내는 중...</p>}
+            </div>
           </div>
         </div>
       )}
