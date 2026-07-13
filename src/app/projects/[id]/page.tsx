@@ -502,11 +502,14 @@ export default function ProjectDetail() {
     const isImg = (f: ProjectFile) => (f.file_type || '').startsWith('image') || /\.(jpg|jpeg|png|gif|webp|heic)$/i.test(f.file_name || '')
     const recipient_id = target.kind === 'dm' ? target.id : null
     const room_id = target.kind === 'room' ? target.id : null
-    const rows = sel.map(f => ({
-      sender_id: profile.id, sender_name: profile.name || '직원', recipient_id, room_id,
-      content: '',
-      ...(isImg(f) ? { image_url: f.file_url } : { file_url: f.file_url, file_name: f.file_name }),
-    }))
+    const imgUrls = sel.filter(isImg).map(f => f.file_url)
+    const others = sel.filter(f => !isImg(f))
+    const base = { sender_id: profile.id, sender_name: profile.name || '직원', recipient_id, room_id, content: '' }
+    const rows: Record<string, unknown>[] = []
+    // 사진들은 한 묶음(한 메시지)으로
+    if (imgUrls.length === 1) rows.push({ ...base, image_url: imgUrls[0] })
+    else if (imgUrls.length > 1) rows.push({ ...base, image_url: imgUrls[0], images: imgUrls })
+    others.forEach(f => rows.push({ ...base, file_url: f.file_url, file_name: f.file_name }))
     const { error } = await supabase.from('messages').insert(rows)
     setMoving(false)
     if (error) { alert('공유 실패: ' + error.message); return }

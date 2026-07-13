@@ -16,6 +16,7 @@ type Message = {
   room_id: string | null
   content: string
   image_url?: string | null
+  images?: string[] | null   // 여러 장 묶음 전송 (카톡식)
   file_url?: string | null
   file_name?: string | null
   reply_to_id?: string | null
@@ -246,7 +247,7 @@ export default function ChatPage() {
   useEffect(() => { scrollToBottom() }, [messages, scrollToBottom])
 
   // 파일 드래그를 채팅 화면 어디에 놓아도 전송되게 (벗어나 놓으면 브라우저가 파일을 열어버리는 문제 방지)
-  const sendFileRef = useRef<(f: File) => void>(() => {})
+  const handleFilesRef = useRef<(fs: File[]) => void>(() => {})
   useEffect(() => {
     if (readOnly) return
     const hasFiles = (e: DragEvent) => Array.from(e.dataTransfer?.types || []).includes('Files')
@@ -257,7 +258,7 @@ export default function ChatPage() {
       e.preventDefault()
       setDragOver(false)
       if (!activeRef.current) return
-      Array.from(e.dataTransfer?.files || []).forEach(f => sendFileRef.current(f))
+      handleFilesRef.current(Array.from(e.dataTransfer?.files || []))
     }
     window.addEventListener('dragover', over)
     window.addEventListener('dragleave', leave)
@@ -333,6 +334,43 @@ export default function ChatPage() {
     if (error) alert('전송 실패: ' + error.message)
   }
 
+  // 여러 장 이미지를 한 메시지(묶음)로 전송 — 카톡식
+  async function sendImages(files: File[]) {
+    if (!files.length || !active) return
+    if (files.length === 1) { sendImage(files[0]); return }
+    setSending(true)
+    const slots: (string | null)[] = new Array(files.length).fill(null)
+    const CONC = 3
+    for (let i = 0; i < files.length; i += CONC) {
+      const chunk = files.slice(i, i + CONC)
+      await Promise.all(chunk.map(async (file, j) => {
+        const ext = file.name.split('.').pop() || 'jpg'
+        const path = `chat/${Date.now()}_${i + j}.${ext}`
+        const { error: upErr } = await supabase.storage.from('uploads').upload(path, file, { contentType: file.type || 'image/jpeg', upsert: true })
+        if (!upErr) slots[i + j] = supabase.storage.from('uploads').getPublicUrl(path).data.publicUrl
+      }))
+    }
+    const urls = slots.filter(Boolean) as string[]
+    if (!urls.length) { setSending(false); alert('이미지 업로드에 실패했어요'); return }
+    const recipient_id = active.kind === 'dm' ? active.id : null
+    const room_id = active.kind === 'room' ? active.id : null
+    const { error } = await supabase.from('messages').insert([{
+      sender_id: me ?? null, sender_name: profile?.name ?? '직원', recipient_id, room_id,
+      content: '', image_url: urls[0], images: urls, ...replyFields(),
+    }])
+    if (!error) pushNotif(`📷 사진 ${urls.length}장`)
+    setSending(false); setReplyTo(null)
+    if (error) alert('전송 실패: ' + error.message + (error.message.includes('images') ? '\n(관리자에게: db/chat_images.sql 실행 필요)' : ''))
+  }
+
+  // 받은 파일들 분배: 이미지 여러 장 → 한 묶음, 나머지는 개별 파일 전송
+  function handleIncomingFiles(files: File[]) {
+    const imgs = files.filter(f => (f.type || '').startsWith('image/'))
+    const rest = files.filter(f => !(f.type || '').startsWith('image/'))
+    if (imgs.length) sendImages(imgs)
+    rest.forEach(f => sendFile(f))
+  }
+
   async function sendFile(file: File) {
     if (!file || !active) return
     // 이미지는 미리보기되도록 기존 이미지 전송으로
@@ -365,7 +403,7 @@ export default function ChatPage() {
   async function deleteMsg(m: Message) {
     if (!confirm('이 메시지를 삭제할까요?')) return
     setMenuFor(null)
-    for (const url of [m.image_url, m.file_url]) {
+    for (const url of [m.image_url, m.file_url, ...(m.images || [])]) {
       const path = url?.split('/uploads/')[1]
       if (path) await supabase.storage.from('uploads').remove([path])
     }
@@ -383,8 +421,8 @@ export default function ChatPage() {
     if (el) { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); el.classList.add('ring-2', 'ring-green-400'); setTimeout(() => el.classList.remove('ring-2', 'ring-green-400'), 1500) }
   }
 
-  // 렌더 후 ref에 최신 sendFile 유지 (렌더 중 직접 갱신은 lint 위반)
-  useEffect(() => { sendFileRef.current = sendFile })
+  // 렌더 후 ref에 최신 핸들러 유지 (렌더 중 직접 갱신은 lint 위반)
+  useEffect(() => { handleFilesRef.current = handleIncomingFiles })
 
   async function createRoom(e: React.FormEvent) {
     e.preventDefault()
@@ -632,10 +670,31 @@ export default function ChatPage() {
                                         <span className="font-semibold">{rpName}</span> {rpRest.join('|')}
                                       </button>
                                     )}
-                                    {m.image_url && (
-                                      <img src={m.image_url} alt="" onClick={() => setChatLightbox(m.image_url!)}
-                                        className="rounded-2xl max-w-[220px] max-h-[260px] object-cover cursor-pointer border border-gray-200" />
-                                    )}
+                                    {(() => {
+                                      const imgs = m.images && m.images.length ? m.images : (m.image_url ? [m.image_url] : [])
+                                      if (!imgs.length) return null
+                                      if (imgs.length === 1) return (
+                                        <img src={imgs[0]} alt="" onClick={() => setChatLightbox(imgs[0])}
+                                          className="rounded-2xl max-w-[220px] max-h-[260px] object-cover cursor-pointer border border-gray-200" />
+                                      )
+                                      // 여러 장 = 한 묶음 격자 (카톡식) — 4장까지 보여주고 나머지는 +N
+                                      return (
+                                        <div className={`grid gap-1 w-[240px] max-w-[70vw] ${imgs.length === 2 ? 'grid-cols-2' : 'grid-cols-2'}`}>
+                                          {imgs.slice(0, 4).map((u, i) => (
+                                            <div key={i} className="relative aspect-square">
+                                              <img src={u} alt="" onClick={() => setChatLightbox(u)}
+                                                className="w-full h-full object-cover rounded-lg cursor-pointer border border-gray-200" />
+                                              {i === 3 && imgs.length > 4 && (
+                                                <button onClick={() => setChatLightbox(u)}
+                                                  className="absolute inset-0 bg-black/55 rounded-lg flex items-center justify-center text-white text-lg font-bold">
+                                                  +{imgs.length - 4}
+                                                </button>
+                                              )}
+                                            </div>
+                                          ))}
+                                        </div>
+                                      )
+                                    })()}
                                     {m.file_url && (
                                       <a href={m.file_url} target="_blank" rel="noreferrer" download={m.file_name || true}
                                         className={`flex items-center gap-2 px-3 py-2.5 rounded-2xl text-sm border max-w-[260px] ${
@@ -704,15 +763,15 @@ export default function ChatPage() {
                       </div>
                     )}
                     <form onSubmit={send} className="px-4 py-3 flex gap-2 items-end">
-                      <label className="flex-shrink-0 flex items-center justify-center w-10 h-10 rounded-full border border-gray-300 text-lg cursor-pointer hover:bg-gray-50" title="사진 보내기">
+                      <label className="flex-shrink-0 flex items-center justify-center w-10 h-10 rounded-full border border-gray-300 text-lg cursor-pointer hover:bg-gray-50" title="사진 보내기 (여러 장 = 한 묶음)">
                         🖼️
-                        <input type="file" accept="image/*" className="hidden"
-                          onChange={e => { const f = e.target.files?.[0]; if (f) sendImage(f); e.currentTarget.value = '' }} />
+                        <input type="file" accept="image/*" multiple className="hidden"
+                          onChange={e => { const fs = Array.from(e.target.files || []); if (fs.length) sendImages(fs); e.currentTarget.value = '' }} />
                       </label>
                       <label className="flex-shrink-0 flex items-center justify-center w-10 h-10 rounded-full border border-gray-300 text-lg cursor-pointer hover:bg-gray-50" title="파일 보내기">
                         📎
-                        <input type="file" className="hidden"
-                          onChange={e => { const f = e.target.files?.[0]; if (f) sendFile(f); e.currentTarget.value = '' }} />
+                        <input type="file" multiple className="hidden"
+                          onChange={e => { const fs = Array.from(e.target.files || []); if (fs.length) handleIncomingFiles(fs); e.currentTarget.value = '' }} />
                       </label>
                       {showSenderName && (
                         <button type="button" onClick={() => setMentionOpen(o => !o)} title="멘션"
@@ -732,7 +791,8 @@ export default function ChatPage() {
                           const imgs = Array.from(e.clipboardData?.items || []).filter(it => it.type.startsWith('image/'))
                           if (imgs.length === 0) return
                           e.preventDefault()
-                          imgs.forEach(it => { const f = it.getAsFile(); if (f) sendFile(f) })
+                          const fs = imgs.map(it => it.getAsFile()).filter(Boolean) as File[]
+                          if (fs.length) sendImages(fs)
                         }}
                         placeholder={editing ? '메시지 수정...' : '메시지 입력 · Shift+Enter 줄바꿈 · 캡처 Ctrl+V'}
                         className="flex-1 border border-gray-300 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 resize-none leading-relaxed" />
@@ -827,7 +887,8 @@ export default function ChatPage() {
 
       {/* 채팅 사진 크게 보기 (좌우 넘김 + 내보내기/저장) */}
       {chatLightbox && (() => {
-        const gallery = messages.filter(m => m.image_url && !m.is_deleted).map(m => m.image_url as string)
+        const gallery = messages.filter(m => !m.is_deleted)
+          .flatMap(m => (m.images && m.images.length ? m.images : (m.image_url ? [m.image_url] : [])))
         const idx = gallery.indexOf(chatLightbox)
         const go = (d: number) => { const n = idx + d; if (n >= 0 && n < gallery.length) setChatLightbox(gallery[n]) }
         return (
