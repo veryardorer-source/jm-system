@@ -104,6 +104,10 @@ export default function ProjectDetail() {
   const [selectedFileIds, setSelectedFileIds] = useState<Set<string>>(new Set())
   const [selectMode, setSelectMode] = useState(false) // 켜면 사진을 탭해서 선택(모바일 편의)
   const [photoQuality, setPhotoQuality] = useState<'fast' | 'original'>('fast') // 빠른 업로드(크기 축소) / 원본
+  const [showAccess, setShowAccess] = useState(false) // 외부협력업체 공개 설정 (관리자)
+  const [partners, setPartners] = useState<{ id: string; name: string }[]>([])
+  const [accessIds, setAccessIds] = useState<Set<string>>(new Set())
+  const [accessBusy, setAccessBusy] = useState(false)
   const [showMove, setShowMove] = useState(false)         // 분류/현장 이동 모달
   const [showChatShare, setShowChatShare] = useState(false) // 채팅으로 공유 모달
   const [moveProjects, setMoveProjects] = useState<{ id: string; name: string }[]>([])
@@ -453,6 +457,31 @@ export default function ProjectDetail() {
     setSelectMode(false)
   }
 
+  // ── 외부협력업체 현장별 공개 설정 (관리자) ──
+  useEffect(() => {
+    if (!showAccess) return
+    supabase.from('profiles').select('id, name').eq('role', 'partner').then(({ data }) => setPartners(data || []))
+    supabase.from('project_access').select('user_id').eq('project_id', id).then(({ data, error }) => {
+      if (error) { alert('공개설정을 불러오지 못했어요.\n(관리자에게: db/project_access.sql 실행 필요)\n' + error.message); setShowAccess(false); return }
+      setAccessIds(new Set((data || []).map(r => r.user_id)))
+    })
+  }, [showAccess, id])
+
+  async function toggleAccess(uid: string) {
+    if (accessBusy) return
+    setAccessBusy(true)
+    if (accessIds.has(uid)) {
+      const { error } = await supabase.from('project_access').delete().eq('project_id', id).eq('user_id', uid)
+      if (!error) setAccessIds(prev => { const n = new Set(prev); n.delete(uid); return n })
+      else alert('해제 실패: ' + error.message)
+    } else {
+      const { error } = await supabase.from('project_access').insert([{ project_id: id, user_id: uid }])
+      if (!error) setAccessIds(prev => new Set(prev).add(uid))
+      else alert('공개 실패: ' + error.message)
+    }
+    setAccessBusy(false)
+  }
+
   // ── 선택 자료 이동/공유 ──
   useEffect(() => {
     if (!showMove) return
@@ -734,12 +763,20 @@ export default function ProjectDetail() {
                 <p className="text-sm text-gray-500">{project.address || <span className="text-gray-300">주소 미입력</span>}</p>
               </div>
             </div>
-            {!readOnly && (
-              <button onClick={openEditProject}
-                className="flex-shrink-0 border border-gray-300 text-gray-600 px-3 py-1.5 rounded-lg text-sm hover:bg-gray-50">
-                현장 수정
-              </button>
-            )}
+            <div className="flex gap-2 flex-shrink-0">
+              {profile?.role === 'admin' && (
+                <button onClick={() => setShowAccess(true)}
+                  className="border border-amber-300 text-amber-700 px-3 py-1.5 rounded-lg text-sm hover:bg-amber-50">
+                  🔒 외부공개
+                </button>
+              )}
+              {!readOnly && (
+                <button onClick={openEditProject}
+                  className="border border-gray-300 text-gray-600 px-3 py-1.5 rounded-lg text-sm hover:bg-gray-50">
+                  현장 수정
+                </button>
+              )}
+            </div>
           </div>
         </header>
 
@@ -1432,6 +1469,42 @@ export default function ProjectDetail() {
             className="bg-red-500 hover:bg-red-600 text-white text-sm px-2.5 py-1.5 rounded-lg transition-colors">삭제</button>
           <button onClick={clearSelection}
             className="text-gray-400 hover:text-white text-lg leading-none px-1 transition-colors">&times;</button>
+        </div>
+      )}
+
+      {/* 외부협력업체 공개 설정 모달 (관리자) */}
+      {showAccess && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={() => setShowAccess(false)}>
+          <div className="bg-white rounded-2xl w-full max-w-sm shadow-xl max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-6 py-5 border-b border-gray-100 sticky top-0 bg-white">
+              <h2 className="text-lg font-bold">🔒 외부공개 설정</h2>
+              <button onClick={() => setShowAccess(false)} className="text-gray-400 text-2xl">&times;</button>
+            </div>
+            <div className="px-6 py-5">
+              <p className="text-xs text-gray-500 mb-3 leading-relaxed">
+                체크한 <b>외부협력업체</b>만 이 현장(현황·자료·공정)을 볼 수 있어요.
+                체크 안 된 업체는 목록에서도 안 보이고 주소로 들어와도 차단됩니다.
+              </p>
+              {partners.length === 0 ? (
+                <p className="text-center text-sm text-gray-400 py-6">외부협력업체 계정이 없어요<br /><span className="text-xs">(직원 관리에서 역할을 &apos;외부협력업체&apos;로 지정)</span></p>
+              ) : (
+                <div className="border border-gray-200 rounded-lg overflow-hidden">
+                  {partners.map(p => {
+                    const on = accessIds.has(p.id)
+                    return (
+                      <button key={p.id} onClick={() => toggleAccess(p.id)} disabled={accessBusy}
+                        className={`w-full flex items-center gap-2.5 px-3 py-3 text-left border-b border-gray-100 last:border-0 disabled:opacity-60 ${on ? 'bg-green-50' : 'hover:bg-gray-50'}`}>
+                        <span className={`w-5 h-5 rounded border-2 flex items-center justify-center text-xs flex-shrink-0 ${on ? 'bg-green-500 border-green-500 text-white' : 'border-gray-300'}`}>{on ? '✓' : ''}</span>
+                        <span className="text-sm text-gray-800 flex-1 truncate">{p.name}</span>
+                        <span className={`text-xs flex-shrink-0 ${on ? 'text-green-600 font-medium' : 'text-gray-300'}`}>{on ? '공개 중' : '비공개'}</span>
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+              <p className="text-[11px] text-gray-400 mt-3">이 현장에 공개 중: {accessIds.size}곳</p>
+            </div>
+          </div>
         </div>
       )}
 

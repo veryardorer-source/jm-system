@@ -17,11 +17,13 @@
 -- =============================================================
 
 -- ① 전직원 공용 테이블만 auth_all 유지 (금전·민감·채팅 테이블 아님)
+--    projects/schedules/project_assignments는 2026-07-10부터 db/project_access.sql이
+--    partner 현장별 제한 정책으로 관리 — 여기 목록에 다시 넣지 말 것!
 do $$
 declare t text;
 begin
   foreach t in array array[
-    'notices','profiles','project_assignments','projects','schedules'
+    'notices','profiles'
   ] loop
     execute format('alter table public.%I enable row level security;', t);
     execute format('drop policy if exists auth_all on public.%I;', t);
