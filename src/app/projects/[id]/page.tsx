@@ -764,7 +764,7 @@ export default function ProjectDetail() {
               </div>
             </div>
             <div className="flex gap-2 flex-shrink-0">
-              {profile?.role === 'admin' && (
+              {!readOnly && (
                 <button onClick={() => setShowAccess(true)}
                   className="border border-amber-300 text-amber-700 px-3 py-1.5 rounded-lg text-sm hover:bg-amber-50">
                   🔒 외부공개

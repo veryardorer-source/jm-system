@@ -26,6 +26,9 @@ export default function ProjectsPage() {
   const [search, setSearch] = useState('')
   const [editingStatusId, setEditingStatusId] = useState<string | null>(null)
   const [showClosed, setShowClosed] = useState(false)
+  // 새 현장 만들 때 공개할 외부협력업체 선택 (잔디식 초대)
+  const [partners, setPartners] = useState<{ id: string; name: string }[]>([])
+  const [pickedPartners, setPickedPartners] = useState<Set<string>>(new Set())
 
   useEffect(() => { fetchProjects() }, [])
 
@@ -43,6 +46,12 @@ export default function ProjectsPage() {
     fetchProjects()
   }
 
+  // 폼 열릴 때 협력업체 목록 로드
+  useEffect(() => {
+    if (!showForm) return
+    supabase.from('profiles').select('id, name').eq('role', 'partner').then(({ data }) => setPartners(data || []))
+  }, [showForm])
+
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault()
     setSaving(true)
@@ -52,10 +61,17 @@ export default function ProjectsPage() {
       start_date: form.start_date || null,
       end_date: form.end_date || null,
     }
-    const { error } = await supabase.from('projects').insert([payload])
+    const { data: created, error } = await supabase.from('projects').insert([payload]).select('id').single()
     if (error) { setError(error.message); setSaving(false); return }
+    // 선택한 협력업체에게 이 현장 공개 (project_access)
+    if (created && pickedPartners.size > 0) {
+      const { error: ae } = await supabase.from('project_access').insert(
+        Array.from(pickedPartners).map(uid => ({ project_id: created.id, user_id: uid })))
+      if (ae) alert('현장은 만들어졌지만 협력업체 공개 설정에 실패했어요.\n(현장 상세 → 🔒 외부공개에서 다시 시도)\n' + ae.message)
+    }
     notifyOthers(profile?.id, { type: 'project', title: `새 현장 등록 · ${form.name}`, body: [form.client_name, form.address].filter(Boolean).join(' · '), link: '/projects' })
     setForm(EMPTY_FORM)
+    setPickedPartners(new Set())
     setShowForm(false)
     setSaving(false)
     fetchProjects()
@@ -294,6 +310,27 @@ export default function ProjectsPage() {
                   rows={2}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 resize-none" />
               </div>
+              {partners.length > 0 && (
+                <div>
+                  <label className="text-sm font-medium text-gray-700 block mb-1.5">
+                    🔒 외부협력업체 공개 <span className="text-gray-400 font-normal">(선택 — 체크한 업체만 이 현장을 봄)</span>
+                  </label>
+                  <div className="border border-gray-200 rounded-lg overflow-hidden">
+                    {partners.map(p => {
+                      const on = pickedPartners.has(p.id)
+                      return (
+                        <button type="button" key={p.id}
+                          onClick={() => setPickedPartners(prev => { const n = new Set(prev); if (n.has(p.id)) n.delete(p.id); else n.add(p.id); return n })}
+                          className={`w-full flex items-center gap-2.5 px-3 py-2.5 text-left border-b border-gray-100 last:border-0 ${on ? 'bg-green-50' : 'hover:bg-gray-50'}`}>
+                          <span className={`w-5 h-5 rounded border-2 flex items-center justify-center text-xs flex-shrink-0 ${on ? 'bg-green-500 border-green-500 text-white' : 'border-gray-300'}`}>{on ? '✓' : ''}</span>
+                          <span className="text-sm text-gray-800 truncate">{p.name}</span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                  <p className="text-xs text-gray-400 mt-1">나중에 현장 상세 → 🔒 외부공개에서 초대·내보내기 가능</p>
+                </div>
+              )}
               <div className="flex gap-3 mt-2">
                 <button type="button" onClick={() => { setShowForm(false); setError('') }}
                   className="flex-1 border border-gray-300 text-gray-700 py-2.5 rounded-lg text-sm font-medium hover:bg-gray-50">취소</button>

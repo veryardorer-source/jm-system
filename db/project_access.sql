@@ -19,11 +19,13 @@ returns boolean language sql stable security definer set search_path = public
 as $$ select exists(select 1 from public.project_access
                     where project_id = pid and user_id = auth.uid()) $$;
 
--- project_access 자체는 관리자만 편집, 본인 행은 조회 가능
+-- project_access는 직원(admin/designer/field)이 관리 — 현장 만든 사람이 초대/내보내기 (잔디식)
 alter table public.project_access enable row level security;
 drop policy if exists access_admin on public.project_access;
-create policy access_admin on public.project_access for all to authenticated
-  using (public.my_role() = 'admin') with check (public.my_role() = 'admin');
+drop policy if exists access_staff on public.project_access;
+create policy access_staff on public.project_access for all to authenticated
+  using (public.my_role() in ('admin','designer','field'))
+  with check (public.my_role() in ('admin','designer','field'));
 drop policy if exists access_own on public.project_access;
 create policy access_own on public.project_access for select to authenticated
   using (user_id = auth.uid());
