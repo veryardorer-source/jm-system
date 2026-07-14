@@ -13,6 +13,9 @@ const TAB_LIST = ['현황', '자료', '공정', '비용', 'SNS']
 const PHOTO_CATS = ['시공전사진', '시공사진', '마감사진']
 const isVideoUrl = (url: string) => /\.(mp4|mov|webm|m4v|ogg|avi|mkv)$/i.test((url || '').split('?')[0])
 const isVideoFile = (f: ProjectFile) => (f.file_type || '').startsWith('video') || isVideoUrl(f.file_url)
+// 사진 분류에 섞인 PDF·문서를 구분 (이미지가 아니면 문서 카드로 표시)
+const isImageFile = (f: ProjectFile) =>
+  (f.file_type || '').startsWith('image') || /\.(jpg|jpeg|png|gif|webp|heic|heif|bmp)$/i.test(f.file_name || f.file_url || '')
 const CATEGORY_LIST = ['시공전사진', '시공사진', '마감사진', '도면', '3D', '견적서', '계약서', '미팅내용', '고객요청', '구매링크', '기타']
 
 function isHeic(file: File) {
@@ -658,14 +661,33 @@ export default function ProjectDetail() {
     return (f.created_at || '').slice(0, 10)
   }
 
+  // 사진 분류에 섞인 문서(PDF·엑셀 등) 열기
+  function openDocFile(f: ProjectFile) {
+    const name = (f.file_name || f.file_url).toLowerCase()
+    if (/\.(xlsx|xls|xlsb|xlsm|doc|docx|ppt|pptx)$/.test(name)) window.open(`https://view.officeapps.live.com/op/view.aspx?src=${encodeURIComponent(f.file_url)}`, '_blank')
+    else if (name.endsWith('.pdf')) window.open(`https://docs.google.com/viewer?url=${encodeURIComponent(f.file_url)}`, '_blank')
+    else window.open(f.file_url, '_blank')
+  }
+
   function renderPhotoTile(f: ProjectFile) {
     const isSelected = selectedFileIds.has(f.id)
     const isHovered = hoveredFileId === f.id
+    const isDoc = !isVideoFile(f) && !isImageFile(f) && f.file_type !== 'link'
     return (
       <div key={f.id} className="relative group aspect-square"
         onMouseEnter={() => setHoveredFileId(f.id)}
         onMouseLeave={() => setHoveredFileId(null)}>
-        {isVideoFile(f) ? (
+        {isDoc ? (
+          <button
+            onClick={() => (selectMode && !readOnly) ? toggleSelectFile(f.id) : openDocFile(f)}
+            className={`w-full h-full rounded-lg border flex flex-col items-center justify-center gap-1.5 px-2 bg-gray-50 hover:bg-gray-100 transition-all ${
+              isSelected ? 'border-green-500 ring-2 ring-green-500' : 'border-gray-200'
+            }`}>
+            <span className="text-3xl">{/\.pdf$/i.test(f.file_name || '') ? '📄' : /\.(xlsx?|xlsb|xlsm)$/i.test(f.file_name || '') ? '📊' : '📎'}</span>
+            <span className="text-[11px] text-gray-600 text-center leading-snug line-clamp-3 break-all">{f.file_name}</span>
+            <span className="text-[10px] text-green-600">눌러서 열기</span>
+          </button>
+        ) : isVideoFile(f) ? (
           <video src={f.file_url} muted playsInline preload="metadata"
             onClick={() => (selectMode && !readOnly) ? toggleSelectFile(f.id) : setLightbox(f.file_url)}
             className={`w-full h-full object-cover rounded-lg border cursor-pointer transition-all ${
@@ -1592,7 +1614,7 @@ export default function ProjectDetail() {
       {lightbox && (() => {
         const cur = files.find(f => f.file_url === lightbox)
         const gallery = (cur ? files.filter(f => f.category === cur.category) : [])
-          .filter(f => (f.file_type || '') !== 'link' && (isVideoFile(f) || (f.file_type || '').startsWith('image') || PHOTO_CATS.includes(f.category)))
+          .filter(f => (f.file_type || '') !== 'link' && (isVideoFile(f) || isImageFile(f)))
           .sort((a, b) => {
             if (photoGroup === 'date') {
               const d = fileDate(b).localeCompare(fileDate(a)); if (d !== 0) return d
