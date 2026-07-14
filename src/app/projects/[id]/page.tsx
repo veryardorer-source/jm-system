@@ -1486,7 +1486,7 @@ export default function ProjectDetail() {
                 체크 안 된 업체는 목록에서도 안 보이고 주소로 들어와도 차단됩니다.
               </p>
               {partners.length === 0 ? (
-                <p className="text-center text-sm text-gray-400 py-6">외부협력업체 계정이 없어요<br /><span className="text-xs">(직원 관리에서 역할을 &apos;외부협력업체&apos;로 지정)</span></p>
+                <p className="text-center text-sm text-gray-400 py-6">외부협력업체 계정이 없어요<br /><span className="text-xs">(회원 관리에서 역할을 &apos;외부협력업체&apos;로 지정)</span></p>
               ) : (
                 <div className="border border-gray-200 rounded-lg overflow-hidden">
                   {partners.map(p => {

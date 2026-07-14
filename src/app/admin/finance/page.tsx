@@ -83,7 +83,7 @@ export default function FinancePage() {
       <Sidebar />
       <div className="flex-1 flex flex-col">
         <header className="bg-white border-b border-gray-200 px-4 md:px-8 py-4 md:py-5">
-          <h1 className="text-xl font-bold text-gray-900">재정관리</h1>
+          <h1 className="text-xl font-bold text-gray-900">경영관리</h1>
           <p className="text-sm text-gray-500 mt-0.5">관리자만 볼 수 있는 회사 재정 자료입니다</p>
         </header>
         <div className="bg-white border-b border-gray-200 px-4 md:px-8">

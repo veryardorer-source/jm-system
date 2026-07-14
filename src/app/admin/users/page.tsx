@@ -92,7 +92,7 @@ export default function AdminUsersPage() {
         <header className="bg-white border-b border-gray-200 px-4 md:px-8 py-4 md:py-5">
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-xl font-bold text-gray-900">직원 관리</h1>
+              <h1 className="text-xl font-bold text-gray-900">회원 관리</h1>
               <p className="text-sm text-gray-500 mt-0.5">직원 계정 생성 및 권한 설정</p>
             </div>
             <button onClick={() => setShowAddForm(true)}
