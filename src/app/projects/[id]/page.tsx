@@ -121,6 +121,8 @@ export default function ProjectDetail() {
   const [showMove, setShowMove] = useState(false)         // 분류/현장 이동 모달
   const [showChatShare, setShowChatShare] = useState(false) // 채팅으로 공유 모달
   const [moveProjects, setMoveProjects] = useState<{ id: string; name: string }[]>([])
+  const [moveProj, setMoveProj] = useState('')  // 이동할 현장 (기본=현재 현장)
+  const [moveCat, setMoveCat] = useState('')    // 이동할 분류 (선택 필수)
   const [chatPeople, setChatPeople] = useState<{ id: string; name: string }[]>([])
   const [chatRooms, setChatRooms] = useState<{ id: string; name: string }[]>([])
   const [moving, setMoving] = useState(false)
@@ -495,6 +497,8 @@ export default function ProjectDetail() {
   // ── 선택 자료 이동/공유 ──
   useEffect(() => {
     if (!showMove) return
+    setMoveProj(id)   // 기본: 현재 현장
+    setMoveCat('')    // 분류는 직접 선택해야 이동 가능
     supabase.from('projects').select('id, name').neq('id', id).order('name').then(({ data }) => setMoveProjects(data || []))
   }, [showMove, id])
 
@@ -509,22 +513,13 @@ export default function ProjectDetail() {
     })
   }, [showChatShare, profile?.id])
 
-  async function moveToCategory(cat: string) {
-    if (moving) return
+  // 현장 + 분류를 모두 고른 뒤 [이동하기]로 실행
+  async function doMove() {
+    if (!moveCat || moving) return
     setMoving(true)
-    const { error } = await supabase.from('project_files').update({ category: cat }).in('id', Array.from(selectedFileIds))
-    setMoving(false)
-    if (error) { alert('이동 실패: ' + error.message); return }
-    setShowMove(false)
-    clearSelection()
-    fetchAll()
-  }
-
-  async function moveToProject(pid: string, pname: string) {
-    if (moving) return
-    if (!confirm(`선택한 ${selectedFileIds.size}건을 "${pname}" 현장으로 옮길까요?`)) return
-    setMoving(true)
-    const { error } = await supabase.from('project_files').update({ project_id: pid }).in('id', Array.from(selectedFileIds))
+    const payload: Record<string, string> = { category: moveCat }
+    if (moveProj && moveProj !== id) payload.project_id = moveProj
+    const { error } = await supabase.from('project_files').update(payload).in('id', Array.from(selectedFileIds))
     setMoving(false)
     if (error) { alert('이동 실패: ' + error.message); return }
     setShowMove(false)
@@ -1545,29 +1540,37 @@ export default function ProjectDetail() {
             </div>
             <div className="px-6 py-5 flex flex-col gap-5">
               <div>
-                <p className="text-sm font-semibold text-gray-700 mb-2">다른 분류로 이동</p>
-                <div className="flex gap-1.5 flex-wrap">
-                  {allCategories.filter(c => c !== '구매링크').map(c => (
-                    <button key={c} onClick={() => moveToCategory(c)} disabled={moving}
-                      className="text-sm px-3 py-1.5 rounded-full border border-gray-300 text-gray-600 hover:border-green-500 hover:text-green-700 hover:bg-green-50 disabled:opacity-50">
-                      {c}
+                <p className="text-sm font-semibold text-gray-700 mb-2">① 현장 선택</p>
+                <div className="border border-gray-200 rounded-lg max-h-44 overflow-auto">
+                  <button onClick={() => setMoveProj(id)}
+                    className={`w-full text-left px-3 py-2.5 text-sm border-b border-gray-100 flex items-center gap-2 ${moveProj === id ? 'bg-green-50 text-green-700 font-medium' : 'text-gray-700 hover:bg-gray-50'}`}>
+                    <span>{moveProj === id ? '✅' : '📍'}</span> 이 현장 (현재)
+                  </button>
+                  {moveProjects.map(p => (
+                    <button key={p.id} onClick={() => setMoveProj(p.id)}
+                      className={`w-full text-left px-3 py-2.5 text-sm border-b border-gray-100 last:border-0 flex items-center gap-2 ${moveProj === p.id ? 'bg-green-50 text-green-700 font-medium' : 'text-gray-700 hover:bg-gray-50'}`}>
+                      <span>{moveProj === p.id ? '✅' : '🏗️'}</span> {p.name}
                     </button>
                   ))}
                 </div>
               </div>
               <div>
-                <p className="text-sm font-semibold text-gray-700 mb-2">다른 현장으로 이동</p>
-                <div className="border border-gray-200 rounded-lg max-h-48 overflow-auto">
-                  {moveProjects.map(p => (
-                    <button key={p.id} onClick={() => moveToProject(p.id, p.name)} disabled={moving}
-                      className="w-full text-left px-3 py-2.5 text-sm text-gray-700 border-b border-gray-100 last:border-0 hover:bg-green-50 disabled:opacity-50">
-                      🏗️ {p.name}
+                <p className="text-sm font-semibold text-gray-700 mb-2">② 분류 선택 *</p>
+                <div className="flex gap-1.5 flex-wrap">
+                  {allCategories.filter(c => c !== '구매링크').map(c => (
+                    <button key={c} onClick={() => setMoveCat(c)}
+                      className={`text-sm px-3 py-1.5 rounded-full border ${moveCat === c ? 'bg-green-600 text-white border-green-600' : 'border-gray-300 text-gray-600 hover:border-green-400'}`}>
+                      {c}
                     </button>
                   ))}
-                  {moveProjects.length === 0 && <p className="text-center text-xs text-gray-400 py-4">다른 현장이 없어요</p>}
                 </div>
               </div>
-              {moving && <p className="text-xs text-green-600 text-center">이동 중...</p>}
+              <button onClick={doMove} disabled={moving || !moveCat}
+                className="w-full bg-green-600 text-white py-2.5 rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-50">
+                {moving ? '이동 중...' : moveCat
+                  ? `${moveProj === id ? '이 현장' : moveProjects.find(p => p.id === moveProj)?.name || ''} · ${moveCat}(으)로 이동`
+                  : '분류를 선택하세요'}
+              </button>
             </div>
           </div>
         </div>
