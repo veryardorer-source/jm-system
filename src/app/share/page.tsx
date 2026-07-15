@@ -7,7 +7,7 @@ import { supabase } from '@/lib/supabase'
 import { useAuth, canEdit } from '@/lib/auth-context'
 import { notifyOthers } from '@/lib/notify'
 
-const CATEGORY_LIST = ['시공전사진', '시공사진', '마감사진', '도면', '3D', '미팅내용', '고객요청', '기타']
+const CATEGORY_LIST = ['공사전사진', '시공사진', '마감사진', '도면', '3D', '미팅내용', '고객요청', '기타']
 
 type Proj = { id: string; name: string }
 type Dest = 'project' | 'receipt' | 'withdrawal'
@@ -50,7 +50,7 @@ export default function SharePage() {
   const [projects, setProjects] = useState<Proj[]>([])
   const [dest, setDest] = useState<Dest>('project')
   const [projectId, setProjectId] = useState('')
-  const [category, setCategory] = useState('시공전사진')
+  const [category, setCategory] = useState('공사전사진')
   const [memo, setMemo] = useState('')
   const [reason, setReason] = useState('')
   const [loading, setLoading] = useState(true)

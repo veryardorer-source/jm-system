@@ -5,7 +5,7 @@ import Sidebar from '@/components/Sidebar'
 import { supabase } from '@/lib/supabase'
 import { useAuth, canEdit } from '@/lib/auth-context'
 import { notifyOthers } from '@/lib/notify'
-import { shareUrl, downloadUrl } from '@/lib/media'
+import { shareUrl, downloadUrl, isImageUrl, viewInBrowser } from '@/lib/media'
 
 type Photo = {
   id: string
@@ -119,9 +119,18 @@ export default function ReceiptsPage() {
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
               {photos.map((p, i) => (
                 <div key={p.id} className="bg-white rounded-xl border border-gray-200 overflow-hidden group">
-                  <button onClick={() => setViewIdx(i)} className="block w-full" title="크게 보기">
-                    <img src={p.image_url} alt="영수증" className="w-full aspect-square object-cover" />
-                  </button>
+                  {isImageUrl(p.image_url) ? (
+                    <button onClick={() => setViewIdx(i)} className="block w-full" title="크게 보기">
+                      <img src={p.image_url} alt="영수증" loading="lazy" decoding="async" className="w-full aspect-square object-cover" />
+                    </button>
+                  ) : (
+                    <button onClick={() => viewInBrowser(p.image_url, p.memo || '영수증')} title="바로 보기"
+                      className="w-full aspect-square bg-gray-50 hover:bg-gray-100 flex flex-col items-center justify-center gap-1.5 px-2">
+                      <span className="text-3xl">📄</span>
+                      <span className="text-[11px] text-gray-600 text-center line-clamp-2 break-all">{p.memo || '문서'}</span>
+                      <span className="text-[10px] text-green-600">눌러서 열기</span>
+                    </button>
+                  )}
                   <div className="px-3 py-2">
                     {p.memo && <p className="text-xs text-gray-700 truncate">{p.memo}</p>}
                     <div className="flex items-center justify-between mt-1 gap-1">
@@ -144,7 +153,16 @@ export default function ReceiptsPage() {
       {/* 크게 보기 (다운로드 없이) + 내보내기/저장 */}
       {viewIdx !== null && photos[viewIdx] && (
         <div className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-4" onClick={() => setViewIdx(null)}>
-          <img src={photos[viewIdx].image_url} alt="" onClick={e => e.stopPropagation()} className="max-w-full max-h-[85vh] object-contain rounded-lg" />
+          {isImageUrl(photos[viewIdx].image_url) ? (
+            <img src={photos[viewIdx].image_url} alt="" onClick={e => e.stopPropagation()} className="max-w-full max-h-[85vh] object-contain rounded-lg" />
+          ) : (
+            <div onClick={e => e.stopPropagation()} className="bg-white rounded-2xl px-8 py-10 flex flex-col items-center gap-3">
+              <span className="text-5xl">📄</span>
+              <p className="text-sm text-gray-700 text-center max-w-[240px] break-all">{photos[viewIdx].memo || '문서'}</p>
+              <button onClick={() => viewInBrowser(photos[viewIdx!].image_url, photos[viewIdx!].memo || '문서')}
+                className="bg-green-600 text-white text-sm px-5 py-2 rounded-lg font-medium">바로 열기</button>
+            </div>
+          )}
           {viewIdx > 0 && (
             <button onClick={e => { e.stopPropagation(); setViewIdx(viewIdx - 1) }}
               className="absolute left-2 md:left-6 top-1/2 -translate-y-1/2 w-11 h-11 rounded-full bg-white/20 hover:bg-white/30 text-white text-2xl flex items-center justify-center">‹</button>
@@ -226,7 +244,7 @@ function MultiFileZone({ files, onChange }: { files: File[]; onChange: (f: File[
         onDragLeave={() => setDragging(false)}
         onDrop={e => { e.preventDefault(); setDragging(false); addFiles(e.dataTransfer.files) }}
         className={`flex flex-col items-center justify-center w-full h-28 border-2 border-dashed rounded-xl cursor-pointer transition-all ${dragging ? 'border-green-500 bg-green-50' : files.length > 0 ? 'border-green-400 bg-green-50' : 'border-gray-300 hover:border-green-400'}`}>
-        <input ref={inputRef} type="file" multiple accept="image/*" className="hidden"
+        <input ref={inputRef} type="file" multiple className="hidden"
           onChange={e => addFiles(e.target.files)} />
         {files.length > 0 ? (
           <div className="text-center pointer-events-none">

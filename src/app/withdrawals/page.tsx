@@ -5,7 +5,7 @@ import Sidebar from '@/components/Sidebar'
 import { supabase } from '@/lib/supabase'
 import { useAuth, canEdit } from '@/lib/auth-context'
 import { notifyOthers } from '@/lib/notify'
-import { shareUrl, downloadUrl } from '@/lib/media'
+import { shareUrl, downloadUrl, isImageUrl, viewInBrowser } from '@/lib/media'
 
 type Photo = {
   id: string
@@ -222,7 +222,14 @@ export default function WithdrawalsPage() {
                   <button onClick={() => openViewer(p)} className="relative block w-full">
                     {imgs.length > 0 ? (
                       <>
-                        <img src={imgs[0]} alt="출금요청" className="w-full aspect-square object-cover" />
+                        {isImageUrl(imgs[0]) ? (
+                          <img src={imgs[0]} alt="출금요청" loading="lazy" decoding="async" className="w-full aspect-square object-cover" />
+                        ) : (
+                          <div className="w-full aspect-square bg-gray-50 flex flex-col items-center justify-center gap-1.5 px-2">
+                            <span className="text-3xl">📄</span>
+                            <span className="text-[11px] text-gray-600 text-center line-clamp-2 break-all">{p.reason || '문서'}</span>
+                          </div>
+                        )}
                         {imgs.length > 1 && (
                           <span className="absolute top-1.5 right-1.5 bg-black/60 text-white text-xs px-2 py-0.5 rounded-full">📷 {imgs.length}장</span>
                         )}
@@ -311,7 +318,7 @@ export default function WithdrawalsPage() {
                   <>
                     <button onClick={() => viewerFileRef.current?.click()} disabled={viewerBusy}
                       className="text-sm text-green-600 font-medium disabled:opacity-50">+ 사진 추가</button>
-                    <input ref={viewerFileRef} type="file" multiple accept="image/*" className="hidden"
+                    <input ref={viewerFileRef} type="file" multiple className="hidden"
                       onChange={e => { addViewerImages(e.target.files); e.target.value = '' }} />
                   </>
                 )}
@@ -322,7 +329,15 @@ export default function WithdrawalsPage() {
                 <div className="flex flex-col gap-2">
                   {viewerImages.map((u, i) => (
                     <div key={i} className="relative">
-                      <img src={u} alt="" className="w-full rounded-lg" />
+                      {isImageUrl(u) ? (
+                        <img src={u} alt="" loading="lazy" decoding="async" className="w-full rounded-lg" />
+                      ) : (
+                        <button onClick={() => viewInBrowser(u, `출금자료_${i + 1}`)}
+                          className="w-full bg-gray-50 hover:bg-gray-100 border border-gray-200 rounded-lg py-8 flex flex-col items-center gap-2">
+                          <span className="text-4xl">📄</span>
+                          <span className="text-xs text-green-600">눌러서 바로 보기 (다운로드 없음)</span>
+                        </button>
+                      )}
                       <div className="absolute bottom-2 left-2 flex gap-1.5">
                         <button onClick={() => shareUrl(u, `출금_${i + 1}.jpg`)} className="bg-black/60 text-white text-xs px-2.5 py-1 rounded-full">내보내기</button>
                         <button onClick={() => downloadUrl(u, `출금_${i + 1}.jpg`)} className="bg-black/60 text-white text-xs px-2.5 py-1 rounded-full">저장</button>
@@ -409,7 +424,7 @@ function MultiFileZone({ files, onChange }: { files: File[]; onChange: (f: File[
         onDragLeave={() => setDragging(false)}
         onDrop={e => { e.preventDefault(); setDragging(false); addFiles(e.dataTransfer.files) }}
         className={`flex flex-col items-center justify-center w-full h-28 border-2 border-dashed rounded-xl cursor-pointer transition-all ${dragging ? 'border-green-500 bg-green-50' : files.length > 0 ? 'border-green-400 bg-green-50' : 'border-gray-300 hover:border-green-400'}`}>
-        <input ref={inputRef} type="file" multiple accept="image/*" className="hidden"
+        <input ref={inputRef} type="file" multiple className="hidden"
           onChange={e => addFiles(e.target.files)} />
         {files.length > 0 ? (
           <div className="text-center pointer-events-none">

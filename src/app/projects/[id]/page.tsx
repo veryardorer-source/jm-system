@@ -7,16 +7,17 @@ import { supabase, Project, ProjectFile, Schedule, ProjectCost, ProjectAssignmen
 import { useAuth, canEdit } from '@/lib/auth-context'
 import { notifyOthers, notifyDM, notifyRoom } from '@/lib/notify'
 import { compressImage } from '@/lib/image'
+import Image from 'next/image'
 import SnsTab from '@/components/SnsTab'
 
 const TAB_LIST = ['현황', '자료', '공정', '비용', 'SNS']
-const PHOTO_CATS = ['시공전사진', '시공사진', '마감사진']
+const PHOTO_CATS = ['공사전사진', '시공전사진', '시공사진', '마감사진'] // 시공전사진=옛 이름 호환
 const isVideoUrl = (url: string) => /\.(mp4|mov|webm|m4v|ogg|avi|mkv)$/i.test((url || '').split('?')[0])
 const isVideoFile = (f: ProjectFile) => (f.file_type || '').startsWith('video') || isVideoUrl(f.file_url)
 // 사진 분류에 섞인 PDF·문서를 구분 (이미지가 아니면 문서 카드로 표시)
 const isImageFile = (f: ProjectFile) =>
   (f.file_type || '').startsWith('image') || /\.(jpg|jpeg|png|gif|webp|heic|heif|bmp)$/i.test(f.file_name || f.file_url || '')
-const CATEGORY_LIST = ['시공전사진', '시공사진', '마감사진', '도면', '3D', '견적서', '계약서', '미팅내용', '고객요청', '구매링크', '기타']
+const CATEGORY_LIST = ['공사전사진', '시공사진', '마감사진', '도면', '3D', '견적서', '계약서', '미팅내용', '고객요청', '구매링크', '기타']
 
 function isHeic(file: File) {
   return /\.(heic|heif)$/i.test(file.name) || /^image\/hei(c|f)/i.test(file.type)
@@ -43,8 +44,9 @@ async function toBrowserSafeImage(file: File): Promise<{ file: File; ext: string
 
 // HEIC(아이폰 원본) 이미지는 브라우저가 못 띄우므로, 화면에 보여줄 때 즉석에서 JPEG로 변환해 표시.
 // (업로드 자동변환을 거치지 않은 옛 파일도 이제 정상적으로 보임)
-function HeicImg({ src, alt, className, onClick }: {
+function HeicImg({ src, alt, className, onClick, thumb }: {
   src: string; alt?: string; className?: string; onClick?: (e: React.MouseEvent) => void
+  thumb?: boolean // true=격자 썸네일 — 원본 대신 최적화된 작은 이미지 로드(모바일 속도)
 }) {
   const heicSrc = /\.(heic|heif)$/i.test((src || '').split('?')[0])
   const [url, setUrl] = useState(heicSrc ? '' : src)
@@ -72,7 +74,12 @@ function HeicImg({ src, alt, className, onClick }: {
       <span className="text-[10px] text-gray-400 animate-pulse">사진 변환 중...</span>
     </div>
   )
-  return <img src={url} alt={alt} className={className} onClick={onClick} />
+  // 썸네일 모드 + 일반 이미지 → Vercel 이미지 최적화(작은 파일)로 로드. HEIC 변환본(blob:)은 그대로.
+  if (thumb && !url.startsWith('blob:')) {
+    return <Image src={url} alt={alt || ''} fill sizes="(max-width: 768px) 33vw, 200px"
+      className={className} onClick={onClick} />
+  }
+  return <img src={url} alt={alt} className={className} onClick={onClick} loading="lazy" decoding="async" />
 }
 
 export default function ProjectDetail() {
@@ -92,7 +99,7 @@ export default function ProjectDetail() {
   const [savingEdit, setSavingEdit] = useState(false)
 
   const [showFileForm, setShowFileForm] = useState(false)
-  const [fileForm, setFileForm] = useState({ category: '시공전사진', memo: '', linkUrl: '', linkTitle: '' })
+  const [fileForm, setFileForm] = useState({ category: '공사전사진', memo: '', linkUrl: '', linkTitle: '' })
   const [selectedFiles, setSelectedFiles] = useState<File[]>([])
   const [uploading, setUploading] = useState(false)
   const [uploadProgress, setUploadProgress] = useState(0)
@@ -211,7 +218,7 @@ export default function ProjectDetail() {
       }])
       if (error) { alert('저장 실패: ' + error.message); return }
       notifyOthers(profile?.id, { type: 'file', title: `${project?.name || '현장'} · 미팅내용 등록`, body: title, link: `/projects/${id}` })
-      setFileForm({ category: '시공전사진', memo: '', linkUrl: '', linkTitle: '' })
+      setFileForm({ category: '공사전사진', memo: '', linkUrl: '', linkTitle: '' })
       setShowFileForm(false)
       fetchAll()
       return
@@ -301,7 +308,7 @@ export default function ProjectDetail() {
     if (failMsg && done < uploadList.length) alert(`${uploadList.length - done}장 업로드 실패: ${failMsg}`)
     setUploadProgress(100)
     notifyOthers(profile?.id, { type: 'file', title: `${project?.name || '현장'} · 새 자료 ${uploadList.length}건`, body: `${fileForm.category} 자료가 업로드되었습니다`, link: `/projects/${id}` })
-    setFileForm({ category: '시공전사진', memo: '', linkUrl: '', linkTitle: '' })
+    setFileForm({ category: '공사전사진', memo: '', linkUrl: '', linkTitle: '' })
     setSelectedFiles([])
     setShowFileForm(false)
     setUploading(false)
@@ -694,7 +701,7 @@ export default function ProjectDetail() {
               isSelected ? 'border-green-500 ring-2 ring-green-500 brightness-90' : 'border-gray-200'
             }`} />
         ) : (
-          <HeicImg src={f.file_url} alt={f.file_name}
+          <HeicImg src={f.file_url} alt={f.file_name} thumb
             onClick={() => (selectMode && !readOnly) ? toggleSelectFile(f.id) : setLightbox(f.file_url)}
             className={`w-full h-full object-cover rounded-lg border cursor-pointer transition-all ${
               isSelected ? 'border-green-500 ring-2 ring-green-500 brightness-90' : 'border-gray-200'
@@ -1020,7 +1027,7 @@ export default function ProjectDetail() {
                     const catFiles = files.filter(f => f.category === cat)
                       .sort((a, b) => (a.file_name || '').localeCompare(b.file_name || '', undefined, { numeric: true }))
                     if (catFiles.length === 0) return null
-                    const isPhoto = ['시공전사진','시공사진','마감사진'].includes(cat)
+                    const isPhoto = ['공사전사진','시공전사진','시공사진','마감사진'].includes(cat)
                     const isCollapsed = collapsedCats[cat] !== false
                     const allSelected = catFiles.every(f => selectedFileIds.has(f.id))
                     const anySelected = selectedFileIds.size > 0
@@ -1137,10 +1144,8 @@ export default function ProjectDetail() {
                                         setLightbox(f.file_url)
                                       } else if (type.includes('image') || /\.(jpg|jpeg|png|gif|webp|heic)$/.test(name)) {
                                         setLightbox(f.file_url)
-                                      } else if (type.includes('pdf') || name.endsWith('.pdf')) {
-                                        window.open(`https://docs.google.com/viewer?url=${encodeURIComponent(f.file_url)}`, '_blank')
                                       } else {
-                                        window.open(f.file_url, '_blank')
+                                        openDocFile(f) // PDF=구글뷰어, 엑셀·워드=오피스뷰어 — 다운로드 없이 바로 보기
                                       }
                                     }} className="flex-1 min-w-0 text-left">
                                       <p className="text-sm font-medium text-gray-800 hover:text-green-600 truncate">{f.file_name}</p>
@@ -1357,7 +1362,7 @@ export default function ProjectDetail() {
               {/* 자료 종류 선택 */}
               <div className="flex gap-2">
                 <button type="button"
-                  onClick={() => { if (fileForm.category === '구매링크') setFileForm({ ...fileForm, category: '시공전사진' }) }}
+                  onClick={() => { if (fileForm.category === '구매링크') setFileForm({ ...fileForm, category: '공사전사진' }) }}
                   className={`flex-1 py-2.5 rounded-lg text-sm font-medium border ${fileForm.category !== '구매링크' ? 'bg-green-600 text-white border-green-600' : 'bg-white text-gray-600 border-gray-300'}`}>
                   📎 파일/사진
                 </button>

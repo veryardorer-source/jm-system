@@ -5,7 +5,7 @@ import Sidebar from '@/components/Sidebar'
 import { supabase } from '@/lib/supabase'
 import { useAuth, canEdit } from '@/lib/auth-context'
 import { notifyDM, notifyRoom, notifyMention } from '@/lib/notify'
-import { shareUrl, downloadUrl } from '@/lib/media'
+import { shareUrl, downloadUrl, viewInBrowser } from '@/lib/media'
 import LinkPreview from '@/components/LinkPreview'
 
 type Message = {
@@ -674,7 +674,7 @@ export default function ChatPage() {
                                       const imgs = m.images && m.images.length ? m.images : (m.image_url ? [m.image_url] : [])
                                       if (!imgs.length) return null
                                       if (imgs.length === 1) return (
-                                        <img src={imgs[0]} alt="" onClick={() => setChatLightbox(imgs[0])}
+                                        <img src={imgs[0]} alt="" loading="lazy" decoding="async" onClick={() => setChatLightbox(imgs[0])}
                                           className="rounded-2xl max-w-[220px] max-h-[260px] object-cover cursor-pointer border border-gray-200" />
                                       )
                                       // 여러 장 = 한 묶음 격자 (카톡식) — 4장까지 보여주고 나머지는 +N
@@ -682,7 +682,7 @@ export default function ChatPage() {
                                         <div className={`grid gap-1 w-[240px] max-w-[70vw] ${imgs.length === 2 ? 'grid-cols-2' : 'grid-cols-2'}`}>
                                           {imgs.slice(0, 4).map((u, i) => (
                                             <div key={i} className="relative aspect-square">
-                                              <img src={u} alt="" onClick={() => setChatLightbox(u)}
+                                              <img src={u} alt="" loading="lazy" decoding="async" onClick={() => setChatLightbox(u)}
                                                 className="w-full h-full object-cover rounded-lg cursor-pointer border border-gray-200" />
                                               {i === 3 && imgs.length > 4 && (
                                                 <button onClick={() => setChatLightbox(u)}
@@ -696,13 +696,20 @@ export default function ChatPage() {
                                       )
                                     })()}
                                     {m.file_url && (
-                                      <a href={m.file_url} target="_blank" rel="noreferrer" download={m.file_name || true}
-                                        className={`flex items-center gap-2 px-3 py-2.5 rounded-2xl text-sm border max-w-[260px] ${
-                                          mine ? 'bg-green-600 text-white border-green-600' : 'bg-white border-gray-200 text-gray-800'
-                                        }`}>
-                                        <span className="text-lg flex-shrink-0">📎</span>
-                                        <span className="truncate underline">{m.file_name || '파일'}</span>
-                                      </a>
+                                      <div className={`flex items-center gap-1.5 px-3 py-2.5 rounded-2xl text-sm border max-w-[260px] ${
+                                        mine ? 'bg-green-600 text-white border-green-600' : 'bg-white border-gray-200 text-gray-800'
+                                      }`}>
+                                        {/* 클릭 = 다운로드 없이 바로 보기 (PDF·엑셀·워드는 뷰어) */}
+                                        <button onClick={() => viewInBrowser(m.file_url!, m.file_name || '')}
+                                          className="flex items-center gap-2 min-w-0 flex-1 text-left">
+                                          <span className="text-lg flex-shrink-0">📎</span>
+                                          <span className="truncate underline">{m.file_name || '파일'}</span>
+                                        </button>
+                                        <button onClick={() => downloadUrl(m.file_url!, m.file_name || '파일')}
+                                          className={`text-[11px] flex-shrink-0 px-1.5 py-0.5 rounded border ${mine ? 'border-white/40 text-white/90 hover:bg-white/10' : 'border-gray-300 text-gray-500 hover:bg-gray-50'}`}>
+                                          저장
+                                        </button>
+                                      </div>
                                     )}
                                     {m.content && (
                                       <div className={`px-3 py-2 rounded-2xl text-sm whitespace-pre-wrap break-words ${

@@ -66,6 +66,7 @@ export default function DocumentsPage() {
   function openDoc(doc: CompanyDocument) {
     const name = doc.file_name?.toLowerCase() || ''
     if (name.endsWith('.pdf')) window.open(`https://docs.google.com/viewer?url=${encodeURIComponent(doc.file_url)}`, '_blank')
+    else if (/\.(xlsx|xls|xlsb|xlsm|doc|docx|ppt|pptx)$/.test(name)) window.open(`https://view.officeapps.live.com/op/view.aspx?src=${encodeURIComponent(doc.file_url)}`, '_blank')
     else if (/\.(jpg|jpeg|png|gif|webp|heic)$/.test(name)) setLightbox(doc.file_url)
     else window.open(doc.file_url, '_blank')
   }

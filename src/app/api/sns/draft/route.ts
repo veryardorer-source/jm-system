@@ -6,7 +6,7 @@ import { cookies } from 'next/headers'
 import Anthropic from '@anthropic-ai/sdk'
 
 const CATEGORY_BY_TYPE: Record<string, string[]> = {
-  '디자인': ['시공전사진', '도면', '3D'],
+  '디자인': ['공사전사진', '도면', '3D'],
   '시공': ['시공사진'],
   '마감': ['마감사진'],
 }
