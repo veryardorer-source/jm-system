@@ -42,6 +42,16 @@ export default function WithdrawalsPage() {
   useEffect(() => { fetchPhotos() }, [])
   useEffect(() => { if (profile?.name) setRequestedBy(profile.name) }, [profile?.name])
 
+  // 알림 링크(?open=id)로 들어오면 해당 건 상세를 바로 열기
+  const openedFromLink = useRef(false)
+  useEffect(() => {
+    if (loading || openedFromLink.current) return
+    const id = new URLSearchParams(window.location.search).get('open')
+    if (!id) { openedFromLink.current = true; return }
+    const p = photos.find(x => x.id === id)
+    if (p) { openViewer(p); openedFromLink.current = true }
+  }, [loading, photos]) // eslint-disable-line react-hooks/exhaustive-deps
+
   function imgsOf(p: Photo) {
     return (p.images && p.images.length ? p.images : [p.image_url]).filter(Boolean)
   }
@@ -95,7 +105,7 @@ export default function WithdrawalsPage() {
     const next = [...viewerImages, ...added]
     setViewerImages(next)
     await applyViewer(next, viewerReason)
-    if (added.length) notifyOthers(profile?.id, { type: 'withdrawal', title: `출금요청 사진 ${added.length}장 추가`, body: (viewer.reason || '').slice(0, 40), link: '/withdrawals' })
+    if (added.length) notifyOthers(profile?.id, { type: 'withdrawal', title: `출금요청 사진 ${added.length}장 추가`, body: (viewer.reason || '').slice(0, 40), link: `/withdrawals?open=${viewer.id}` })
     setViewerBusy(false)
   }
 
@@ -130,10 +140,10 @@ export default function WithdrawalsPage() {
     }
     const urls = slots.filter(Boolean) as string[]
     if (urls.length > 0 || reason.trim()) {
-      await supabase.from('withdrawal_requests').insert([{
+      const { data: created } = await supabase.from('withdrawal_requests').insert([{
         image_url: urls[0] || '', images: urls, reason, requested_by: requestedBy, status: '요청', amount: 0, recipient: '',
-      }])
-      notifyOthers(profile?.id, { type: 'withdrawal', title: '새 출금요청', body: `${requestedBy || ''} ${reason || '출금요청이 등록되었습니다'}`.trim(), link: '/withdrawals' })
+      }]).select('id').single()
+      notifyOthers(profile?.id, { type: 'withdrawal', title: '새 출금요청', body: `${requestedBy || ''} ${reason || '출금요청이 등록되었습니다'}`.trim(), link: created?.id ? `/withdrawals?open=${created.id}` : '/withdrawals' })
     }
     setSelectedFiles([])
     setReason('')

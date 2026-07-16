@@ -266,14 +266,31 @@ export default function ChatPage() {
     return () => { window.removeEventListener('dragover', over); window.removeEventListener('dragleave', leave); window.removeEventListener('drop', drop) }
   }, [readOnly])
 
+  // 알림 링크(?dm=상대id / ?room=방id)로 들어오면 그 대화를 바로 열기
+  const deepLinkDone = useRef(false)
+  useEffect(() => {
+    if (deepLinkDone.current || !me) return
+    const sp = new URLSearchParams(window.location.search)
+    const dm = sp.get('dm'), room = sp.get('room')
+    if (!dm && !room) { deepLinkDone.current = true; return }
+    if (dm) {
+      if (dm === me) { setActive({ kind: 'dm', id: me, name: '나와의 채팅' }); deepLinkDone.current = true }
+      else { const p = people.find(x => x.id === dm); if (p) { setActive({ kind: 'dm', id: p.id, name: p.name }); deepLinkDone.current = true } }
+    } else if (room) {
+      const r = rooms.find(x => x.id === room)
+      if (r) { setActive({ kind: 'room', id: r.id, name: r.name }); deepLinkDone.current = true }
+    }
+  }, [me, people, rooms])
+
   // 알림/푸시는 서버(/api/push/send)가 대상 계산·검증. 나와의 채팅은 알림 없음.
+  // 링크에 대화 정보를 넣어 알림 클릭 시 그 대화가 바로 열리게 한다.
   function pushNotif(body: string) {
     if (!active) return
     if (active.kind === 'dm') {
       if (active.id === me) return // 나와의 채팅
-      notifyDM(active.id, `${profile?.name || '직원'} 님의 메시지`, body, '/chat')
+      notifyDM(active.id, `${profile?.name || '직원'} 님의 메시지`, body, `/chat?dm=${me}`)
     } else if (active.kind === 'room') {
-      notifyRoom(active.id, `${active.name} · ${profile?.name || '직원'}`, body, '/chat')
+      notifyRoom(active.id, `${active.name} · ${profile?.name || '직원'}`, body, `/chat?room=${active.id}`)
     }
   }
 
@@ -285,7 +302,8 @@ export default function ChatPage() {
     const ctx = active.kind === 'room' ? { roomId: active.id }
       : active.kind === 'dm' ? { recipientId: active.id }
       : {}
-    notifyMention(ids, ctx, `${profile?.name || '직원'} 님이 회원님을 언급했어요`, content.slice(0, 60), '/chat')
+    const link = active.kind === 'room' ? `/chat?room=${active.id}` : active.kind === 'dm' ? `/chat?dm=${me}` : '/chat'
+    notifyMention(ids, ctx, `${profile?.name || '직원'} 님이 회원님을 언급했어요`, content.slice(0, 60), link)
   }
 
   function replyFields() {

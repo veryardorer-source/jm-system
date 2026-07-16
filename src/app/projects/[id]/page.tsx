@@ -88,6 +88,17 @@ export default function ProjectDetail() {
   const { profile } = useAuth()
   const [project, setProject] = useState<Project | null>(null)
   const [tab, setTab] = useState('현황')
+
+  // 알림 링크(?tab=자료/공정/비용)로 들어오면 해당 탭 바로 열기
+  useEffect(() => {
+    const t = new URLSearchParams(window.location.search).get('tab')
+    if (t && TAB_LIST.includes(t) && t !== '비용') setTab(t)
+  }, [])
+  useEffect(() => {
+    // 비용 탭은 권한 확인 후에만 (field·partner는 금액 숨김)
+    const t = new URLSearchParams(window.location.search).get('tab')
+    if (t === '비용' && profile && profile.role !== 'field' && profile.role !== 'partner') setTab('비용')
+  }, [profile])
   const [files, setFiles] = useState<ProjectFile[]>([])
   const [schedules, setSchedules] = useState<Schedule[]>([])
   const [costs, setCosts] = useState<ProjectCost[]>([])
@@ -203,7 +214,7 @@ export default function ProjectDetail() {
         uploaded_by: profile?.name || '',
       }])
       if (error) { alert('저장 실패: ' + error.message); return }
-      notifyOthers(profile?.id, { type: 'file', title: `${project?.name || '현장'} · 새 구매링크`, body: fileForm.linkTitle.trim() || '구매링크가 추가되었습니다', link: `/projects/${id}` })
+      notifyOthers(profile?.id, { type: 'file', title: `${project?.name || '현장'} · 새 구매링크`, body: fileForm.linkTitle.trim() || '구매링크가 추가되었습니다', link: `/projects/${id}?tab=자료` })
       setFileForm({ category: '구매링크', memo: '', linkUrl: '', linkTitle: '' })
       setShowFileForm(false)
       fetchAll()
@@ -219,7 +230,7 @@ export default function ProjectDetail() {
         category: '미팅내용', memo: text, uploaded_by: profile?.name || '',
       }])
       if (error) { alert('저장 실패: ' + error.message); return }
-      notifyOthers(profile?.id, { type: 'file', title: `${project?.name || '현장'} · 미팅내용 등록`, body: title, link: `/projects/${id}` })
+      notifyOthers(profile?.id, { type: 'file', title: `${project?.name || '현장'} · 미팅내용 등록`, body: title, link: `/projects/${id}?tab=자료` })
       setFileForm({ category: '공사전사진', memo: '', linkUrl: '', linkTitle: '' })
       setShowFileForm(false)
       fetchAll()
@@ -309,7 +320,7 @@ export default function ProjectDetail() {
     }
     if (failMsg && done < uploadList.length) alert(`${uploadList.length - done}장 업로드 실패: ${failMsg}`)
     setUploadProgress(100)
-    notifyOthers(profile?.id, { type: 'file', title: `${project?.name || '현장'} · 새 자료 ${uploadList.length}건`, body: `${fileForm.category} 자료가 업로드되었습니다`, link: `/projects/${id}` })
+    notifyOthers(profile?.id, { type: 'file', title: `${project?.name || '현장'} · 새 자료 ${uploadList.length}건`, body: `${fileForm.category} 자료가 업로드되었습니다`, link: `/projects/${id}?tab=자료` })
     setFileForm({ category: '공사전사진', memo: '', linkUrl: '', linkTitle: '' })
     setSelectedFiles([])
     setShowFileForm(false)
@@ -548,8 +559,8 @@ export default function ProjectDetail() {
     setMoving(false)
     if (error) { alert('공유 실패: ' + error.message); return }
     const body = `${project?.name || '현장'} 자료 ${sel.length}건`
-    if (target.kind === 'dm' && target.id && target.id !== profile.id) notifyDM(target.id, `${profile.name || '직원'} 님의 메시지`, body, '/chat')
-    else if (target.kind === 'room' && target.id) notifyRoom(target.id, `${target.name} · ${profile.name || '직원'}`, body, '/chat')
+    if (target.kind === 'dm' && target.id && target.id !== profile.id) notifyDM(target.id, `${profile.name || '직원'} 님의 메시지`, body, `/chat?dm=${profile.id}`)
+    else if (target.kind === 'room' && target.id) notifyRoom(target.id, `${target.name} · ${profile.name || '직원'}`, body, `/chat?room=${target.id}`)
     setShowChatShare(false)
     clearSelection()
     alert(`${sel.length}건을 "${target.name}"(으)로 보냈어요. 채팅에서 확인하세요!`)
@@ -566,7 +577,7 @@ export default function ProjectDetail() {
       setEditingSchedule(null)
     } else {
       await supabase.from('schedules').insert([{ project_id: id, ...sForm, end_date: sForm.end_date || null }])
-      notifyOthers(profile?.id, { type: 'schedule', title: `${project?.name || '현장'} · 공정 추가`, body: `${sForm.task_name} (${sForm.scheduled_date})`, link: `/projects/${id}` })
+      notifyOthers(profile?.id, { type: 'schedule', title: `${project?.name || '현장'} · 공정 추가`, body: `${sForm.task_name} (${sForm.scheduled_date})`, link: `/projects/${id}?tab=공정` })
     }
     setSForm({ task_name: '', scheduled_date: '', end_date: '', manager: '' })
     setShowScheduleForm(false)
@@ -621,7 +632,7 @@ export default function ProjectDetail() {
     } else {
       await supabase.from('project_costs').insert([{ project_id: id, ...payload }])
       // 금액은 알림에 노출하지 않음 (금액 숨김 대상 직원도 알림은 받으므로)
-      notifyOthers(profile?.id, { type: 'cost', title: `${project?.name || '현장'} · 비용 자료 등록`, body: `${cForm.month}${file_name ? ` · ${file_name}` : ''}`, link: `/projects/${id}` })
+      notifyOthers(profile?.id, { type: 'cost', title: `${project?.name || '현장'} · 비용 자료 등록`, body: `${cForm.month}${file_name ? ` · ${file_name}` : ''}`, link: `/projects/${id}?tab=비용` })
     }
     setCForm({ month: '', amount: '', memo: '' })
     setCostFile(null)

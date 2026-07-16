@@ -148,7 +148,7 @@ export default function SharePage() {
     setProgress(100)
     if (dest === 'project') {
       const proj = projects.find(p => p.id === projectId)
-      notifyOthers(profile?.id, { type: 'file', title: `${proj?.name || '현장'} · 공유 자료 ${files.length}건`, body: `${category} 자료가 추가되었습니다`, link: `/projects/${projectId}` })
+      notifyOthers(profile?.id, { type: 'file', title: `${proj?.name || '현장'} · 공유 자료 ${files.length}건`, body: `${category} 자료가 추가되었습니다`, link: `/projects/${projectId}?tab=자료` })
     } else if (dest === 'receipt') {
       notifyOthers(profile?.id, { type: 'receipt', title: `새 영수증 ${files.length}건`, body: reason || '영수증이 등록되었습니다', link: '/receipts' })
     } else {

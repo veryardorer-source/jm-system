@@ -40,6 +40,16 @@ export default function NoticesPage() {
 
   useEffect(() => { fetchNotices() }, [])
 
+  // 알림에서 특정 공지 링크(?open=id)로 들어오면 그 공지를 바로 열기
+  const openedFromLink = useState({ done: false })[0]
+  useEffect(() => {
+    if (loading || openedFromLink.done) return
+    const id = new URLSearchParams(window.location.search).get('open')
+    if (!id) { openedFromLink.done = true; return }
+    const n = notices.find(x => x.id === id)
+    if (n) { setSelected(n); openedFromLink.done = true }
+  }, [loading, notices, openedFromLink])
+
   async function fetchNotices() {
     setLoading(true)
     const { data } = await supabase.from('notices').select('*').order('created_at', { ascending: false })
@@ -50,15 +60,16 @@ export default function NoticesPage() {
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault()
     setSaving(true)
-    const { error } = editing
-      ? await supabase.from('notices').update({ title: form.title, content: form.content, category: form.category, author: form.author }).eq('id', editing.id)
-      : await supabase.from('notices').insert([form])
-    if (error) {
-      alert('저장 실패: ' + error.message)
-      setSaving(false)
-      return
+    let createdId: string | null = null
+    if (editing) {
+      const { error } = await supabase.from('notices').update({ title: form.title, content: form.content, category: form.category, author: form.author }).eq('id', editing.id)
+      if (error) { alert('저장 실패: ' + error.message); setSaving(false); return }
+    } else {
+      const { data: created, error } = await supabase.from('notices').insert([form]).select('id').single()
+      if (error) { alert('저장 실패: ' + error.message); setSaving(false); return }
+      createdId = created?.id || null
     }
-    if (!editing) notifyOthers(profile?.id, { type: 'notice', title: `새 공지 · ${form.title}`, body: form.category, link: '/notices' })
+    if (!editing) notifyOthers(profile?.id, { type: 'notice', title: `새 공지 · ${form.title}`, body: form.category, link: createdId ? `/notices?open=${createdId}` : '/notices' })
     setForm(EMPTY_FORM)
     setEditing(null)
     setShowForm(false)
