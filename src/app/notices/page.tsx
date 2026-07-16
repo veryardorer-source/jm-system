@@ -36,6 +36,7 @@ export default function NoticesPage() {
   const [form, setForm] = useState(EMPTY_FORM)
   const [saving, setSaving] = useState(false)
   const [selected, setSelected] = useState<Notice | null>(null)
+  const [editing, setEditing] = useState<Notice | null>(null) // 수정 중인 공지
 
   useEffect(() => { fetchNotices() }, [])
 
@@ -49,17 +50,27 @@ export default function NoticesPage() {
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault()
     setSaving(true)
-    const { error } = await supabase.from('notices').insert([form])
+    const { error } = editing
+      ? await supabase.from('notices').update({ title: form.title, content: form.content, category: form.category, author: form.author }).eq('id', editing.id)
+      : await supabase.from('notices').insert([form])
     if (error) {
-      alert('등록 실패: ' + error.message)
+      alert('저장 실패: ' + error.message)
       setSaving(false)
       return
     }
-    notifyOthers(profile?.id, { type: 'notice', title: `새 공지 · ${form.title}`, body: form.category, link: '/notices' })
+    if (!editing) notifyOthers(profile?.id, { type: 'notice', title: `새 공지 · ${form.title}`, body: form.category, link: '/notices' })
     setForm(EMPTY_FORM)
+    setEditing(null)
     setShowForm(false)
     setSaving(false)
     fetchNotices()
+  }
+
+  function startEdit(n: Notice) {
+    setEditing(n)
+    setForm({ title: n.title, content: n.content, category: n.category, author: n.author || '' })
+    setSelected(null)
+    setShowForm(true)
   }
 
   async function handleDelete(id: string) {
@@ -164,10 +175,16 @@ export default function NoticesPage() {
                 {new Date(selected.created_at).toLocaleString('ko-KR')}
               </span>
               {!readOnly && (
-                <button onClick={() => handleDelete(selected.id)}
-                  className="text-xs text-red-400 hover:text-red-600 hover:bg-red-50 px-3 py-1.5 rounded-lg transition-colors">
-                  삭제
-                </button>
+                <div className="flex items-center gap-1.5">
+                  <button onClick={() => startEdit(selected)}
+                    className="text-xs text-green-600 hover:text-green-700 hover:bg-green-50 px-3 py-1.5 rounded-lg transition-colors border border-green-200">
+                    ✏ 수정
+                  </button>
+                  <button onClick={() => handleDelete(selected.id)}
+                    className="text-xs text-red-400 hover:text-red-600 hover:bg-red-50 px-3 py-1.5 rounded-lg transition-colors">
+                    삭제
+                  </button>
+                </div>
               )}
             </div>
           </div>
@@ -179,8 +196,8 @@ export default function NoticesPage() {
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl w-full max-w-lg shadow-xl max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between px-6 py-5 border-b border-gray-100 sticky top-0 bg-white">
-              <h2 className="text-lg font-bold">공지 등록</h2>
-              <button onClick={() => { setShowForm(false); setForm(EMPTY_FORM) }} className="text-gray-400 text-2xl">&times;</button>
+              <h2 className="text-lg font-bold">{editing ? '공지 수정' : '공지 등록'}</h2>
+              <button onClick={() => { setShowForm(false); setForm(EMPTY_FORM); setEditing(null) }} className="text-gray-400 text-2xl">&times;</button>
             </div>
             <form onSubmit={handleCreate} className="px-6 py-5 flex flex-col gap-4">
               <div>
@@ -216,11 +233,11 @@ export default function NoticesPage() {
                   className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
               </div>
               <div className="flex gap-3 mt-2">
-                <button type="button" onClick={() => { setShowForm(false); setForm(EMPTY_FORM) }}
+                <button type="button" onClick={() => { setShowForm(false); setForm(EMPTY_FORM); setEditing(null) }}
                   className="flex-1 border border-gray-300 text-gray-700 py-2.5 rounded-lg text-sm font-medium">취소</button>
                 <button type="submit" disabled={saving}
                   className="flex-1 bg-green-600 text-white py-2.5 rounded-lg text-sm font-medium disabled:opacity-50">
-                  {saving ? '저장 중...' : '등록'}
+                  {saving ? '저장 중...' : editing ? '수정 저장' : '등록'}
                 </button>
               </div>
             </form>
