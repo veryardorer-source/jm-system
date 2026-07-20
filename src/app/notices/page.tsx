@@ -5,6 +5,15 @@ import Sidebar from '@/components/Sidebar'
 import { supabase } from '@/lib/supabase'
 import { useAuth, canEdit } from '@/lib/auth-context'
 import { notifyOthers } from '@/lib/notify'
+import LinkPreview from '@/components/LinkPreview'
+
+// 내용 속 URL을 클릭 가능한 링크로
+function renderContent(t: string) {
+  return t.split(/(https?:\/\/[^\s]+)/g).map((p, i) =>
+    /^https?:\/\//.test(p)
+      ? <a key={i} href={p} target="_blank" rel="noreferrer" className="text-green-700 underline break-all">{p}</a>
+      : <span key={i}>{p}</span>)
+}
 
 type Notice = {
   id: string
@@ -179,7 +188,8 @@ export default function NoticesPage() {
             </div>
             <div className="flex-1 overflow-y-auto px-6 py-5">
               <h2 className="text-lg font-bold text-gray-900 mb-4">{selected.title}</h2>
-              <p className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">{selected.content}</p>
+              <p className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">{renderContent(selected.content)}</p>
+              {(() => { const u = (selected.content || '').match(/https?:\/\/[^\s]+/)?.[0]; return u ? <div className="mt-3"><LinkPreview url={u} /></div> : null })()}
             </div>
             <div className="px-6 py-4 border-t border-gray-100 flex items-center justify-between">
               <span className="text-xs text-gray-400">
@@ -233,7 +243,7 @@ export default function NoticesPage() {
               <div>
                 <label className="text-sm font-medium text-gray-700 block mb-1.5">내용 *</label>
                 <textarea required value={form.content} onChange={e => setForm({...form, content: e.target.value})}
-                  placeholder="공지 내용을 입력하세요"
+                  placeholder="공지 내용을 입력하세요 (https:// 링크를 붙여넣으면 클릭 가능한 링크로 표시돼요)"
                   rows={6}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 resize-none" />
               </div>
