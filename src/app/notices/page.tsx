@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase'
 import { useAuth, canEdit } from '@/lib/auth-context'
 import { notifyOthers } from '@/lib/notify'
 import LinkPreview from '@/components/LinkPreview'
+import { compressImage } from '@/lib/image'
 
 // 내용 속 URL을 클릭 가능한 링크로
 function renderContent(t: string) {
@@ -21,6 +22,7 @@ type Notice = {
   content: string
   category: string
   author: string
+  images?: string[] | null   // 첨부 이미지 (캡처 붙여넣기 등)
   created_at: string
 }
 
@@ -46,6 +48,10 @@ export default function NoticesPage() {
   const [saving, setSaving] = useState(false)
   const [selected, setSelected] = useState<Notice | null>(null)
   const [editing, setEditing] = useState<Notice | null>(null) // 수정 중인 공지
+  // 이미지 첨부 (캡처 Ctrl+V·파일 선택)
+  const [imgFiles, setImgFiles] = useState<File[]>([])
+  const [existingImgs, setExistingImgs] = useState<string[]>([])
+  const [imgView, setImgView] = useState<string | null>(null) // 이미지 크게 보기
 
   useEffect(() => { fetchNotices() }, [])
 
@@ -69,17 +75,30 @@ export default function NoticesPage() {
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault()
     setSaving(true)
+    // 첨부 이미지 업로드 (캡처는 크기 축소해 빠르게)
+    const uploaded: string[] = []
+    for (let i = 0; i < imgFiles.length; i++) {
+      const file = await compressImage(imgFiles[i])
+      const ext = file.name.split('.').pop() || 'jpg'
+      const path = `notices/${Date.now()}_${i}.${ext}`
+      const { error: upErr } = await supabase.storage.from('uploads').upload(path, file, { contentType: file.type || 'image/jpeg', upsert: true })
+      if (upErr) { alert('이미지 업로드 실패: ' + upErr.message); setSaving(false); return }
+      uploaded.push(supabase.storage.from('uploads').getPublicUrl(path).data.publicUrl)
+    }
+    const images = [...existingImgs, ...uploaded]
     let createdId: string | null = null
     if (editing) {
-      const { error } = await supabase.from('notices').update({ title: form.title, content: form.content, category: form.category, author: form.author }).eq('id', editing.id)
-      if (error) { alert('저장 실패: ' + error.message); setSaving(false); return }
+      const { error } = await supabase.from('notices').update({ title: form.title, content: form.content, category: form.category, author: form.author, images }).eq('id', editing.id)
+      if (error) { alert('저장 실패: ' + error.message + (error.message.includes('images') ? '\n(관리자에게: notices에 images 컬럼 추가 SQL 실행 필요)' : '')); setSaving(false); return }
     } else {
-      const { data: created, error } = await supabase.from('notices').insert([form]).select('id').single()
-      if (error) { alert('저장 실패: ' + error.message); setSaving(false); return }
+      const { data: created, error } = await supabase.from('notices').insert([{ ...form, images }]).select('id').single()
+      if (error) { alert('저장 실패: ' + error.message + (error.message.includes('images') ? '\n(관리자에게: notices에 images 컬럼 추가 SQL 실행 필요)' : '')); setSaving(false); return }
       createdId = created?.id || null
     }
     if (!editing) notifyOthers(profile?.id, { type: 'notice', title: `새 공지 · ${form.title}`, body: form.category, link: createdId ? `/notices?open=${createdId}` : '/notices' })
     setForm(EMPTY_FORM)
+    setImgFiles([])
+    setExistingImgs([])
     setEditing(null)
     setShowForm(false)
     setSaving(false)
@@ -89,9 +108,25 @@ export default function NoticesPage() {
   function startEdit(n: Notice) {
     setEditing(n)
     setForm({ title: n.title, content: n.content, category: n.category, author: n.author || '' })
+    setExistingImgs(n.images || [])
+    setImgFiles([])
     setSelected(null)
     setShowForm(true)
   }
+
+  // 등록/수정 창이 열려 있는 동안 캡처 붙여넣기(Ctrl+V)로 이미지 추가
+  useEffect(() => {
+    if (!showForm) return
+    const onPaste = (e: ClipboardEvent) => {
+      const imgs = Array.from(e.clipboardData?.items || []).filter(it => it.type.startsWith('image/'))
+      if (!imgs.length) return
+      e.preventDefault()
+      const fs = imgs.map(it => it.getAsFile()).filter(Boolean) as File[]
+      if (fs.length) setImgFiles(prev => [...prev, ...fs])
+    }
+    window.addEventListener('paste', onPaste)
+    return () => window.removeEventListener('paste', onPaste)
+  }, [showForm])
 
   async function handleDelete(id: string) {
     if (!confirm('공지를 삭제할까요?')) return
@@ -114,7 +149,7 @@ export default function NoticesPage() {
             <p className="text-sm text-gray-500 mt-0.5">전체 {scoped.length}개</p>
           </div>
           {!readOnly && (
-            <button onClick={() => setShowForm(true)}
+            <button onClick={() => { setEditing(null); setForm(EMPTY_FORM); setImgFiles([]); setExistingImgs([]); setShowForm(true) }}
               className="bg-green-600 text-white px-4 py-2.5 rounded-lg text-sm font-medium hover:bg-green-700">
               + 공지 등록
             </button>
@@ -159,7 +194,7 @@ export default function NoticesPage() {
                         </span>
                         {n.author && <span className="text-xs text-gray-400">{n.author}</span>}
                       </div>
-                      <p className="font-semibold text-gray-900">{n.title}</p>
+                      <p className="font-semibold text-gray-900">{n.title}{n.images && n.images.length > 0 && <span className="ml-1.5 text-xs text-gray-400">📷 {n.images.length}</span>}</p>
                       <p className="text-sm text-gray-500 mt-1 line-clamp-2">{n.content}</p>
                     </div>
                     <span className="text-xs text-gray-400 flex-shrink-0 mt-1">
@@ -189,6 +224,14 @@ export default function NoticesPage() {
             <div className="flex-1 overflow-y-auto px-6 py-5">
               <h2 className="text-lg font-bold text-gray-900 mb-4">{selected.title}</h2>
               <p className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">{renderContent(selected.content)}</p>
+              {selected.images && selected.images.length > 0 && (
+                <div className="grid grid-cols-2 gap-2 mt-4">
+                  {selected.images.map((u, i) => (
+                    <img key={i} src={u} alt="" loading="lazy" onClick={() => setImgView(u)}
+                      className="w-full rounded-lg border border-gray-200 cursor-pointer hover:opacity-90" />
+                  ))}
+                </div>
+              )}
               {(() => { const u = (selected.content || '').match(/https?:\/\/[^\s]+/)?.[0]; return u ? <div className="mt-3"><LinkPreview url={u} /></div> : null })()}
             </div>
             <div className="px-6 py-4 border-t border-gray-100 flex items-center justify-between">
@@ -248,6 +291,32 @@ export default function NoticesPage() {
                   className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 resize-none" />
               </div>
               <div>
+                <label className="text-sm font-medium text-gray-700 block mb-1.5">이미지 첨부 <span className="text-gray-400 font-normal">(선택 — 캡처 후 Ctrl+V 붙여넣기 가능)</span></label>
+                <label className="flex items-center justify-center w-full border-2 border-dashed border-gray-300 rounded-lg py-3 text-sm text-gray-500 cursor-pointer hover:border-green-400">
+                  클릭해서 선택 · 또는 캡처하고 <span className="text-green-600 font-medium ml-1">Ctrl+V</span>
+                  <input type="file" multiple accept="image/*" className="hidden"
+                    onChange={e => { const fs = Array.from(e.target.files || []); if (fs.length) setImgFiles(prev => [...prev, ...fs]); e.currentTarget.value = '' }} />
+                </label>
+                {(existingImgs.length > 0 || imgFiles.length > 0) && (
+                  <div className="grid grid-cols-4 gap-2 mt-2">
+                    {existingImgs.map((u, i) => (
+                      <div key={'e' + i} className="relative aspect-square">
+                        <img src={u} alt="" className="w-full h-full object-cover rounded-lg border border-gray-200" />
+                        <button type="button" onClick={() => setExistingImgs(prev => prev.filter(x => x !== u))}
+                          className="absolute -top-1.5 -right-1.5 bg-black/70 text-white w-5 h-5 rounded-full text-xs leading-none">×</button>
+                      </div>
+                    ))}
+                    {imgFiles.map((f, i) => (
+                      <div key={'n' + i} className="relative aspect-square">
+                        <img src={URL.createObjectURL(f)} alt="" className="w-full h-full object-cover rounded-lg border border-green-300" />
+                        <button type="button" onClick={() => setImgFiles(prev => prev.filter((_, j) => j !== i))}
+                          className="absolute -top-1.5 -right-1.5 bg-black/70 text-white w-5 h-5 rounded-full text-xs leading-none">×</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <div>
                 <label className="text-sm font-medium text-gray-700 block mb-1.5">작성자</label>
                 <input value={form.author} onChange={e => setForm({...form, author: e.target.value})}
                   placeholder="홍길동"
@@ -263,6 +332,14 @@ export default function NoticesPage() {
               </div>
             </form>
           </div>
+        </div>
+      )}
+
+      {/* 첨부 이미지 크게 보기 */}
+      {imgView && (
+        <div className="fixed inset-0 bg-black/90 z-[70] flex items-center justify-center p-4" onClick={() => setImgView(null)}>
+          <img src={imgView} alt="" onClick={e => e.stopPropagation()} className="max-w-full max-h-[90vh] object-contain rounded-lg" />
+          <button onClick={() => setImgView(null)} className="absolute top-4 right-4 text-white text-3xl leading-none">&times;</button>
         </div>
       )}
     </div>
