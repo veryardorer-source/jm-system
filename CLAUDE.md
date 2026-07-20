@@ -42,7 +42,7 @@ npx vercel --prod  # 배포 (jm-system 폴더에서 실행)
   - **본인 데이터만**: notifications(`db/rls_notifications.sql`), chat_reads(본인 읽음행만 upsert)
   - **역할별 제한**(`db/rls_money.sql`): receipts·withdrawal_requests·payments=admin/designer/field, project_costs=admin/designer, company_documents=admin전체·designer/field는 전체공개만·쓰기 admin, project_files=승인자 읽기·비파트너 쓰기
   - **채팅 참여자 기준**(`db/rls_chat.sql`): messages/chat_rooms/chat_room_members/message_reactions는 참여자·본인 기준, insert는 승인 실무역할만(partner=보기전용, pending 차단). 헬퍼 `my_role()`/`is_approved()`/`is_room_member()`/`can_see_message()`(security definer)
-  - **partner**: 현장 관련(금전 제외) 보기 전용 — 채팅/금전/서류 insert·update 불가, 화면도 숨김
+  - **partner**: **공개 지정된 현장만**(project_access, 현장 등록 시 선택 + 현장 상세 🔒 외부공개에서 초대/내보내기) 보기 전용 — 미지정 현장은 목록·직접 URL 모두 차단. 채팅/금전/서류 insert·update 불가, 화면도 숨김. 수금(payments)은 admin 전용
   - **pending(미승인)**: 업무 데이터 접근 불가(읽기·쓰기 모두)
   - ⚠️ 운영 DB에 rls_* SQL 적용 전 **스냅샷/백업 권장**. 파일별 적용 상태는 `../관리시스템/docs/security_status.md` 참고
 - **⚠️ TODO — Storage(uploads) public 버킷**: 계약서·손익표·매출매입·출금 등 민감 파일도 public URL(URL만 알면 무로그인 열람). **추후 민감 파일부터 private bucket + signed URL로 전환할 것**(카테고리별 버킷 분리 권장, 사진 표시·공유 로직 영향 큼). 또한 엑셀/PDF "바로 열기"는 MS Office/Google 뷰어에 파일 URL을 전달하므로 민감 재무 파일은 뷰어 대신 다운로드 열람 정책 검토. (db/*.sql 구버전 전체허용 정책은 2026-07-07 전부 최신 RLS 기준으로 정리됨 — 재실행 안전)
@@ -52,7 +52,8 @@ npx vercel --prod  # 배포 (jm-system 폴더에서 실행)
   3. 기능 테이블: `payments.sql` `worklogs.sql` `push_subscriptions.sql` `finance_quotes.sql` `employee_records.sql` `chat_features.sql` `chat_reads.sql` `payroll_ledger.sql` `profit_file.sql` 등
   4. `db/rls_notifications.sql` — **필수** (없으면 알림 전면 차단)
   5. `db/rls_chat.sql` — **필수** (없으면 채팅 전면 차단)
-  6. `db/rls_sensitive.sql` → 7. `db/rls_money.sql`
+  6. `db/rls_sensitive.sql` → 7. `db/rls_money.sql` → 8. `db/project_access.sql` — **필수** (partner 현장별 접근)
+  - project_files 정책은 rls_money와 project_access가 **동일 내용**(partner=공개 현장만)이라 어느 쪽을 나중에 실행해도 결과가 같음.
   - 모든 파일은 drop-후-create 방식이라 **재실행 안전**. 운영 DB 재적용 시엔 스냅샷 후 실행.
 - **푸시/알림**(`/api/push/send`): 클라이언트가 대상 지정 못 함. `{event: dm|room|mention|broadcast}`로 서버가 수신자 계산·검증(DM 당사자/방 멤버십/멘션 참여자/승인역할) 후 인앱알림+웹푸시. 헬퍼 `lib/notify.ts`
 

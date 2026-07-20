@@ -6,10 +6,12 @@
 -- ⚠ 운영 데이터 접근 영향 → SQL Editor에서 검토 후 실행. 실행 전 스냅샷 권장.
 --
 -- 정책 근거(현재 앱 동작과 일치, 기능 안 깨지게):
---   receipts/withdrawals/payments : 화면에서 partner만 차단, admin/designer/field 사용 → 동일 적용
+--   receipts/withdrawals          : admin/designer/field 사용(현장팀이 등록), partner·pending 차단
+--   payments(수금)                : **admin 전용** (2026-07-10 대표 확정)
 --   project_costs                 : 현장상세 canSeeMoney=(field·partner 제외) → admin/designer
 --   company_documents             : admin=전체, 그 외=전체공개만, 쓰기=admin (화면 로직과 동일)
---   project_files                 : 승인자 읽기, partner 보기전용(쓰기 불가)
+--   project_files                 : 직원=전체 읽기·쓰기 / partner=공개 지정 현장만 읽기(project_access 기준)
+--                                   → db/project_access.sql 과 동일 정책. 어느 파일을 나중에 실행해도 결과 동일.
 --   finance_* / employees*        : 이미 rls_sensitive.sql 에서 admin 전용(중복 정의 안 함)
 -- =============================================================
 
@@ -91,15 +93,31 @@ begin
   end if;
 end $$;
 
--- ── 현장 자료(project_files): 승인자 읽기, partner 보기전용(쓰기 불가) ──
--- (partner "배정 현장만"은 project_assignments 에 user_id 연결이 없어 보류 → security_status.md 참고)
+-- ── 현장 자료(project_files): 직원=전체 / partner=공개 지정 현장만 (project_access.sql 과 동일 정책) ──
+-- 실행 순서와 무관하게 같은 결과가 되도록, 선행 요소(project_access 테이블·함수)를 여기서도 보장한다.
+create table if not exists public.project_access (
+  project_id uuid not null references public.projects(id) on delete cascade,
+  user_id    uuid not null,
+  created_at timestamptz not null default now(),
+  primary key (project_id, user_id)
+);
+
+create or replace function public.has_project_access(pid uuid)
+returns boolean language sql stable security definer set search_path = public
+as $$ select exists(select 1 from public.project_access
+                    where project_id = pid and user_id = auth.uid()) $$;
+
 do $$
 begin
   if to_regclass('public.project_files') is not null then
     alter table public.project_files enable row level security;
     perform public._drop_all_policies('project_files');
+    -- partner는 공개 지정된 현장 자료만 (미지정 현장·pending 차단)
     create policy files_select on public.project_files for select to authenticated
-      using (public.is_approved());
+      using (
+        public.my_role() in ('admin','designer','field')
+        or (public.my_role() = 'partner' and public.has_project_access(project_id))
+      );
     create policy files_insert on public.project_files for insert to authenticated
       with check (public.my_role() in ('admin','designer','field'));
     create policy files_update on public.project_files for update to authenticated

@@ -13,7 +13,9 @@
 --  4. rls_notifications.sql      (알림 정책 — 이거 없으면 알림 접근 차단됨)
 --  5. rls_chat.sql               (채팅 정책 — 이거 없으면 채팅 접근 차단됨)
 --  6. rls_sensitive.sql          (민감정보 admin 전용)
---  7. rls_money.sql              (금전/서류/현장자료 역할별)
+--  7. rls_money.sql              (금전/서류/현장자료 역할별 — project_files는 partner 현장별 기준 포함)
+--  8. project_access.sql         (필수: partner 현장별 접근 — projects/schedules/assignments)
+--     ※ project_files 정책은 7·8 어느 쪽을 나중에 실행해도 동일(partner=공개 현장만)하게 맞춰져 있음
 -- =============================================================
 
 -- 요청 사용자의 역할 (profiles.role)
