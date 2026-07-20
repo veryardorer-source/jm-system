@@ -24,6 +24,7 @@ type Body = {
   recipientId?: string
   recipientIds?: string[]
   roomId?: string
+  roles?: string[]        // broadcast 한정: 이 역할들에게만 (예: 수금 알림 → admin/designer)
   notifType?: string
   title?: string
   body?: string
@@ -47,7 +48,7 @@ export async function POST(req: NextRequest) {
   const { data: meProf } = await admin.from('profiles').select('id, role, name').eq('id', user.id).single()
   if (!meProf || !APPROVED.includes(meProf.role)) return NextResponse.json({ error: '권한 없음' }, { status: 403 })
 
-  const { event, recipientId, recipientIds, roomId, notifType, title, body, link } = (await req.json()) as Body
+  const { event, recipientId, recipientIds, roomId, roles, notifType, title, body, link } = (await req.json()) as Body
 
   // 3) 서버가 수신자를 직접 계산·검증 (클라이언트가 임의 대상 지정 불가)
   let recipients: string[] = []
@@ -85,8 +86,11 @@ export async function POST(req: NextRequest) {
     }
   } else if (event === 'broadcast') {
     if (meProf.role === 'partner') return NextResponse.json({ error: '권한 없음' }, { status: 403 })
-    const { data: profs } = await admin.from('profiles').select('id')
-    recipients = (profs || []).map(p => p.id).filter(id => id !== user.id)
+    const { data: profs } = await admin.from('profiles').select('id, role')
+    const roleFilter = Array.isArray(roles) && roles.length ? roles : null
+    recipients = (profs || [])
+      .filter(p => !roleFilter || roleFilter.includes(p.role))
+      .map(p => p.id).filter(id => id !== user.id)
   } else {
     return NextResponse.json({ error: 'event 값 필요' }, { status: 400 })
   }

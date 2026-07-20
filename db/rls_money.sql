@@ -31,11 +31,11 @@ begin
   end loop;
 end $$;
 
--- ── 금전자료: admin/designer/field 접근, partner·미승인 차단 ──
+-- ── 영수증/출금: admin/designer/field 접근 (현장팀이 등록해야 함), partner·미승인 차단 ──
 do $$
 declare t text;
 begin
-  foreach t in array array['receipts','withdrawal_requests','payments'] loop
+  foreach t in array array['receipts','withdrawal_requests'] loop
     if to_regclass('public.'||t) is null then continue; end if;
     execute format('alter table public.%I enable row level security', t);
     perform public._drop_all_policies(t);
@@ -43,6 +43,18 @@ begin
       using (public.my_role() in ('admin','designer','field'))
       with check (public.my_role() in ('admin','designer','field'))$f$, t);
   end loop;
+end $$;
+
+-- ── 수금(payments): admin/designer만 — 고객 입금 정보라 현장팀 차단 (2026-07-10 변경) ──
+do $$
+begin
+  if to_regclass('public.payments') is not null then
+    alter table public.payments enable row level security;
+    perform public._drop_all_policies('payments');
+    create policy payments_rw on public.payments for all to authenticated
+      using (public.my_role() in ('admin','designer'))
+      with check (public.my_role() in ('admin','designer'));
+  end if;
 end $$;
 
 -- ── 현장 비용(project_costs): admin/designer 만 (field·partner 제외) ──

@@ -6,6 +6,7 @@ type NotifyPayload = {
   recipientId?: string
   recipientIds?: string[]
   roomId?: string
+  roles?: string[]   // broadcast 한정: 이 역할들에게만
   notifType?: string
   title: string
   body?: string
@@ -22,11 +23,13 @@ function postNotify(p: NotifyPayload) {
 
 // 본인을 제외한 전체 직원에게 알림 (서버가 대상 계산 → 임의 대상 지정 불가)
 // currentUserId 는 호출부 호환용(서버가 auth.uid()로 본인 제외하므로 실제로는 미사용).
+// roles 를 주면 그 역할들에게만 (예: 수금 알림 → ['admin','designer'])
 export function notifyOthers(
   _currentUserId: string | undefined,
-  n: { type: string; title: string; body?: string; link?: string }
+  n: { type: string; title: string; body?: string; link?: string },
+  roles?: string[]
 ) {
-  postNotify({ event: 'broadcast', notifType: n.type, title: n.title, body: n.body ?? '', link: n.link ?? '/' })
+  postNotify({ event: 'broadcast', roles, notifType: n.type, title: n.title, body: n.body ?? '', link: n.link ?? '/' })
 }
 
 // 1:1 채팅 알림

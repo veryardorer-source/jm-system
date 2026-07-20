@@ -30,6 +30,9 @@ const ADMIN_ITEMS = [
 // 외부협력업체(partner)에게 숨길 메뉴 (금전·내부 자료) — 현장 관련만 보이게
 const PARTNER_HIDDEN = ['/receipts', '/withdrawals', '/payments', '/worklogs', '/documents', '/contacts', '/chat', '/search']
 
+// 현장팀(field)에게 숨길 메뉴 — 수금(고객 입금)은 금액 정보라 admin/designer만
+const FIELD_HIDDEN = ['/payments']
+
 // 모바일 하단바에 항상 보일 핵심 메뉴 (나머지는 '더보기'로)
 const MOBILE_PRIMARY = ['/', '/projects', '/chat', '/notifications']
 const MOBILE_SHORT: Record<string, string> = {
@@ -50,7 +53,10 @@ export default function Sidebar() {
   const { profile, signOut } = useAuth()
   const isAdmin = profile?.role === 'admin'
   const isPartner = profile?.role === 'partner'
-  const navItems = isPartner ? NAV_ITEMS.filter(i => !PARTNER_HIDDEN.includes(i.href)) : NAV_ITEMS
+  const isField = profile?.role === 'field'
+  const navItems = NAV_ITEMS.filter(i =>
+    (!isPartner || !PARTNER_HIDDEN.includes(i.href)) &&
+    (!isField || !FIELD_HIDDEN.includes(i.href)))
   const [unread, setUnread] = useState(0)
   const [chatUnread, setChatUnread] = useState(0)
   const [moreOpen, setMoreOpen] = useState(false)
