@@ -5,7 +5,7 @@ import Sidebar from '@/components/Sidebar'
 import { supabase } from '@/lib/supabase'
 import { useAuth, canEdit } from '@/lib/auth-context'
 import { notifyOthers } from '@/lib/notify'
-import { shareUrl, downloadUrl, isImageUrl, viewInBrowser } from '@/lib/media'
+import { shareUrl, downloadUrl, isImageUrl, viewInBrowser, printUrl } from '@/lib/media'
 
 type Photo = {
   id: string
@@ -349,6 +349,7 @@ export default function WithdrawalsPage() {
                         </button>
                       )}
                       <div className="absolute bottom-2 left-2 flex gap-1.5">
+                        <button onClick={() => printUrl(u)} className="bg-black/60 text-white text-xs px-2.5 py-1 rounded-full">🖨 인쇄</button>
                         <button onClick={() => shareUrl(u, `출금_${i + 1}.jpg`)} className="bg-black/60 text-white text-xs px-2.5 py-1 rounded-full">내보내기</button>
                         <button onClick={() => downloadUrl(u, `출금_${i + 1}.jpg`)} className="bg-black/60 text-white text-xs px-2.5 py-1 rounded-full">저장</button>
                       </div>

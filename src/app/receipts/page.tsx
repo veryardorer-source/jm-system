@@ -5,7 +5,7 @@ import Sidebar from '@/components/Sidebar'
 import { supabase } from '@/lib/supabase'
 import { useAuth, canEdit } from '@/lib/auth-context'
 import { notifyOthers } from '@/lib/notify'
-import { shareUrl, downloadUrl, isImageUrl, viewInBrowser } from '@/lib/media'
+import { shareUrl, downloadUrl, isImageUrl, viewInBrowser, printUrl } from '@/lib/media'
 
 type Photo = {
   id: string
@@ -173,6 +173,7 @@ export default function ReceiptsPage() {
           )}
           <div className="absolute bottom-5 left-1/2 -translate-x-1/2 flex items-center gap-2" onClick={e => e.stopPropagation()}>
             <span className="bg-black/50 text-white text-xs px-3 py-1.5 rounded-full">{viewIdx + 1} / {photos.length}</span>
+            <button onClick={() => printUrl(photos[viewIdx!].image_url)} className="bg-white/20 hover:bg-white/30 text-white text-xs px-3 py-1.5 rounded-full">🖨 인쇄</button>
             <button onClick={() => shareUrl(photos[viewIdx!].image_url, `영수증_${viewIdx! + 1}.jpg`)} className="bg-white/20 hover:bg-white/30 text-white text-xs px-3 py-1.5 rounded-full">내보내기</button>
             <button onClick={() => downloadUrl(photos[viewIdx!].image_url, `영수증_${viewIdx! + 1}.jpg`)} className="bg-white/20 hover:bg-white/30 text-white text-xs px-3 py-1.5 rounded-full">저장</button>
           </div>

@@ -19,6 +19,19 @@ export function viewInBrowser(url: string, name?: string) {
   }
 }
 
+// 바로 인쇄 — 이미지는 인쇄용 창을 열어 즉시 인쇄 대화상자, PDF는 브라우저 뷰어(인쇄 버튼)로
+export function printUrl(url: string) {
+  const n = (url || '').toLowerCase().split('?')[0]
+  if (n.endsWith('.pdf')) { window.open(url, '_blank'); return }
+  const w = window.open('', '_blank')
+  if (!w) { window.open(url, '_blank'); return }
+  w.document.write(
+    `<html><head><title>인쇄</title><style>@page{margin:10mm}body{margin:0;display:flex;justify-content:center;align-items:flex-start}img{max-width:100%;max-height:100vh}</style></head>` +
+    `<body><img src="${url}" onload="setTimeout(function(){window.print()},300)" /></body></html>`
+  )
+  w.document.close()
+}
+
 // 내보내기(공유) — 모바일은 공유 시트, 안 되면 다운로드로 폴백
 export async function shareUrl(url: string, name?: string) {
   const filename = name || url.split('/').pop()?.split('?')[0] || 'file'
