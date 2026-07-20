@@ -111,7 +111,10 @@ export default function ProjectDetail() {
 
   const [showFileForm, setShowFileForm] = useState(false)
   const [fileForm, setFileForm] = useState({ category: '공사전사진', memo: '', linkUrl: '', linkTitle: '' })
-  const [editingLink, setEditingLink] = useState<ProjectFile | null>(null) // 구매링크 수정 중
+  // 자료 수정 (모든 분류 공통 — 제목·분류·메모, 링크는 URL까지)
+  const [editFile, setEditFile] = useState<ProjectFile | null>(null)
+  const [editFileForm, setEditFileForm] = useState({ title: '', category: '', url: '', memo: '' })
+  const [savingFileEdit, setSavingFileEdit] = useState(false)
   const [selectedFiles, setSelectedFiles] = useState<File[]>([])
   const [uploading, setUploading] = useState(false)
   const [uploadProgress, setUploadProgress] = useState(0)
@@ -202,26 +205,21 @@ export default function ProjectDetail() {
   async function handleFileUpload(e: React.FormEvent) {
     e.preventDefault()
 
-    // 구매링크: 파일 없이 URL만 저장 (수정 모드면 업데이트)
+    // 구매링크: 파일 없이 URL만 저장
     if (fileForm.category === '구매링크') {
       if (!fileForm.linkUrl.trim()) return
-      const payload = {
+      const { error } = await supabase.from('project_files').insert([{
+        project_id: id,
         file_name: fileForm.linkTitle.trim() || fileForm.linkUrl,
         file_url: fileForm.linkUrl.trim(),
+        file_type: 'link',
+        category: '구매링크',
         memo: fileForm.memo || '',
-      }
-      if (editingLink) {
-        const { error } = await supabase.from('project_files').update(payload).eq('id', editingLink.id)
-        if (error) { alert('수정 실패: ' + error.message); return }
-      } else {
-        const { error } = await supabase.from('project_files').insert([{
-          project_id: id, file_type: 'link', category: '구매링크', uploaded_by: profile?.name || '', ...payload,
-        }])
-        if (error) { alert('저장 실패: ' + error.message); return }
-        notifyOthers(profile?.id, { type: 'file', title: `${project?.name || '현장'} · 새 구매링크`, body: fileForm.linkTitle.trim() || '구매링크가 추가되었습니다', link: `/projects/${id}?tab=자료` })
-      }
+        uploaded_by: profile?.name || '',
+      }])
+      if (error) { alert('저장 실패: ' + error.message); return }
+      notifyOthers(profile?.id, { type: 'file', title: `${project?.name || '현장'} · 새 구매링크`, body: fileForm.linkTitle.trim() || '구매링크가 추가되었습니다', link: `/projects/${id}?tab=자료` })
       setFileForm({ category: '구매링크', memo: '', linkUrl: '', linkTitle: '' })
-      setEditingLink(null)
       setShowFileForm(false)
       fetchAll()
       return
@@ -447,6 +445,34 @@ export default function ProjectDetail() {
     await navigator.clipboard.writeText(`${file.file_name}\n${file.file_url}`)
     setCopiedUrlId(file.id)
     setTimeout(() => setCopiedUrlId(null), 2000)
+  }
+
+  // 자료 수정 열기/저장 — 모든 분류 공통 (제목·분류·메모, 링크는 URL도)
+  function openEditFile(f: ProjectFile) {
+    setEditFile(f)
+    setEditFileForm({ title: f.file_name || '', category: f.category || '기타', url: f.file_type === 'link' ? f.file_url : '', memo: f.memo || '' })
+    setLightbox(null)
+  }
+
+  async function saveEditFile(e: React.FormEvent) {
+    e.preventDefault()
+    if (!editFile || savingFileEdit) return
+    if (!editFileForm.title.trim()) return
+    setSavingFileEdit(true)
+    const payload: Record<string, string> = {
+      file_name: editFileForm.title.trim(),
+      category: editFileForm.category.trim() || '기타',
+      memo: editFileForm.memo,
+    }
+    if (editFile.file_type === 'link') {
+      if (!editFileForm.url.trim()) { alert('링크 URL을 입력하세요'); setSavingFileEdit(false); return }
+      payload.file_url = editFileForm.url.trim()
+    }
+    const { error } = await supabase.from('project_files').update(payload).eq('id', editFile.id)
+    setSavingFileEdit(false)
+    if (error) { alert('수정 실패: ' + error.message); return }
+    setEditFile(null)
+    fetchAll()
   }
 
   async function deleteFile(file: ProjectFile) {
@@ -1171,12 +1197,9 @@ export default function ProjectDetail() {
                                       <button onClick={() => downloadFile(f)}
                                         className="text-xs text-gray-400 hover:text-green-600 flex-shrink-0">저장</button>
                                     </>)}
-                                    {!readOnly && f.file_type === 'link' && (
-                                      <button onClick={() => {
-                                        setEditingLink(f)
-                                        setFileForm({ category: '구매링크', memo: f.memo || '', linkUrl: f.file_url, linkTitle: f.file_name || '' })
-                                        setShowFileForm(true)
-                                      }} className="text-xs text-green-500 hover:text-green-700 flex-shrink-0">수정</button>
+                                    {!readOnly && (
+                                      <button onClick={() => openEditFile(f)}
+                                        className="text-xs text-green-500 hover:text-green-700 flex-shrink-0">수정</button>
                                     )}
                                     {!readOnly && (
                                       <button onClick={() => deleteFile(f)}
@@ -1374,12 +1397,12 @@ export default function ProjectDetail() {
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl w-full max-w-md shadow-xl max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between px-6 py-5 border-b border-gray-100 sticky top-0 bg-white">
-              <h2 className="text-lg font-bold">{editingLink ? '구매링크 수정' : '자료 업로드'}</h2>
-              <button onClick={() => { setShowFileForm(false); setSelectedFiles([]); setEditingLink(null) }} className="text-gray-400 text-2xl">&times;</button>
+              <h2 className="text-lg font-bold">자료 업로드</h2>
+              <button onClick={() => { setShowFileForm(false); setSelectedFiles([]) }} className="text-gray-400 text-2xl">&times;</button>
             </div>
             <form onSubmit={handleFileUpload} className="px-6 py-5 flex flex-col gap-4">
-              {/* 자료 종류 선택 (수정 중엔 링크로 고정) */}
-              <div className={`flex gap-2 ${editingLink ? 'hidden' : ''}`}>
+              {/* 자료 종류 선택 */}
+              <div className="flex gap-2">
                 <button type="button"
                   onClick={() => { if (fileForm.category === '구매링크') setFileForm({ ...fileForm, category: '공사전사진' }) }}
                   className={`flex-1 py-2.5 rounded-lg text-sm font-medium border ${fileForm.category !== '구매링크' ? 'bg-green-600 text-white border-green-600' : 'bg-white text-gray-600 border-gray-300'}`}>
@@ -1483,7 +1506,7 @@ export default function ProjectDetail() {
               )}
 
               <div className="flex gap-3 mt-2">
-                <button type="button" onClick={() => { setShowFileForm(false); setSelectedFiles([]); setEditingLink(null) }}
+                <button type="button" onClick={() => { setShowFileForm(false); setSelectedFiles([]) }}
                   className="flex-1 border border-gray-300 text-gray-700 py-2.5 rounded-lg text-sm font-medium">취소</button>
                 <button type="submit"
                   disabled={uploading
@@ -1491,7 +1514,7 @@ export default function ProjectDetail() {
                     || (fileForm.category === '미팅내용' && selectedFiles.length === 0 && !fileForm.memo.trim())
                     || (fileForm.category !== '구매링크' && fileForm.category !== '미팅내용' && selectedFiles.length === 0)}
                   className="flex-1 bg-green-600 text-white py-2.5 rounded-lg text-sm font-medium disabled:opacity-50">
-                  {uploading ? `업로드 중...` : editingLink ? '수정 저장' : selectedFiles.length > 1 ? `${selectedFiles.length}개 업로드` : selectedFiles.length === 1 ? '업로드' : fileForm.category === '미팅내용' ? '글 저장' : '업로드'}
+                  {uploading ? `업로드 중...` : selectedFiles.length > 1 ? `${selectedFiles.length}개 업로드` : selectedFiles.length === 1 ? '업로드' : fileForm.category === '미팅내용' ? '글 저장' : '업로드'}
                 </button>
               </div>
             </form>
@@ -1680,10 +1703,60 @@ export default function ProjectDetail() {
             {gallery.length > 1 && (
               <div className="absolute bottom-5 left-1/2 -translate-x-1/2 bg-black/50 text-white text-xs px-3 py-1 rounded-full">{idx + 1} / {gallery.length}</div>
             )}
+            {!readOnly && (
+              <button onClick={e => { e.stopPropagation(); const cur = files.find(f => f.file_url === lightbox); if (cur) openEditFile(cur) }}
+                className="absolute bottom-5 right-4 bg-white/20 hover:bg-white/30 text-white text-xs px-3 py-1.5 rounded-full">✏ 수정</button>
+            )}
             <button onClick={e => { e.stopPropagation(); setLightbox(null) }} className="absolute top-4 right-4 text-white text-3xl leading-none">&times;</button>
           </div>
         )
       })()}
+
+      {/* 자료 수정 모달 (모든 분류 공통) */}
+      {editFile && (
+        <div className="fixed inset-0 bg-black/40 z-[70] flex items-center justify-center p-4" onClick={() => setEditFile(null)}>
+          <div className="bg-white rounded-2xl w-full max-w-sm shadow-xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-6 py-5 border-b border-gray-100 sticky top-0 bg-white">
+              <h2 className="text-lg font-bold">자료 수정</h2>
+              <button onClick={() => setEditFile(null)} className="text-gray-400 text-2xl">&times;</button>
+            </div>
+            <form onSubmit={saveEditFile} className="px-6 py-5 flex flex-col gap-4">
+              <div>
+                <label className="text-sm font-medium text-gray-700 block mb-1.5">제목 *</label>
+                <input required value={editFileForm.title} onChange={e => setEditFileForm({ ...editFileForm, title: e.target.value })}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
+              </div>
+              {editFile.file_type === 'link' && (
+                <div>
+                  <label className="text-sm font-medium text-gray-700 block mb-1.5">링크 URL *</label>
+                  <input value={editFileForm.url} onChange={e => setEditFileForm({ ...editFileForm, url: e.target.value })} type="url"
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
+                </div>
+              )}
+              <div>
+                <label className="text-sm font-medium text-gray-700 block mb-1.5">분류</label>
+                <select value={editFileForm.category} onChange={e => setEditFileForm({ ...editFileForm, category: e.target.value })}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500">
+                  {allCategories.map(c => <option key={c} value={c}>{c}</option>)}
+                  {!allCategories.includes(editFileForm.category) && <option value={editFileForm.category}>{editFileForm.category}</option>}
+                </select>
+              </div>
+              <div>
+                <label className="text-sm font-medium text-gray-700 block mb-1.5">
+                  {PHOTO_CATS.includes(editFileForm.category) ? '구역/공간 (같은 이름끼리 묶여요)' : '메모'}
+                </label>
+                <textarea value={editFileForm.memo} onChange={e => setEditFileForm({ ...editFileForm, memo: e.target.value })} rows={3}
+                  placeholder={PHOTO_CATS.includes(editFileForm.category) ? '예) 거실, 주방, 1층' : '예) 3개 주문 · 색상 화이트'}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 resize-y" />
+              </div>
+              <button type="submit" disabled={savingFileEdit || !editFileForm.title.trim()}
+                className="bg-green-600 text-white py-2.5 rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-50">
+                {savingFileEdit ? '저장 중...' : '수정 저장'}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* 현장 수정 모달 */}
       {showEditForm && (
