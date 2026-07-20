@@ -111,6 +111,7 @@ export default function ProjectDetail() {
 
   const [showFileForm, setShowFileForm] = useState(false)
   const [fileForm, setFileForm] = useState({ category: '공사전사진', memo: '', linkUrl: '', linkTitle: '' })
+  const [editingLink, setEditingLink] = useState<ProjectFile | null>(null) // 구매링크 수정 중
   const [selectedFiles, setSelectedFiles] = useState<File[]>([])
   const [uploading, setUploading] = useState(false)
   const [uploadProgress, setUploadProgress] = useState(0)
@@ -201,21 +202,26 @@ export default function ProjectDetail() {
   async function handleFileUpload(e: React.FormEvent) {
     e.preventDefault()
 
-    // 구매링크: 파일 없이 URL만 저장
+    // 구매링크: 파일 없이 URL만 저장 (수정 모드면 업데이트)
     if (fileForm.category === '구매링크') {
       if (!fileForm.linkUrl.trim()) return
-      const { error } = await supabase.from('project_files').insert([{
-        project_id: id,
+      const payload = {
         file_name: fileForm.linkTitle.trim() || fileForm.linkUrl,
         file_url: fileForm.linkUrl.trim(),
-        file_type: 'link',
-        category: '구매링크',
         memo: fileForm.memo || '',
-        uploaded_by: profile?.name || '',
-      }])
-      if (error) { alert('저장 실패: ' + error.message); return }
-      notifyOthers(profile?.id, { type: 'file', title: `${project?.name || '현장'} · 새 구매링크`, body: fileForm.linkTitle.trim() || '구매링크가 추가되었습니다', link: `/projects/${id}?tab=자료` })
+      }
+      if (editingLink) {
+        const { error } = await supabase.from('project_files').update(payload).eq('id', editingLink.id)
+        if (error) { alert('수정 실패: ' + error.message); return }
+      } else {
+        const { error } = await supabase.from('project_files').insert([{
+          project_id: id, file_type: 'link', category: '구매링크', uploaded_by: profile?.name || '', ...payload,
+        }])
+        if (error) { alert('저장 실패: ' + error.message); return }
+        notifyOthers(profile?.id, { type: 'file', title: `${project?.name || '현장'} · 새 구매링크`, body: fileForm.linkTitle.trim() || '구매링크가 추가되었습니다', link: `/projects/${id}?tab=자료` })
+      }
       setFileForm({ category: '구매링크', memo: '', linkUrl: '', linkTitle: '' })
+      setEditingLink(null)
       setShowFileForm(false)
       fetchAll()
       return
@@ -1165,6 +1171,13 @@ export default function ProjectDetail() {
                                       <button onClick={() => downloadFile(f)}
                                         className="text-xs text-gray-400 hover:text-green-600 flex-shrink-0">저장</button>
                                     </>)}
+                                    {!readOnly && f.file_type === 'link' && (
+                                      <button onClick={() => {
+                                        setEditingLink(f)
+                                        setFileForm({ category: '구매링크', memo: f.memo || '', linkUrl: f.file_url, linkTitle: f.file_name || '' })
+                                        setShowFileForm(true)
+                                      }} className="text-xs text-green-500 hover:text-green-700 flex-shrink-0">수정</button>
+                                    )}
                                     {!readOnly && (
                                       <button onClick={() => deleteFile(f)}
                                         className="text-xs text-red-400 hover:text-red-600 flex-shrink-0">삭제</button>
@@ -1361,12 +1374,12 @@ export default function ProjectDetail() {
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl w-full max-w-md shadow-xl max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between px-6 py-5 border-b border-gray-100 sticky top-0 bg-white">
-              <h2 className="text-lg font-bold">자료 업로드</h2>
-              <button onClick={() => { setShowFileForm(false); setSelectedFiles([]) }} className="text-gray-400 text-2xl">&times;</button>
+              <h2 className="text-lg font-bold">{editingLink ? '구매링크 수정' : '자료 업로드'}</h2>
+              <button onClick={() => { setShowFileForm(false); setSelectedFiles([]); setEditingLink(null) }} className="text-gray-400 text-2xl">&times;</button>
             </div>
             <form onSubmit={handleFileUpload} className="px-6 py-5 flex flex-col gap-4">
-              {/* 자료 종류 선택 */}
-              <div className="flex gap-2">
+              {/* 자료 종류 선택 (수정 중엔 링크로 고정) */}
+              <div className={`flex gap-2 ${editingLink ? 'hidden' : ''}`}>
                 <button type="button"
                   onClick={() => { if (fileForm.category === '구매링크') setFileForm({ ...fileForm, category: '공사전사진' }) }}
                   className={`flex-1 py-2.5 rounded-lg text-sm font-medium border ${fileForm.category !== '구매링크' ? 'bg-green-600 text-white border-green-600' : 'bg-white text-gray-600 border-gray-300'}`}>
@@ -1451,7 +1464,7 @@ export default function ProjectDetail() {
                     className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 resize-y leading-relaxed" />
                 ) : (
                   <input value={fileForm.memo} onChange={e => setFileForm({...fileForm, memo: e.target.value})}
-                    placeholder={PHOTO_CATS.includes(fileForm.category) ? '예) 거실, 주방, 화장실, 1층' : '예) 평면도 v2'}
+                    placeholder={PHOTO_CATS.includes(fileForm.category) ? '예) 거실, 주방, 화장실, 1층' : fileForm.category === '구매링크' ? '예) 3개 주문 · 색상 화이트' : '예) 평면도 v2'}
                     className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
                 )}
               </div>
@@ -1470,7 +1483,7 @@ export default function ProjectDetail() {
               )}
 
               <div className="flex gap-3 mt-2">
-                <button type="button" onClick={() => { setShowFileForm(false); setSelectedFiles([]) }}
+                <button type="button" onClick={() => { setShowFileForm(false); setSelectedFiles([]); setEditingLink(null) }}
                   className="flex-1 border border-gray-300 text-gray-700 py-2.5 rounded-lg text-sm font-medium">취소</button>
                 <button type="submit"
                   disabled={uploading
@@ -1478,7 +1491,7 @@ export default function ProjectDetail() {
                     || (fileForm.category === '미팅내용' && selectedFiles.length === 0 && !fileForm.memo.trim())
                     || (fileForm.category !== '구매링크' && fileForm.category !== '미팅내용' && selectedFiles.length === 0)}
                   className="flex-1 bg-green-600 text-white py-2.5 rounded-lg text-sm font-medium disabled:opacity-50">
-                  {uploading ? `업로드 중...` : selectedFiles.length > 1 ? `${selectedFiles.length}개 업로드` : selectedFiles.length === 1 ? '업로드' : fileForm.category === '미팅내용' ? '글 저장' : '업로드'}
+                  {uploading ? `업로드 중...` : editingLink ? '수정 저장' : selectedFiles.length > 1 ? `${selectedFiles.length}개 업로드` : selectedFiles.length === 1 ? '업로드' : fileForm.category === '미팅내용' ? '글 저장' : '업로드'}
                 </button>
               </div>
             </form>
