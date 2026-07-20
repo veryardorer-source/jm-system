@@ -75,8 +75,11 @@ export default function SearchPage() {
       const { data: wd } = await supabase.from('withdrawal_requests').select('*').or(`reason.ilike.${like},requested_by.ilike.${like}`).limit(15)
       ;(wd || []).forEach(w => results.push({ kind: '출금요청', icon: '💸', title: (w.reason || '출금요청').slice(0, 40), sub: w.requested_by, href: '/withdrawals' }))
 
-      const { data: pays } = await supabase.from('payments').select('*').or(`project_name.ilike.${like},note.ilike.${like}`).limit(15)
-      ;(pays || []).forEach(p => results.push({ kind: '수금', icon: '💰', title: `${p.project_name} · ${p.type}`, sub: `${Number(p.amount).toLocaleString()}원`, href: '/payments' }))
+      // 수금은 관리자만
+      if (profile?.role === 'admin') {
+        const { data: pays } = await supabase.from('payments').select('*').or(`project_name.ilike.${like},note.ilike.${like}`).limit(15)
+        ;(pays || []).forEach(p => results.push({ kind: '수금', icon: '💰', title: `${p.project_name} · ${p.type}`, sub: `${Number(p.amount).toLocaleString()}원`, href: '/payments' }))
+      }
     }
 
     setHits(results)

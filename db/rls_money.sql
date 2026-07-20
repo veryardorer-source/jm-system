@@ -45,15 +45,15 @@ begin
   end loop;
 end $$;
 
--- ── 수금(payments): admin/designer만 — 고객 입금 정보라 현장팀 차단 (2026-07-10 변경) ──
+-- ── 수금(payments): 관리자 전용 — 고객 입금 정보 (2026-07-10 대표 확정) ──
 do $$
 begin
   if to_regclass('public.payments') is not null then
     alter table public.payments enable row level security;
     perform public._drop_all_policies('payments');
     create policy payments_rw on public.payments for all to authenticated
-      using (public.my_role() in ('admin','designer'))
-      with check (public.my_role() in ('admin','designer'));
+      using (public.my_role() = 'admin')
+      with check (public.my_role() = 'admin');
   end if;
 end $$;
 

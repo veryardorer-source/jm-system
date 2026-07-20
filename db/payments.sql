@@ -16,14 +16,14 @@ create table if not exists public.payments (
   created_at  timestamptz not null default now()
 );
 
--- 2) 보안(RLS) — 수금은 admin/designer만 (현장팀 차단 — 2026-07-10, rls_money.sql 기준)
+-- 2) 보안(RLS) — 수금은 관리자 전용 (2026-07-10 대표 확정, rls_money.sql 기준)
 alter table public.payments enable row level security;
 drop policy if exists "payments auth all" on public.payments;
 drop policy if exists money_staff on public.payments;
 drop policy if exists payments_rw on public.payments;
 create policy payments_rw on public.payments for all to authenticated
-  using (public.my_role() in ('admin','designer'))
-  with check (public.my_role() in ('admin','designer'));
+  using (public.my_role() = 'admin')
+  with check (public.my_role() = 'admin');
 
 -- 3) jm-todolist 수금 45건 이전 (payments 비어있을 때만 — 중복방지)
 --    현장명이 jm-system 현장과 일치하면 project_id 자동 연결

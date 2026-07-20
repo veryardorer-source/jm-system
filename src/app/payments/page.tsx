@@ -122,7 +122,7 @@ export default function PaymentsPage() {
     if (editingId) await supabase.from('payments').update(row).eq('id', editingId)
     else {
       await supabase.from('payments').insert([row])
-      notifyOthers(profile?.id, { type: 'payment', title: '새 수금 등록', body: `${row.project_name} ${row.type} ${row.amount.toLocaleString()}원`, link: '/payments' }, ['admin', 'designer'])
+      notifyOthers(profile?.id, { type: 'payment', title: '새 수금 등록', body: `${row.project_name} ${row.type} ${row.amount.toLocaleString()}원`, link: '/payments' }, ['admin'])
     }
     setShowForm(false)
     setEditingId(null)
@@ -142,7 +142,7 @@ export default function PaymentsPage() {
     setPayments(ps => ps.filter(x => x.id !== p.id))
   }
 
-  if (profile?.role === 'partner' || profile?.role === 'field') return (
+  if (profile && profile.role !== 'admin') return (
     <div className="flex flex-col md:flex-row min-h-screen">
       <Sidebar />
       <div className="flex-1 flex items-center justify-center text-gray-400 text-sm">접근 권한이 없습니다.</div>
