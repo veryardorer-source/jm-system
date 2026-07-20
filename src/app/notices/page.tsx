@@ -1,6 +1,6 @@
 ﻿'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import Sidebar from '@/components/Sidebar'
 import { supabase } from '@/lib/supabase'
 import { useAuth, canEdit } from '@/lib/auth-context'
@@ -52,6 +52,8 @@ export default function NoticesPage() {
   const [imgFiles, setImgFiles] = useState<File[]>([])
   const [existingImgs, setExistingImgs] = useState<string[]>([])
   const [imgView, setImgView] = useState<string | null>(null) // 이미지 크게 보기
+  const contentRef = useRef<HTMLTextAreaElement>(null)
+  const addImagesRef = useRef<(fs: File[]) => void>(() => {})
 
   useEffect(() => { fetchNotices() }, [])
 
@@ -114,6 +116,22 @@ export default function NoticesPage() {
     setShowForm(true)
   }
 
+  // 이미지 추가 — 블로그처럼 글 속 커서 위치에 [사진N] 표시를 넣고, 그 자리에 이미지가 보이게
+  function addImagesWithTokens(fs: File[]) {
+    if (!fs.length) return
+    const startIdx = existingImgs.length + imgFiles.length
+    const tokens = fs.map((_, i) => `[사진${startIdx + i + 1}]`).join('\n')
+    const ta = contentRef.current
+    const pos = ta && document.activeElement === ta ? ta.selectionStart : form.content.length
+    const before = form.content.slice(0, pos)
+    const after = form.content.slice(pos)
+    const sep1 = before && !before.endsWith('\n') ? '\n' : ''
+    const sep2 = after && !after.startsWith('\n') ? '\n' : ''
+    setForm({ ...form, content: before + sep1 + tokens + sep2 + after })
+    setImgFiles(prev => [...prev, ...fs])
+  }
+  useEffect(() => { addImagesRef.current = addImagesWithTokens })
+
   // 등록/수정 창이 열려 있는 동안 캡처 붙여넣기(Ctrl+V)로 이미지 추가
   useEffect(() => {
     if (!showForm) return
@@ -122,7 +140,7 @@ export default function NoticesPage() {
       if (!imgs.length) return
       e.preventDefault()
       const fs = imgs.map(it => it.getAsFile()).filter(Boolean) as File[]
-      if (fs.length) setImgFiles(prev => [...prev, ...fs])
+      if (fs.length) addImagesRef.current(fs)
     }
     window.addEventListener('paste', onPaste)
     return () => window.removeEventListener('paste', onPaste)
@@ -223,15 +241,39 @@ export default function NoticesPage() {
             </div>
             <div className="flex-1 overflow-y-auto px-6 py-5">
               <h2 className="text-lg font-bold text-gray-900 mb-4">{selected.title}</h2>
-              <p className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">{renderContent(selected.content)}</p>
-              {selected.images && selected.images.length > 0 && (
-                <div className="grid grid-cols-2 gap-2 mt-4">
-                  {selected.images.map((u, i) => (
-                    <img key={i} src={u} alt="" loading="lazy" onClick={() => setImgView(u)}
-                      className="w-full rounded-lg border border-gray-200 cursor-pointer hover:opacity-90" />
-                  ))}
-                </div>
-              )}
+              {(() => {
+                const imgs = selected.images || []
+                const used = new Set<number>()
+                // 글 속 [사진N] 자리에 이미지를 끼워 넣기 (블로그식)
+                const nodes = (selected.content || '').split(/(\[사진\d+\])/g).map((p, i) => {
+                  const m = p.match(/^\[사진(\d+)\]$/)
+                  if (m) {
+                    const idx = Number(m[1]) - 1
+                    const u = imgs[idx]
+                    if (u) {
+                      used.add(idx)
+                      return <img key={i} src={u} alt="" loading="lazy" onClick={() => setImgView(u)}
+                        className="block w-full max-w-md rounded-lg border border-gray-200 my-2 cursor-pointer hover:opacity-90" />
+                    }
+                    return null
+                  }
+                  return <span key={i}>{renderContent(p)}</span>
+                })
+                const rest = imgs.filter((_, i) => !used.has(i))
+                return (
+                  <>
+                    <div className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">{nodes}</div>
+                    {rest.length > 0 && (
+                      <div className="grid grid-cols-2 gap-2 mt-4">
+                        {rest.map((u, i) => (
+                          <img key={i} src={u} alt="" loading="lazy" onClick={() => setImgView(u)}
+                            className="w-full rounded-lg border border-gray-200 cursor-pointer hover:opacity-90" />
+                        ))}
+                      </div>
+                    )}
+                  </>
+                )
+              })()}
               {(() => { const u = (selected.content || '').match(/https?:\/\/[^\s]+/)?.[0]; return u ? <div className="mt-3"><LinkPreview url={u} /></div> : null })()}
             </div>
             <div className="px-6 py-4 border-t border-gray-100 flex items-center justify-between">
@@ -285,23 +327,24 @@ export default function NoticesPage() {
               </div>
               <div>
                 <label className="text-sm font-medium text-gray-700 block mb-1.5">내용 *</label>
-                <textarea required value={form.content} onChange={e => setForm({...form, content: e.target.value})}
-                  placeholder="공지 내용을 입력하세요 (https:// 링크를 붙여넣으면 클릭 가능한 링크로 표시돼요)"
+                <textarea required ref={contentRef} value={form.content} onChange={e => setForm({...form, content: e.target.value})}
+                  placeholder="공지 내용을 입력하세요. 글 쓰다가 캡처를 Ctrl+V 하면 그 위치에 [사진1]이 들어가고, 볼 때 그 자리에 이미지가 나와요 (블로그처럼 글·사진 번갈아 작성 가능). 링크도 붙여넣으면 클릭돼요."
                   rows={6}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 resize-none" />
               </div>
               <div>
-                <label className="text-sm font-medium text-gray-700 block mb-1.5">이미지 첨부 <span className="text-gray-400 font-normal">(선택 — 캡처 후 Ctrl+V 붙여넣기 가능)</span></label>
+                <label className="text-sm font-medium text-gray-700 block mb-1.5">이미지 첨부 <span className="text-gray-400 font-normal">(글 속 [사진N] 위치에 표시돼요)</span></label>
                 <label className="flex items-center justify-center w-full border-2 border-dashed border-gray-300 rounded-lg py-3 text-sm text-gray-500 cursor-pointer hover:border-green-400">
-                  클릭해서 선택 · 또는 캡처하고 <span className="text-green-600 font-medium ml-1">Ctrl+V</span>
+                  클릭해서 선택 · 또는 내용 쓰다가 캡처 <span className="text-green-600 font-medium ml-1">Ctrl+V</span>
                   <input type="file" multiple accept="image/*" className="hidden"
-                    onChange={e => { const fs = Array.from(e.target.files || []); if (fs.length) setImgFiles(prev => [...prev, ...fs]); e.currentTarget.value = '' }} />
+                    onChange={e => { const fs = Array.from(e.target.files || []); if (fs.length) addImagesWithTokens(fs); e.currentTarget.value = '' }} />
                 </label>
                 {(existingImgs.length > 0 || imgFiles.length > 0) && (
                   <div className="grid grid-cols-4 gap-2 mt-2">
                     {existingImgs.map((u, i) => (
                       <div key={'e' + i} className="relative aspect-square">
                         <img src={u} alt="" className="w-full h-full object-cover rounded-lg border border-gray-200" />
+                        <span className="absolute bottom-0.5 left-0.5 bg-black/60 text-white text-[10px] px-1 rounded">사진{i + 1}</span>
                         <button type="button" onClick={() => setExistingImgs(prev => prev.filter(x => x !== u))}
                           className="absolute -top-1.5 -right-1.5 bg-black/70 text-white w-5 h-5 rounded-full text-xs leading-none">×</button>
                       </div>
@@ -309,12 +352,14 @@ export default function NoticesPage() {
                     {imgFiles.map((f, i) => (
                       <div key={'n' + i} className="relative aspect-square">
                         <img src={URL.createObjectURL(f)} alt="" className="w-full h-full object-cover rounded-lg border border-green-300" />
+                        <span className="absolute bottom-0.5 left-0.5 bg-black/60 text-white text-[10px] px-1 rounded">사진{existingImgs.length + i + 1}</span>
                         <button type="button" onClick={() => setImgFiles(prev => prev.filter((_, j) => j !== i))}
                           className="absolute -top-1.5 -right-1.5 bg-black/70 text-white w-5 h-5 rounded-full text-xs leading-none">×</button>
                       </div>
                     ))}
                   </div>
                 )}
+                <p className="text-[11px] text-gray-400 mt-1">이미지를 삭제하면 뒷번호가 하나씩 당겨지니, 글 속 [사진N] 번호도 함께 확인하세요.</p>
               </div>
               <div>
                 <label className="text-sm font-medium text-gray-700 block mb-1.5">작성자</label>
