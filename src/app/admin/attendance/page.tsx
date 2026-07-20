@@ -6,7 +6,7 @@ import Sidebar from '@/components/Sidebar'
 import { useAuth } from '@/lib/auth-context'
 import { createClient } from '@/lib/supabase-browser'
 
-type Employee = { id: string; name: string; is_active: boolean }
+type Employee = { id: string; name: string; is_active: boolean; employment_type?: string }
 type Att = { id: string; employee_id: string; att_date: string; att_type: string; memo: string | null }
 
 const ATT_TYPES = ['연차', '반차', '조퇴', '결근', '지각', '기타']
@@ -36,7 +36,8 @@ export default function AttendancePage() {
     setLoading(true)
     const sb = createClient()
     const [{ data: e }, { data: a }] = await Promise.all([
-      sb.from('employees').select('id, name, is_active').order('name'),
+      // 근태는 상용직(정규직)만 — 일용직 제외
+      sb.from('employees').select('id, name, is_active, employment_type').neq('employment_type', '일용직').order('name'),
       sb.from('employee_attendance').select('*')
         .gte('att_date', `${year}-01-01`).lte('att_date', `${year}-12-31`)
         .order('att_date', { ascending: false }),
@@ -102,7 +103,7 @@ export default function AttendancePage() {
         <header className="bg-white border-b border-gray-200 px-4 md:px-8 py-4 md:py-5 flex items-center justify-between flex-shrink-0">
           <div>
             <h1 className="text-xl font-bold text-gray-900">근태 관리</h1>
-            <p className="text-sm text-gray-500 mt-0.5">연차·조퇴·결근 기록 (관리자 전용)</p>
+            <p className="text-sm text-gray-500 mt-0.5">연차·조퇴·결근 기록 · 상용직만 (관리자 전용)</p>
           </div>
           <button onClick={() => { setEditing(null); setForm({ employee_id: activeEmps[0]?.id || '', att_date: new Date().toISOString().slice(0, 10), att_type: '연차', memo: '' }); setShowForm(true) }}
             className="bg-green-600 text-white px-4 py-2.5 rounded-lg text-sm font-medium hover:bg-green-700">+ 기록 추가</button>
