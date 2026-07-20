@@ -24,6 +24,7 @@ const NAV_ITEMS = [
 const ADMIN_ITEMS = [
   { href: '/admin/users', label: '회원 관리', icon: '👥' },
   { href: '/admin/employees', label: '직원정보내역', icon: '🔒' },
+  { href: '/admin/attendance', label: '근태 관리', icon: '🗓️' },
   { href: '/admin/finance', label: '경영관리', icon: '📊' },
 ]
 
