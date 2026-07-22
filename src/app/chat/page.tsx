@@ -503,6 +503,15 @@ export default function ChatPage() {
   const activeName = !active ? '' : active.kind === 'all' ? '전체 채팅방' : active.name
   const showSenderName = active?.kind === 'all' || active?.kind === 'room'
   const fmtTime = (iso: string) => new Date(iso).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })
+  // 날짜 구분선 라벨 (카톡식: 오늘/어제/7월 10일 (금))
+  const dateLabel = (iso: string) => {
+    const d = new Date(iso)
+    const today = new Date()
+    const yesterday = new Date(Date.now() - 86400000)
+    if (d.toDateString() === today.toDateString()) return '오늘'
+    if (d.toDateString() === yesterday.toDateString()) return '어제'
+    return d.toLocaleDateString('ko-KR', { year: d.getFullYear() !== today.getFullYear() ? 'numeric' : undefined, month: 'long', day: 'numeric', weekday: 'short' })
+  }
 
   function renderContent(t: string, mine: boolean) {
     const names = [...new Set(people.map(p => p.name).filter(Boolean))].sort((a, b) => b.length - a.length)
@@ -660,13 +669,23 @@ export default function ChatPage() {
                     </div>
                   ) : (
                     <div className="flex flex-col gap-2 max-w-2xl mx-auto">
-                      {shown.map(m => {
+                      {shown.map((m, mi) => {
                         const mine = m.sender_id === me
                         const canEditMsg = mine && !m.is_deleted && !!m.content
                         const canDelMsg = (mine || isAdmin) && !m.is_deleted
                         const [rpName, ...rpRest] = (m.reply_preview || '').split('|')
+                        const prev = mi > 0 ? shown[mi - 1] : null
+                        const newDay = !prev || new Date(prev.created_at).toDateString() !== new Date(m.created_at).toDateString()
                         return (
-                          <div key={m.id} id={'msg-' + m.id} className={`group flex flex-col rounded-lg transition-shadow ${mine ? 'items-end' : 'items-start'}`}>
+                          <div key={m.id}>
+                          {newDay && (
+                            <div className="flex items-center gap-3 my-3">
+                              <div className="flex-1 h-px bg-gray-200" />
+                              <span className="text-[11px] text-gray-400 bg-gray-100 px-3 py-1 rounded-full">{dateLabel(m.created_at)}</span>
+                              <div className="flex-1 h-px bg-gray-200" />
+                            </div>
+                          )}
+                          <div id={'msg-' + m.id} className={`group flex flex-col rounded-lg transition-shadow ${mine ? 'items-end' : 'items-start'}`}>
                             {!mine && showSenderName && <span className="text-xs text-gray-500 mb-0.5 ml-1">{m.sender_name || '직원'}</span>}
                             <div className={`flex items-end gap-1 ${mine ? 'flex-row' : 'flex-row-reverse'}`}>
                               <span className="text-[10px] text-gray-400 flex-shrink-0 flex flex-col items-center leading-tight">
@@ -750,6 +769,10 @@ export default function ChatPage() {
                                   ))}
                                 </div>
                                 <div className="flex gap-1 flex-wrap justify-end">
+                                  {m.content && (
+                                    <button onClick={() => { navigator.clipboard.writeText(m.content); setMenuFor(null) }}
+                                      className="text-xs px-2.5 py-1.5 rounded-lg hover:bg-gray-100 text-gray-700">📋 복사</button>
+                                  )}
                                   <button onClick={() => startReply(m)} className="text-xs px-2.5 py-1.5 rounded-lg hover:bg-gray-100 text-gray-700">↩ 답장</button>
                                   {(mine || isAdmin) && <button onClick={() => togglePin(m)} className="text-xs px-2.5 py-1.5 rounded-lg hover:bg-gray-100 text-gray-700">{m.pinned ? '📌 고정해제' : '📌 고정'}</button>}
                                   {canEditMsg && <button onClick={() => startEdit(m)} className="text-xs px-2.5 py-1.5 rounded-lg hover:bg-gray-100 text-gray-700">✏ 수정</button>}
@@ -757,6 +780,7 @@ export default function ChatPage() {
                                 </div>
                               </div>
                             )}
+                          </div>
                           </div>
                         )
                       })}

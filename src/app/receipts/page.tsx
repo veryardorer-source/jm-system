@@ -27,6 +27,9 @@ export default function ReceiptsPage() {
   const [uploading, setUploading] = useState(false)
   const [uploadCurrent, setUploadCurrent] = useState(0)
   const [viewIdx, setViewIdx] = useState<number | null>(null) // 크게 보기
+  const [memoEdit, setMemoEdit] = useState<Photo | null>(null) // 메모 수정
+  const [memoText, setMemoText] = useState('')
+  const [memoSaving, setMemoSaving] = useState(false)
 
   useEffect(() => { fetchPhotos() }, [])
   useEffect(() => { if (profile?.name) setUploadedBy(profile.name) }, [profile?.name])
@@ -73,6 +76,17 @@ export default function ReceiptsPage() {
     setUploading(false)
     setUploadCurrent(0)
     fetchPhotos()
+  }
+
+  async function saveMemo(e: React.FormEvent) {
+    e.preventDefault()
+    if (!memoEdit || memoSaving) return
+    setMemoSaving(true)
+    const { error } = await supabase.from('receipts').update({ memo: memoText }).eq('id', memoEdit.id)
+    setMemoSaving(false)
+    if (error) { alert('저장 실패: ' + error.message); return }
+    setPhotos(ps => ps.map(p => p.id === memoEdit.id ? { ...p, memo: memoText } : p))
+    setMemoEdit(null)
   }
 
   async function deletePhoto(photo: Photo) {
@@ -137,9 +151,10 @@ export default function ReceiptsPage() {
                       <span className="text-xs text-gray-400 truncate">{p.uploaded_by || ''} {new Date(p.created_at).toLocaleDateString('ko-KR', { month: 'numeric', day: 'numeric' })}</span>
                       <div className="flex items-center gap-1.5 flex-shrink-0">
                         <button onClick={() => shareUrl(p.image_url, `영수증_${p.memo || i + 1}.jpg`)} className="text-xs text-blue-400 hover:text-blue-600">내보내기</button>
-                        {!readOnly && (
+                        {!readOnly && (<>
+                          <button onClick={() => { setMemoEdit(p); setMemoText(p.memo || '') }} className="text-xs text-green-500 hover:text-green-700">수정</button>
                           <button onClick={() => deletePhoto(p)} className="text-xs text-red-400 hover:text-red-600">삭제</button>
-                        )}
+                        </>)}
                       </div>
                     </div>
                   </div>
@@ -211,6 +226,27 @@ export default function ReceiptsPage() {
                   {uploading ? '업로드 중...' : `${selectedFiles.length > 1 ? `${selectedFiles.length}장 ` : ''}업로드`}
                 </button>
               </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* 메모 수정 모달 */}
+      {memoEdit && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={() => setMemoEdit(null)}>
+          <div className="bg-white rounded-2xl w-full max-w-sm shadow-xl" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-6 py-5 border-b border-gray-100">
+              <h2 className="text-lg font-bold">메모 수정</h2>
+              <button onClick={() => setMemoEdit(null)} className="text-gray-400 text-2xl">&times;</button>
+            </div>
+            <form onSubmit={saveMemo} className="px-6 py-5 flex flex-col gap-4">
+              <textarea value={memoText} onChange={e => setMemoText(e.target.value)} rows={3} autoFocus
+                placeholder="예) OO현장 자재비"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 resize-y" />
+              <button type="submit" disabled={memoSaving}
+                className="bg-green-600 text-white py-2.5 rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-50">
+                {memoSaving ? '저장 중...' : '수정 저장'}
+              </button>
             </form>
           </div>
         </div>
