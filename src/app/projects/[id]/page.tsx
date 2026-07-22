@@ -8,6 +8,7 @@ import { useAuth, canEdit } from '@/lib/auth-context'
 import { notifyOthers, notifyDM, notifyRoom } from '@/lib/notify'
 import { compressImage } from '@/lib/image'
 import Image from 'next/image'
+import FileDropInput from '@/components/FileDropInput'
 import SnsTab from '@/components/SnsTab'
 
 const TAB_LIST = ['현황', '자료', '공정', '비용', 'SNS']
@@ -1753,15 +1754,10 @@ export default function ProjectDetail() {
                   <label className="text-sm font-medium text-gray-700 block mb-1.5">
                     파일 교체 <span className="text-gray-400 font-normal">(선택 — 수정본 도면 등, 항목은 그대로 파일만 바뀜)</span>
                   </label>
-                  <label className={`flex items-center justify-center w-full border-2 border-dashed rounded-lg py-3 text-sm cursor-pointer ${replaceFile ? 'border-green-400 bg-green-50 text-green-700' : 'border-gray-300 text-gray-500 hover:border-green-400'}`}>
-                    {replaceFile ? `새 파일: ${replaceFile.name}` : '클릭해서 새 파일 선택'}
-                    <input type="file" className="hidden"
-                      onChange={e => {
-                        const f = e.target.files?.[0]
-                        if (f) { setReplaceFile(f); setEditFileForm(prev => ({ ...prev, title: f.name })) }
-                        e.currentTarget.value = ''
-                      }} />
-                  </label>
+                  <FileDropInput
+                    onFile={f => { setReplaceFile(f); setEditFileForm(prev => ({ ...prev, title: f.name })) }}
+                    currentName={replaceFile ? `새 파일: ${replaceFile.name}` : undefined}
+                    hint="도면 수정본 등 — 드래그·캡처 붙여넣기 가능" />
                   {replaceFile && (
                     <button type="button" onClick={() => setReplaceFile(null)}
                       className="text-xs text-red-400 hover:text-red-600 mt-1">교체 취소 (기존 파일 유지)</button>
