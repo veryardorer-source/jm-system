@@ -70,6 +70,13 @@ export default function NotificationsPage() {
     return new Date(iso).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })
   }
 
+  // 알림 클릭 = 해당 내용으로 이동 + 확인한 알림은 목록에서 제거
+  function openNotif(n: AppNotification) {
+    supabase.from('notifications').delete().eq('id', n.id).then(() => {})
+    setItems(prev => prev.filter(x => x.id !== n.id))
+    if (n.link) router.push(n.link)
+  }
+
   async function clearAll() {
     if (!profile?.id || items.length === 0) return
     if (!confirm('알림을 모두 지울까요?')) return
@@ -84,7 +91,7 @@ export default function NotificationsPage() {
         <header className="bg-white border-b border-gray-200 px-4 md:px-8 py-4 md:py-5 flex items-center justify-between flex-shrink-0">
           <div>
             <h1 className="text-xl font-bold text-gray-900">알림</h1>
-            <p className="text-sm text-gray-500 mt-0.5">총 {items.length}개</p>
+            <p className="text-sm text-gray-500 mt-0.5">총 {items.length}개 · 클릭하면 해당 내용으로 이동하고 목록에서 사라져요</p>
           </div>
           {items.length > 0 && (
             <button onClick={clearAll} className="text-xs text-gray-400 hover:text-red-500">모두 지우기</button>
@@ -134,10 +141,10 @@ export default function NotificationsPage() {
             <div className="flex flex-col gap-2 max-w-2xl">
               {items.map(n => (
                 <button key={n.id}
-                  onClick={() => { if (n.link) router.push(n.link) }}
-                  className={`text-left bg-white rounded-xl border px-4 py-3 transition-colors ${
-                    n.link ? 'hover:border-green-400 cursor-pointer' : 'cursor-default'
-                  } ${n.is_read ? 'border-gray-200' : 'border-green-300 bg-green-50/40'}`}>
+                  onClick={() => openNotif(n)}
+                  className={`text-left bg-white rounded-xl border px-4 py-3 transition-colors hover:border-green-400 cursor-pointer ${
+                    n.is_read ? 'border-gray-200' : 'border-green-300 bg-green-50/40'
+                  }`}>
                   <div className="flex items-center justify-between gap-2">
                     <p className="text-sm font-medium text-gray-900">{n.title}</p>
                     <span className="text-xs text-gray-400 flex-shrink-0">{fmt(n.created_at)}</span>
