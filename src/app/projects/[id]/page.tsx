@@ -114,6 +114,7 @@ export default function ProjectDetail() {
   // 자료 수정 (모든 분류 공통 — 제목·분류·메모, 링크는 URL까지)
   const [editFile, setEditFile] = useState<ProjectFile | null>(null)
   const [editFileForm, setEditFileForm] = useState({ title: '', category: '', url: '', memo: '' })
+  const [replaceFile, setReplaceFile] = useState<File | null>(null) // 파일 교체 (도면 v2 등)
   const [savingFileEdit, setSavingFileEdit] = useState(false)
   const [selectedFiles, setSelectedFiles] = useState<File[]>([])
   const [uploading, setUploading] = useState(false)
@@ -451,6 +452,7 @@ export default function ProjectDetail() {
   function openEditFile(f: ProjectFile) {
     setEditFile(f)
     setEditFileForm({ title: f.file_name || '', category: f.category || '기타', url: f.file_type === 'link' ? f.file_url : '', memo: f.memo || '' })
+    setReplaceFile(null)
     setLightbox(null)
   }
 
@@ -467,6 +469,19 @@ export default function ProjectDetail() {
     if (editFile.file_type === 'link') {
       if (!editFileForm.url.trim()) { alert('링크 URL을 입력하세요'); setSavingFileEdit(false); return }
       payload.file_url = editFileForm.url.trim()
+    }
+    // 파일 교체 (도면 v2 등): 새 파일 업로드 → 항목은 그대로, 파일만 바뀜. 옛 파일은 정리.
+    if (replaceFile && editFile.file_type !== 'link' && editFile.file_type !== 'text') {
+      let up = replaceFile
+      if ((up.type || '').startsWith('image/')) up = await compressImage(up)
+      const ext = up.name.split('.').pop() || 'bin'
+      const path = `files/${id}/${Date.now()}.${ext}`
+      const { error: upErr } = await supabase.storage.from('uploads').upload(path, up, { contentType: up.type || 'application/octet-stream', upsert: true })
+      if (upErr) { alert('파일 업로드 실패: ' + upErr.message); setSavingFileEdit(false); return }
+      payload.file_url = supabase.storage.from('uploads').getPublicUrl(path).data.publicUrl
+      payload.file_type = up.type || ''
+      const oldPath = editFile.file_url?.split('/uploads/')[1]
+      if (oldPath) await supabase.storage.from('uploads').remove([oldPath])
     }
     const { error } = await supabase.from('project_files').update(payload).eq('id', editFile.id)
     setSavingFileEdit(false)
@@ -1731,6 +1746,26 @@ export default function ProjectDetail() {
                   <label className="text-sm font-medium text-gray-700 block mb-1.5">링크 URL *</label>
                   <input value={editFileForm.url} onChange={e => setEditFileForm({ ...editFileForm, url: e.target.value })} type="url"
                     className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
+                </div>
+              )}
+              {editFile.file_type !== 'link' && editFile.file_type !== 'text' && (
+                <div>
+                  <label className="text-sm font-medium text-gray-700 block mb-1.5">
+                    파일 교체 <span className="text-gray-400 font-normal">(선택 — 수정본 도면 등, 항목은 그대로 파일만 바뀜)</span>
+                  </label>
+                  <label className={`flex items-center justify-center w-full border-2 border-dashed rounded-lg py-3 text-sm cursor-pointer ${replaceFile ? 'border-green-400 bg-green-50 text-green-700' : 'border-gray-300 text-gray-500 hover:border-green-400'}`}>
+                    {replaceFile ? `새 파일: ${replaceFile.name}` : '클릭해서 새 파일 선택'}
+                    <input type="file" className="hidden"
+                      onChange={e => {
+                        const f = e.target.files?.[0]
+                        if (f) { setReplaceFile(f); setEditFileForm(prev => ({ ...prev, title: f.name })) }
+                        e.currentTarget.value = ''
+                      }} />
+                  </label>
+                  {replaceFile && (
+                    <button type="button" onClick={() => setReplaceFile(null)}
+                      className="text-xs text-red-400 hover:text-red-600 mt-1">교체 취소 (기존 파일 유지)</button>
+                  )}
                 </div>
               )}
               <div>
