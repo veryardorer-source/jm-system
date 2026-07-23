@@ -1,6 +1,7 @@
 ﻿'use client'
 
 import { useEffect, useState, useRef, useCallback } from 'react'
+import { useSearchParams } from 'next/navigation'
 import Sidebar from '@/components/Sidebar'
 import { supabase } from '@/lib/supabase'
 import { useAuth, canEdit } from '@/lib/auth-context'
@@ -42,15 +43,16 @@ export default function WithdrawalsPage() {
   useEffect(() => { fetchPhotos() }, [])
   useEffect(() => { if (profile?.name) setRequestedBy(profile.name) }, [profile?.name])
 
-  // 알림 링크(?open=id)로 들어오면 해당 건 상세를 바로 열기
-  const openedFromLink = useRef(false)
+  // 알림 링크(?open=id)로 들어오면 해당 건 상세를 바로 열기 (화면이 이미 열려 있어도 동작)
+  const searchParams = useSearchParams()
+  const openedIdRef = useRef('')
   useEffect(() => {
-    if (loading || openedFromLink.current) return
-    const id = new URLSearchParams(window.location.search).get('open')
-    if (!id) { openedFromLink.current = true; return }
-    const p = photos.find(x => x.id === id)
-    if (p) { openViewer(p); openedFromLink.current = true }
-  }, [loading, photos]) // eslint-disable-line react-hooks/exhaustive-deps
+    if (loading) return
+    const oid = searchParams.get('open')
+    if (!oid || openedIdRef.current === oid) return
+    const p = photos.find(x => x.id === oid)
+    if (p) { openViewer(p); openedIdRef.current = oid }
+  }, [searchParams, loading, photos]) // eslint-disable-line react-hooks/exhaustive-deps
 
   function imgsOf(p: Photo) {
     return (p.images && p.images.length ? p.images : [p.image_url]).filter(Boolean)

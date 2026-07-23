@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState, useRef, useCallback } from 'react'
-import { useParams, useRouter } from 'next/navigation'
+import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import Sidebar from '@/components/Sidebar'
 import { supabase, Project, ProjectFile, Schedule, ProjectCost, ProjectAssignment, STATUS_LIST, STATUS_COLOR } from '@/lib/supabase'
 import { useAuth, canEdit } from '@/lib/auth-context'
@@ -91,15 +91,18 @@ export default function ProjectDetail() {
   const [tab, setTab] = useState('현황')
 
   // 알림 링크(?tab=자료/공정/비용)로 들어오면 해당 탭 바로 열기
+  // 앱이 이미 켜져 있어 페이지가 재활용될 때도 동작하도록 주소 변화에 반응(searchParams)
+  const searchParams = useSearchParams()
   useEffect(() => {
-    const t = new URLSearchParams(window.location.search).get('tab')
-    if (t && TAB_LIST.includes(t) && t !== '비용') setTab(t)
-  }, [])
-  useEffect(() => {
-    // 비용 탭은 권한 확인 후에만 (field·partner는 금액 숨김)
-    const t = new URLSearchParams(window.location.search).get('tab')
-    if (t === '비용' && profile && profile.role !== 'field' && profile.role !== 'partner') setTab('비용')
-  }, [profile])
+    const t = searchParams.get('tab')
+    if (!t) return
+    if (t === '비용') {
+      // 비용 탭은 권한 확인 후에만 (field·partner는 금액 숨김)
+      if (profile && profile.role !== 'field' && profile.role !== 'partner') setTab('비용')
+      return
+    }
+    if (TAB_LIST.includes(t)) setTab(t)
+  }, [searchParams, profile, id])
   const [files, setFiles] = useState<ProjectFile[]>([])
   const [schedules, setSchedules] = useState<Schedule[]>([])
   const [costs, setCosts] = useState<ProjectCost[]>([])
@@ -487,6 +490,15 @@ export default function ProjectDetail() {
     const { error } = await supabase.from('project_files').update(payload).eq('id', editFile.id)
     setSavingFileEdit(false)
     if (error) { alert('수정 실패: ' + error.message); return }
+    // 파일을 실제로 교체한 경우엔 알림 (제목·메모만 고친 건 조용히 — 소음 방지)
+    if (replaceFile && editFile.file_type !== 'link' && editFile.file_type !== 'text') {
+      notifyOthers(profile?.id, {
+        type: 'file',
+        title: `${project?.name || '현장'} · 자료 교체 · ${payload.file_name}`,
+        body: `${payload.category} 파일이 새 버전으로 바뀌었어요`,
+        link: `/projects/${id}?tab=자료`,
+      })
+    }
     setEditFile(null)
     fetchAll()
   }

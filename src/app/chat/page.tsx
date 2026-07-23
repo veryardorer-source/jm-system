@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState, useRef, useCallback } from 'react'
+import { useSearchParams } from 'next/navigation'
 import Sidebar from '@/components/Sidebar'
 import { supabase } from '@/lib/supabase'
 import { useAuth, canEdit } from '@/lib/auth-context'
@@ -267,20 +268,23 @@ export default function ChatPage() {
   }, [readOnly])
 
   // 알림 링크(?dm=상대id / ?room=방id)로 들어오면 그 대화를 바로 열기
-  const deepLinkDone = useRef(false)
+  // 채팅 화면이 이미 열려 있어도 동작하도록 주소 변화에 반응(searchParams)
+  const searchParams = useSearchParams()
+  const openedKeyRef = useRef('')
   useEffect(() => {
-    if (deepLinkDone.current || !me) return
-    const sp = new URLSearchParams(window.location.search)
-    const dm = sp.get('dm'), room = sp.get('room')
-    if (!dm && !room) { deepLinkDone.current = true; return }
+    if (!me) return
+    const dm = searchParams.get('dm'), room = searchParams.get('room')
+    if (!dm && !room) return
+    const targetKey = dm ? 'dm:' + dm : 'room:' + room
+    if (openedKeyRef.current === targetKey) return // 같은 링크 반복 처리 방지
     if (dm) {
-      if (dm === me) { setActive({ kind: 'dm', id: me, name: '나와의 채팅' }); deepLinkDone.current = true }
-      else { const p = people.find(x => x.id === dm); if (p) { setActive({ kind: 'dm', id: p.id, name: p.name }); deepLinkDone.current = true } }
+      if (dm === me) { setActive({ kind: 'dm', id: me, name: '나와의 채팅' }); openedKeyRef.current = targetKey }
+      else { const p = people.find(x => x.id === dm); if (p) { setActive({ kind: 'dm', id: p.id, name: p.name }); openedKeyRef.current = targetKey } }
     } else if (room) {
       const r = rooms.find(x => x.id === room)
-      if (r) { setActive({ kind: 'room', id: r.id, name: r.name }); deepLinkDone.current = true }
+      if (r) { setActive({ kind: 'room', id: r.id, name: r.name }); openedKeyRef.current = targetKey }
     }
-  }, [me, people, rooms])
+  }, [searchParams, me, people, rooms])
 
   // 알림/푸시는 서버(/api/push/send)가 대상 계산·검증. 나와의 채팅은 알림 없음.
   // 링크에 대화 정보를 넣어 알림 클릭 시 그 대화가 바로 열리게 한다.

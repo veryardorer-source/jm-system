@@ -1,6 +1,7 @@
 ﻿'use client'
 
 import { useEffect, useState, useRef } from 'react'
+import { useSearchParams } from 'next/navigation'
 import Sidebar from '@/components/Sidebar'
 import { supabase } from '@/lib/supabase'
 import { useAuth, canEdit } from '@/lib/auth-context'
@@ -57,15 +58,16 @@ export default function NoticesPage() {
 
   useEffect(() => { fetchNotices() }, [])
 
-  // 알림에서 특정 공지 링크(?open=id)로 들어오면 그 공지를 바로 열기
-  const openedFromLink = useState({ done: false })[0]
+  // 알림에서 특정 공지 링크(?open=id)로 들어오면 그 공지를 바로 열기 (화면이 이미 열려 있어도 동작)
+  const searchParams = useSearchParams()
+  const openedIdRef = useRef('')
   useEffect(() => {
-    if (loading || openedFromLink.done) return
-    const id = new URLSearchParams(window.location.search).get('open')
-    if (!id) { openedFromLink.done = true; return }
+    if (loading) return
+    const id = searchParams.get('open')
+    if (!id || openedIdRef.current === id) return
     const n = notices.find(x => x.id === id)
-    if (n) { setSelected(n); openedFromLink.done = true }
-  }, [loading, notices, openedFromLink])
+    if (n) { setSelected(n); openedIdRef.current = id }
+  }, [searchParams, loading, notices])
 
   async function fetchNotices() {
     setLoading(true)
