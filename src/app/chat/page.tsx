@@ -419,8 +419,16 @@ export default function ChatPage() {
     else await supabase.from('message_reactions').insert([{ message_id: mId, user_id: me, user_name: profile?.name || '', emoji }])
     setMenuFor(null); reloadReactions()
   }
-  function startReply(m: Message) { setReplyTo(m); setEditing(null); setMenuFor(null) }
-  function startEdit(m: Message) { setEditing({ id: m.id, text: m.content }); setText(m.content); setReplyTo(null); setMenuFor(null) }
+  // 답장/수정 시작 시 입력창을 화면에 보이게 하고 커서를 넣는다 (모바일에서 입력칸이 안 보이던 문제)
+  const inputRef = useRef<HTMLTextAreaElement>(null)
+  function focusInput() {
+    setTimeout(() => {
+      inputRef.current?.scrollIntoView({ block: 'nearest' })
+      inputRef.current?.focus()
+    }, 80)
+  }
+  function startReply(m: Message) { setReplyTo(m); setEditing(null); setMenuFor(null); focusInput() }
+  function startEdit(m: Message) { setEditing({ id: m.id, text: m.content }); setText(m.content); setReplyTo(null); setMenuFor(null); focusInput() }
   // 완전 삭제 — 잘못 쓴 메시지는 흔적 없이 제거 (첨부 파일·반응도 정리)
   async function deleteMsg(m: Message) {
     if (!confirm('이 메시지를 삭제할까요?')) return
@@ -798,7 +806,7 @@ export default function ChatPage() {
                     외부협력업체 계정은 채팅 보기만 가능합니다.
                   </div>
                 ) : (
-                  <div className="flex-shrink-0 bg-white border-t border-gray-200">
+                  <div className="flex-shrink-0 bg-white border-t border-gray-200 pb-[env(safe-area-inset-bottom)]">
                     {(replyTo || editing) && (
                       <div className="px-4 pt-2 flex items-center gap-2 text-xs">
                         <span className="text-gray-400 flex-shrink-0">{editing ? '✏ 수정 중' : '↩ 답장'}</span>
@@ -830,7 +838,7 @@ export default function ChatPage() {
                         <button type="button" onClick={() => setMentionOpen(o => !o)} title="멘션"
                           className={`flex-shrink-0 flex items-center justify-center w-10 h-10 rounded-full border text-base ${mentionOpen ? 'border-green-500 bg-green-50 text-green-700' : 'border-gray-300 text-gray-500 hover:bg-gray-50'}`}>@</button>
                       )}
-                      <textarea value={text} onChange={e => setText(e.target.value)}
+                      <textarea ref={inputRef} value={text} onChange={e => setText(e.target.value)}
                         rows={Math.min(5, Math.max(1, text.split('\n').length))}
                         onKeyDown={e => {
                           // PC: Enter=전송, Shift+Enter=줄바꿈. 모바일: Enter=줄바꿈(전송 버튼으로 보냄)
