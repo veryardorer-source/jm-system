@@ -24,6 +24,8 @@ export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
   themeColor: '#16a34a',
+  // 안드로이드: 키보드가 올라오면 화면을 줄여 입력창이 키보드 위로 보이게
+  interactiveWidget: 'resizes-content',
 };
 
 export default function RootLayout({

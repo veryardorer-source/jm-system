@@ -578,7 +578,8 @@ export default function ChatPage() {
   return (
     <div className="flex flex-col md:flex-row min-h-screen">
       <Sidebar />
-      <div className="flex-1 flex flex-col h-[calc(100dvh-3.5rem)] md:h-screen">
+      {/* dvh 미지원 브라우저(구형 삼성인터넷 등)는 vh로 폴백 — 입력창이 하단 메뉴에 가리던 문제 */}
+      <div className="flex-1 flex flex-col h-[calc(100vh-3.5rem)] supports-[height:100dvh]:h-[calc(100dvh-3.5rem)] md:h-screen md:supports-[height:100dvh]:h-screen">
         <div className="flex-1 flex min-h-0">
 
           {/* 대화 목록 */}
