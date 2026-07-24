@@ -578,8 +578,9 @@ export default function ChatPage() {
   return (
     <div className="flex flex-col md:flex-row min-h-screen">
       <Sidebar />
-      {/* dvh 미지원 브라우저(구형 삼성인터넷 등)는 vh로 폴백 — 입력창이 하단 메뉴에 가리던 문제 */}
-      <div className="flex-1 flex flex-col h-[calc(100vh-3.5rem)] supports-[height:100dvh]:h-[calc(100dvh-3.5rem)] md:h-screen md:supports-[height:100dvh]:h-screen">
+      {/* 모바일: flex-1이 지정 높이를 무시하고 늘려 입력창이 하단 메뉴 뒤에 깔리던 버그 →
+          모바일은 flex-grow 없이 높이 고정(w-full), 데스크탑(가로배치)만 md:flex-1로 폭 채움 */}
+      <div className="w-full md:flex-1 flex flex-col h-[calc(100vh-3.5rem)] supports-[height:100dvh]:h-[calc(100dvh-3.5rem)] md:h-screen md:supports-[height:100dvh]:h-screen">
         <div className="flex-1 flex min-h-0">
 
           {/* 대화 목록 */}
