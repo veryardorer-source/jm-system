@@ -31,12 +31,16 @@ type Proj = { id: string; name: string }
 
 const today = () => new Date().toISOString().slice(0, 10)
 
+// 끝자리까지 전부 표시 (예: 532,450,000원)
 function formatAmount(n: number | null) {
   if (!n && n !== 0) return '-'
-  const num = Number(n)
-  if (num >= 100000000) return `${(num / 100000000).toFixed(num % 100000000 === 0 ? 0 : 1)}억`
-  if (num >= 10000) return `${Math.floor(num / 10000).toLocaleString()}만원`
-  return `${num.toLocaleString()}원`
+  return `${Number(n).toLocaleString()}원`
+}
+// 참고용 축약 (예: 5.3억) — 카드 밑에 작게 병기
+function korShort(n: number) {
+  if (n >= 100000000) return `${(n / 100000000).toFixed(n % 100000000 === 0 ? 0 : 1)}억`
+  if (n >= 10000) return `${Math.floor(n / 10000).toLocaleString()}만`
+  return ''
 }
 
 const EMPTY = { project_name: '', type: '계약금', amount: '', due_date: '', paid_date: '', paid: false, note: '' }
@@ -169,16 +173,16 @@ export default function PaymentsPage() {
               {/* 요약 */}
               <div className="grid grid-cols-3 gap-2 md:gap-3">
                 <div className="bg-white rounded-xl p-3 md:p-4 border border-gray-100 text-center shadow-sm">
-                  <div className="text-base md:text-xl font-bold text-gray-800">{formatAmount(totalExpected)}</div>
-                  <div className="text-[11px] md:text-xs text-gray-400 mt-0.5">총 계약금액</div>
+                  <div className="text-[13px] md:text-xl font-bold text-gray-800 whitespace-nowrap">{formatAmount(totalExpected)}</div>
+                  <div className="text-[11px] md:text-xs text-gray-400 mt-0.5">총 계약금액{korShort(totalExpected) && ` (${korShort(totalExpected)})`}</div>
                 </div>
                 <div className="bg-white rounded-xl p-3 md:p-4 border border-gray-100 text-center shadow-sm">
-                  <div className="text-base md:text-xl font-bold text-green-600">{formatAmount(totalReceived)}</div>
-                  <div className="text-[11px] md:text-xs text-gray-400 mt-0.5">수금 완료</div>
+                  <div className="text-[13px] md:text-xl font-bold text-green-600 whitespace-nowrap">{formatAmount(totalReceived)}</div>
+                  <div className="text-[11px] md:text-xs text-gray-400 mt-0.5">수금 완료{korShort(totalReceived) && ` (${korShort(totalReceived)})`}</div>
                 </div>
                 <div className="bg-white rounded-xl p-3 md:p-4 border border-gray-100 text-center shadow-sm">
-                  <div className={`text-base md:text-xl font-bold ${totalPending > 0 ? 'text-orange-500' : 'text-gray-400'}`}>{formatAmount(totalPending)}</div>
-                  <div className="text-[11px] md:text-xs text-gray-400 mt-0.5">미수금</div>
+                  <div className={`text-[13px] md:text-xl font-bold whitespace-nowrap ${totalPending > 0 ? 'text-orange-500' : 'text-gray-400'}`}>{formatAmount(totalPending)}</div>
+                  <div className="text-[11px] md:text-xs text-gray-400 mt-0.5">미수금{korShort(totalPending) && ` (${korShort(totalPending)})`}</div>
                 </div>
               </div>
 
