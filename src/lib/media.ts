@@ -7,13 +7,13 @@ export function isVideoUrl(u: string) {
   return /\.(mp4|mov|webm|m4v|ogg|avi|mkv)$/i.test((u || '').split('?')[0])
 }
 
-// 다운로드 없이 브라우저에서 열어 보기 (PDF·오피스는 온라인 뷰어)
+// 다운로드 없이 브라우저에서 열어 보기 — PDF는 브라우저 내장 뷰어(구글뷰어 '미리보기 없음' 오류 회피), 오피스는 MS 온라인 뷰어
 export function viewInBrowser(url: string, name?: string) {
   const n = (name || url || '').toLowerCase().split('?')[0]
   if (/\.(xlsx|xls|doc|docx|ppt|pptx)$/.test(n)) {
     window.open(`https://view.officeapps.live.com/op/view.aspx?src=${encodeURIComponent(url)}`, '_blank')
   } else if (n.endsWith('.pdf')) {
-    window.open(`https://docs.google.com/viewer?url=${encodeURIComponent(url)}`, '_blank')
+    window.open(url, '_blank')
   } else {
     window.open(url, '_blank')
   }

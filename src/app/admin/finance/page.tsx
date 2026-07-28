@@ -604,7 +604,7 @@ function ProfitTab({ list, projects, onRefresh }: { list: ProjectProfit[]; proje
     if (!p.file_url) return
     const name = (p.file_name || p.file_url).toLowerCase()
     if (/\.(xlsx|xls|xlsb|xlsm|doc|docx|ppt|pptx)$/.test(name)) window.open(`https://view.officeapps.live.com/op/view.aspx?src=${encodeURIComponent(p.file_url)}`, '_blank')
-    else if (name.endsWith('.pdf')) window.open(`https://docs.google.com/viewer?url=${encodeURIComponent(p.file_url)}`, '_blank')
+    else if (name.endsWith('.pdf')) window.open(p.file_url, '_blank')
     else window.open(p.file_url, '_blank')
   }
 
@@ -767,7 +767,7 @@ function SalesTab({ list, onRefresh }: { list: SalesRecord[]; onRefresh: () => v
                         <button onClick={() => {
                           const name = s.file_name?.toLowerCase() || ''
                           if (/\.(xlsx|xls|doc|docx|ppt|pptx)$/.test(name)) window.open(`https://view.officeapps.live.com/op/view.aspx?src=${encodeURIComponent(s.file_url)}`, '_blank')
-                          else if (name.endsWith('.pdf')) window.open(`https://docs.google.com/viewer?url=${encodeURIComponent(s.file_url)}`, '_blank')
+                          else if (name.endsWith('.pdf')) window.open(s.file_url, '_blank')
                           else window.open(s.file_url, '_blank')
                         }} className="text-xs text-green-600 hover:underline truncate max-w-[140px] inline-block">📎 {s.file_name}</button>
                       ) : <span className="text-xs text-gray-300">-</span>}
