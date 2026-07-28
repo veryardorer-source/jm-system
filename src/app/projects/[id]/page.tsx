@@ -889,7 +889,7 @@ export default function ProjectDetail() {
           </div>
         </div>
 
-        <div className="flex-1 overflow-auto px-4 md:px-8 py-4 md:py-6 pb-20 md:pb-6">
+        <div className="flex-1 overflow-auto px-4 md:px-8 py-4 md:py-6 pb-20 md:pb-24">
 
           {/* SNS 탭 */}
           {tab === 'SNS' && <SnsTab projectId={id} readOnly={readOnly} />}

@@ -150,7 +150,7 @@ export default function DocumentsPage() {
           )}
         </header>
 
-        <div className="flex-1 overflow-auto px-4 md:px-8 py-6 pb-20 md:pb-6">
+        <div className="flex-1 overflow-auto px-4 md:px-8 py-6 pb-20 md:pb-24">
           {visibleDocs.length === 0 ? (
             <div className="bg-white rounded-xl border border-gray-200 text-center py-16 text-gray-400">
               <p className="text-3xl mb-2">🗂️</p><p>등록된 서류가 없어요</p>

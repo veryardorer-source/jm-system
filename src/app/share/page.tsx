@@ -175,7 +175,7 @@ export default function SharePage() {
           <p className="text-sm text-gray-500 mt-0.5">다른 앱에서 공유한 사진/영상을 바로 저장</p>
         </header>
 
-        <div className="flex-1 overflow-auto px-4 md:px-8 py-4 md:py-6 pb-20 md:pb-6">
+        <div className="flex-1 overflow-auto px-4 md:px-8 py-4 md:py-6 pb-20 md:pb-24">
           {loading ? (
             <div className="text-center text-gray-400 py-16">불러오는 중...</div>
           ) : files.length === 0 && !sharedText ? (

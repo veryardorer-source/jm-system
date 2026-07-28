@@ -98,7 +98,7 @@ export default function FinancePage() {
             ))}
           </div>
         </div>
-        <div className="flex-1 overflow-auto px-4 md:px-8 py-6 pb-20 md:pb-6">
+        <div className="flex-1 overflow-auto px-4 md:px-8 py-6 pb-20 md:pb-24">
           {tab === '고정지출' && <FixedCostTab list={fixedCosts} onRefresh={fetchAll} />}
           {tab === '급여내역' && <PayrollTab list={payrolls} onRefresh={fetchAll} />}
           {tab === '현장별 이익' && <ProfitTab list={profits} projects={projects} onRefresh={fetchAll} />}

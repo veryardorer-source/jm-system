@@ -98,7 +98,7 @@ export default function NotificationsPage() {
           )}
         </header>
 
-        <div className="flex-1 overflow-auto px-4 md:px-8 py-4 md:py-6 pb-20 md:pb-6">
+        <div className="flex-1 overflow-auto px-4 md:px-8 py-4 md:py-6 pb-20 md:pb-24">
           {/* 이 기기에서 OS 알림 받기 — 실제 구독 여부 기준, 켜기/끄기 토글 */}
           <div className="max-w-2xl mb-4">
             {pushState === 'checking' ? (

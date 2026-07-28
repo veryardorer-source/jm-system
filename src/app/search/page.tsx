@@ -105,7 +105,7 @@ export default function SearchPage() {
           <p className="text-sm text-gray-500 mt-0.5">현장·자료·공지·작업일지{canMoney ? '·영수증·출금·수금' : ''}을 한 번에 찾기</p>
         </header>
 
-        <div className="flex-1 overflow-auto px-4 md:px-8 py-4 md:py-6 pb-20 md:pb-6">
+        <div className="flex-1 overflow-auto px-4 md:px-8 py-4 md:py-6 pb-20 md:pb-24">
           <form onSubmit={run} className="max-w-2xl flex gap-2 mb-5">
             <input value={q} onChange={e => setQ(e.target.value)} autoFocus
               placeholder="현장명·고객명·주소·파일명·메모 등 검색"

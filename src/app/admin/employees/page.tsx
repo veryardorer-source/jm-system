@@ -123,7 +123,7 @@ export default function AdminEmployeesPage() {
           </div>
         </header>
 
-        <div className="flex-1 overflow-auto px-4 md:px-8 py-6 pb-20 md:pb-6 flex flex-col gap-8">
+        <div className="flex-1 overflow-auto px-4 md:px-8 py-6 pb-20 md:pb-24 flex flex-col gap-8">
           <EmployeeTable title="상용직" list={regular} mask={mask} revealedId={revealedId} setRevealedId={setRevealedId}
             onEdit={openEdit} onToggle={toggleActive} onDelete={deleteEmployee} onOpenDetail={setDetailEmp} />
           <EmployeeTable title="일용직" list={daily} mask={mask} revealedId={revealedId} setRevealedId={setRevealedId}

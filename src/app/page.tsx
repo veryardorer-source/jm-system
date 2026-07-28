@@ -75,7 +75,7 @@ const [loading, setLoading] = useState(true)
           <p className="text-sm text-gray-500 mt-0.5">진행중인 현장과 직원 업무 현황</p>
         </header>
 
-        <div className="flex-1 overflow-auto px-4 md:px-8 py-4 md:py-6 pb-20 md:pb-6">
+        <div className="flex-1 overflow-auto px-4 md:px-8 py-4 md:py-6 pb-20 md:pb-24">
           {loading ? (
             <div className="text-center py-20 text-gray-400">불러오는 중...</div>
           ) : (

@@ -97,7 +97,7 @@ export default function ContactsPage() {
           )}
         </header>
 
-        <div className="flex-1 overflow-auto px-4 md:px-8 py-4 md:py-6 pb-20 md:pb-6">
+        <div className="flex-1 overflow-auto px-4 md:px-8 py-4 md:py-6 pb-20 md:pb-24">
           {/* 검색 + 분야 필터 */}
           <div className="flex flex-col gap-2 mb-4 max-w-3xl">
             <input value={q} onChange={e => setQ(e.target.value)} placeholder="업체명·담당자·전화번호·메모 검색"

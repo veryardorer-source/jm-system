@@ -193,7 +193,7 @@ export default function NoticesPage() {
         </div>
         )}
 
-        <div className="flex-1 overflow-auto px-4 md:px-8 py-4 md:py-6 pb-20 md:pb-6">
+        <div className="flex-1 overflow-auto px-4 md:px-8 py-4 md:py-6 pb-20 md:pb-24">
           {loading ? (
             <div className="text-center py-16 text-gray-400">불러오는 중...</div>
           ) : filtered.length === 0 ? (
