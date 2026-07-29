@@ -77,8 +77,9 @@ export default function ChatPage() {
   const [active, setActive] = useState<Active>(null)
   const [messages, setMessages] = useState<Message[]>([])
   const [reactions, setReactions] = useState<Record<string, Reaction[]>>({})
-  const [reads, setReads] = useState<string[]>([])       // 상대(들)의 마지막 읽은 시각
-  const [participants, setParticipants] = useState(0)    // 나를 제외한 대화 상대 수
+  const [reads, setReads] = useState<{ uid: string; t: string }[]>([]) // 상대(들)의 마지막 읽은 시각 — 누가 읽었는지 이름 표시용
+  const [memberIds, setMemberIds] = useState<string[]>([])             // 나를 제외한 대화 상대 id 목록
+  const [readInfoFor, setReadInfoFor] = useState<string | null>(null)  // 읽음 확인 팝업이 열린 메시지 id
   const [text, setText] = useState('')
   const [sending, setSending] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
@@ -124,18 +125,18 @@ export default function ChatPage() {
 
   // 상대가 어디까지 읽었는지 불러오기
   const loadReads = useCallback(async (a: Active) => {
-    if (!a || a.kind === 'all' || !me) { setReads([]); setParticipants(0); return }
-    if (a.kind === 'dm' && a.id === me) { setReads([]); setParticipants(0); return } // 나와의 채팅: 읽음표시 없음
+    if (!a || a.kind === 'all' || !me) { setReads([]); setMemberIds([]); return }
+    if (a.kind === 'dm' && a.id === me) { setReads([]); setMemberIds([]); return } // 나와의 채팅: 읽음표시 없음
     if (a.kind === 'dm') {
       const { data } = await supabase.from('chat_reads').select('last_read_at').eq('user_id', a.id).eq('conv_key', 'dm:' + me).maybeSingle()
-      setParticipants(1); setReads(data?.last_read_at ? [data.last_read_at] : [])
+      setMemberIds([a.id]); setReads(data?.last_read_at ? [{ uid: a.id, t: data.last_read_at }] : [])
     } else {
       const { data: mem } = await supabase.from('chat_room_members').select('user_id').eq('room_id', a.id)
       const others = (mem || []).map(x => x.user_id).filter(u => u !== me)
-      setParticipants(others.length)
+      setMemberIds(others)
       if (!others.length) { setReads([]); return }
-      const { data } = await supabase.from('chat_reads').select('last_read_at').eq('conv_key', 'room:' + a.id).in('user_id', others)
-      setReads((data || []).map(r => r.last_read_at).filter(Boolean) as string[])
+      const { data } = await supabase.from('chat_reads').select('user_id, last_read_at').eq('conv_key', 'room:' + a.id).in('user_id', others)
+      setReads((data || []).filter(r => r.last_read_at).map(r => ({ uid: r.user_id as string, t: r.last_read_at as string })))
     }
   }, [me])
 
@@ -190,7 +191,8 @@ export default function ChatPage() {
   useEffect(() => {
     activeRef.current = active
     if (active) { markMyRead(active); loadReads(active) }
-    else { setReads([]); setParticipants(0) }
+    else { setReads([]); setMemberIds([]) }
+    setReadInfoFor(null)
   }, [active, markMyRead, loadReads])
 
   const belongs = useCallback((m: Message) => {
@@ -538,14 +540,25 @@ export default function ChatPage() {
     })
   }
 
-  // 내가 보낸 메시지의 읽음 표시 (1:1='읽음' / 단체방=안 읽은 사람 수)
+  // 이 메시지를 아직 안 읽은 사람들 (단체방 — 보낸 사람·나는 제외, 나는 지금 보고 있으니 읽음)
+  function unreadPeople(m: Message): Person[] {
+    const candidates = memberIds.filter(uid => uid !== m.sender_id)
+    return candidates
+      .filter(uid => { const t = reads.find(r => r.uid === uid)?.t; return !t || t < m.created_at })
+      .map(uid => people.find(p => p.id === uid) || { id: uid, name: '직원' })
+  }
+
+  // 읽음 표시 (1:1=내 메시지에 '읽음' / 단체방=안 읽은 사람 수, 누르면 이름 확인)
   function readLabel(m: Message): string | null {
-    if (m.sender_id !== me || m.is_deleted || !active || active.kind === 'all') return null
-    const readers = reads.filter(t => t && t >= m.created_at).length
-    if (active.kind === 'dm') return readers >= 1 ? '읽음' : null
-    if (participants <= 0) return null
-    const unread = participants - readers
-    return unread > 0 ? String(unread) : '읽음'
+    if (m.is_deleted || !active || active.kind === 'all') return null
+    if (active.kind === 'dm') {
+      if (m.sender_id !== me) return null
+      return reads.some(r => r.t >= m.created_at) ? '읽음' : null
+    }
+    if (memberIds.length === 0) return null
+    const un = unreadPeople(m).length
+    if (un > 0) return String(un)
+    return m.sender_id === me ? '읽음' : null
   }
 
   function renderReactions(mId: string) {
@@ -703,7 +716,15 @@ export default function ChatPage() {
                             {!mine && showSenderName && <span className="text-xs text-gray-500 mb-0.5 ml-1">{m.sender_name || '직원'}</span>}
                             <div className={`flex items-end gap-1 ${mine ? 'flex-row' : 'flex-row-reverse'}`}>
                               <span className="text-[10px] text-gray-400 flex-shrink-0 flex flex-col items-center leading-tight">
-                                {(() => { const rl = readLabel(m); return rl && <span className={/^\d+$/.test(rl) ? 'text-amber-500 font-semibold' : 'text-green-600'}>{rl}</span> })()}
+                                {(() => {
+                                  const rl = readLabel(m)
+                                  if (!rl) return null
+                                  const cls = /^\d+$/.test(rl) ? 'text-amber-500 font-semibold' : 'text-green-600'
+                                  // 단체방은 누르면 누가 읽었는지 이름 확인
+                                  return active?.kind === 'room'
+                                    ? <button onClick={() => setReadInfoFor(readInfoFor === m.id ? null : m.id)} className={`${cls} underline-offset-2 hover:underline`} title="누가 읽었는지 보기">{rl}</button>
+                                    : <span className={cls}>{rl}</span>
+                                })()}
                                 <span>{fmtTime(m.created_at)}{m.edited_at ? ' (수정됨)' : ''}</span>
                               </span>
                               {!m.is_deleted && !readOnly && (
@@ -965,6 +986,38 @@ export default function ChatPage() {
               <button onClick={() => downloadUrl(chatLightbox!, '사진.jpg')} className="bg-white/20 hover:bg-white/30 text-white text-xs px-3 py-1.5 rounded-full">저장</button>
             </div>
             <button onClick={() => setChatLightbox(null)} className="absolute top-4 right-4 text-white text-3xl leading-none">&times;</button>
+          </div>
+        )
+      })()}
+
+      {/* 읽음 확인 — 누가 읽었는지 이름으로 보기 (단체방) */}
+      {readInfoFor && active?.kind === 'room' && (() => {
+        const m = messages.find(x => x.id === readInfoFor)
+        if (!m) return null
+        const un = unreadPeople(m)
+        const unIds = new Set(un.map(p => p.id))
+        const readNames = memberIds
+          .filter(uid => uid !== m.sender_id && !unIds.has(uid))
+          .map(uid => people.find(p => p.id === uid)?.name || '직원')
+        if (m.sender_id !== me) readNames.unshift(m.sender_name || '보낸 사람')
+        return (
+          <div className="fixed inset-0 bg-black/30 z-[70] flex items-center justify-center p-4" onClick={() => setReadInfoFor(null)}>
+            <div className="bg-white rounded-xl shadow-xl w-full max-w-xs p-4" onClick={e => e.stopPropagation()}>
+              <p className="text-sm font-semibold text-gray-800 mb-1">읽음 확인</p>
+              <p className="text-xs text-gray-400 mb-3 line-clamp-2">{m.is_deleted ? '삭제된 메시지' : (m.content || '📷 사진/파일')}</p>
+              <div className="flex flex-col gap-2.5 text-sm">
+                <div>
+                  <span className="text-green-600 font-medium">✓ 읽음 {readNames.length}명</span>
+                  <p className="text-gray-600 mt-0.5 leading-relaxed">{readNames.length ? readNames.join(', ') : '아직 없어요'}</p>
+                </div>
+                <div>
+                  <span className="text-amber-500 font-medium">○ 안 읽음 {un.length}명</span>
+                  <p className="text-gray-600 mt-0.5 leading-relaxed">{un.length ? un.map(p => p.name).join(', ') : '없음 — 모두 읽었어요'}</p>
+                </div>
+              </div>
+              <button onClick={() => setReadInfoFor(null)}
+                className="mt-4 w-full py-2 rounded-lg bg-gray-100 text-gray-600 text-sm hover:bg-gray-200">닫기</button>
+            </div>
           </div>
         )
       })()}
