@@ -25,6 +25,7 @@ export default function AdminUsersPage() {
   const [addForm, setAddForm] = useState(INITIAL_FORM)
   const [adding, setAdding] = useState(false)
   const [addError, setAddError] = useState('')
+  const [storageBytes, setStorageBytes] = useState<number | null>(null) // 전체 Storage 사용량
 
   useEffect(() => {
     if (!authLoading) {
@@ -41,6 +42,9 @@ export default function AdminUsersPage() {
     const { data } = await supabase.from('profiles').select('*').order('name')
     setUsers(data || [])
     setLoading(false)
+    // 전체 Storage 사용량 (photo_optimize.sql의 storage_total_bytes 함수 — 관리자만 값이 나옴)
+    const { data: bytes } = await supabase.rpc('storage_total_bytes')
+    if (typeof bytes === 'number') setStorageBytes(bytes)
   }
 
   async function addUser(e: React.FormEvent) {
@@ -103,6 +107,26 @@ export default function AdminUsersPage() {
         </header>
 
         <div className="flex-1 px-4 md:px-8 py-6 pb-20 md:pb-24">
+          {/* 저장 공간 사용량 — 한도의 80%를 넘으면 경고 */}
+          {storageBytes !== null && (() => {
+            const LIMIT_GB = 1 // Supabase 무료 플랜 Storage 한도. 플랜을 올리면 이 숫자만 바꾸면 됨
+            const usedGB = storageBytes / 1024 / 1024 / 1024
+            const pct = Math.min(100, Math.round((usedGB / LIMIT_GB) * 100))
+            const warn = pct >= 80
+            return (
+              <div className={`rounded-xl border px-4 py-3 mb-4 ${warn ? 'bg-red-50 border-red-200' : 'bg-white border-gray-200'}`}>
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className={`text-sm font-semibold ${warn ? 'text-red-700' : 'text-gray-700'}`}>
+                    {warn ? '⚠️ ' : '💾 '}저장 공간 {usedGB.toFixed(2)}GB / {LIMIT_GB}GB 사용 중 ({pct}%)
+                  </span>
+                  {warn && <span className="text-xs text-red-500">공간이 얼마 안 남았어요 — 오래된 자료 정리 또는 플랜 업그레이드 필요</span>}
+                </div>
+                <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+                  <div className={`h-full rounded-full ${pct >= 95 ? 'bg-red-500' : warn ? 'bg-amber-400' : 'bg-green-500'}`} style={{ width: `${pct}%` }} />
+                </div>
+              </div>
+            )
+          })()}
           {users.length === 0 ? (
             <div className="bg-white rounded-xl border border-gray-200 text-center py-16 text-gray-400">
               <p className="text-3xl mb-2">👥</p>

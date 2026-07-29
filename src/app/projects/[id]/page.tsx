@@ -6,7 +6,7 @@ import Sidebar from '@/components/Sidebar'
 import { supabase, Project, ProjectFile, Schedule, ProjectCost, ProjectAssignment, STATUS_LIST, STATUS_COLOR } from '@/lib/supabase'
 import { useAuth, canEdit } from '@/lib/auth-context'
 import { notifyOthers, notifyDM, notifyRoom } from '@/lib/notify'
-import { compressImage } from '@/lib/image'
+import { compressImage, makeThumbnail, hashFile, formatBytes, isCompressibleImage } from '@/lib/image'
 import Image from 'next/image'
 import FileDropInput from '@/components/FileDropInput'
 import SnsTab from '@/components/SnsTab'
@@ -130,10 +130,10 @@ export default function ProjectDetail() {
 
   const [collapsedCats, setCollapsedCats] = useState<Record<string, boolean>>({})
   const [collapsedZones, setCollapsedZones] = useState<Record<string, boolean>>({})
+  const [photoPages, setPhotoPages] = useState<Record<string, number>>({}) // 사진 30장씩 나눠 보기 — 분류(또는 구역)별 현재 페이지
   const [photoGroup, setPhotoGroup] = useState<'date' | 'zone'>('date') // 사진 정렬: 날짜별/구역별
   const [selectedFileIds, setSelectedFileIds] = useState<Set<string>>(new Set())
   const [selectMode, setSelectMode] = useState(false) // 켜면 사진을 탭해서 선택(모바일 편의)
-  const [photoQuality, setPhotoQuality] = useState<'fast' | 'original'>('fast') // 빠른 업로드(크기 축소) / 원본
   const [showAccess, setShowAccess] = useState(false) // 외부협력업체 공개 설정 (관리자)
   const [partners, setPartners] = useState<{ id: string; name: string }[]>([])
   const [accessIds, setAccessIds] = useState<Set<string>>(new Set())
@@ -265,7 +265,7 @@ export default function ProjectDetail() {
       )
       if (overwrite) {
         const toRemove = files.filter(f => dupes.some(d => d.name === f.file_name))
-        const paths = toRemove.map(f => f.file_url.split('/uploads/')[1]).filter(Boolean)
+        const paths = toRemove.flatMap(f => [f.file_url, f.thumb_url].map(u => (u || '').split('/uploads/')[1]).filter(Boolean)) as string[]
         if (paths.length) await supabase.storage.from('uploads').remove(paths)
         const ids = toRemove.map(f => f.id)
         if (ids.length) await supabase.from('project_files').delete().in('id', ids)
@@ -276,6 +276,24 @@ export default function ProjectDetail() {
     }
 
     setUploading(true)
+
+    // 같은 사진(내용이 완전히 동일한 파일) 중복 업로드 방지 — 원본 지문(SHA-256) 비교
+    const hashes = await Promise.all(uploadList.map(f => hashFile(f)))
+    const existingHashes = new Set(files.map(f => f.file_hash).filter(Boolean))
+    const seenInBatch = new Set<string>()
+    const skipped: string[] = []
+    const dedupList: { file: File; hash: string }[] = []
+    uploadList.forEach((f, i) => {
+      const h = hashes[i]
+      if (h && (existingHashes.has(h) || seenInBatch.has(h))) { skipped.push(f.name); return }
+      if (h) seenInBatch.add(h)
+      dedupList.push({ file: f, hash: h })
+    })
+    if (skipped.length > 0) {
+      alert(`이미 올라간 것과 같은 사진 ${skipped.length}장은 건너뛰었어요:\n${skipped.slice(0, 5).map(n => '· ' + n).join('\n')}${skipped.length > 5 ? `\n외 ${skipped.length - 5}장` : ''}`)
+      if (dedupList.length === 0) { setUploading(false); setShowFileForm(false); setSelectedFiles([]); return }
+    }
+
     // 3장씩 동시에 올려 속도 개선. HEIC 무거운 변환(heic2any)은 메모리 보호를 위해 한 장씩만.
     const CONC = 3
     let done = 0
@@ -286,33 +304,40 @@ export default function ProjectDetail() {
       heicChain = run.catch(() => {})
       return run as Promise<{ file: File; ext: string }>
     }
-    for (let i = 0; i < uploadList.length; i += CONC) {
-      const chunk = uploadList.slice(i, i + CONC)
-      await Promise.all(chunk.map(async (orig, j) => {
+    for (let i = 0; i < dedupList.length; i += CONC) {
+      const chunk = dedupList.slice(i, i + CONC)
+      await Promise.all(chunk.map(async ({ file: orig, hash }, j) => {
         let file = orig
-        let ext = orig.name.split('.').pop() || 'bin'
-        // 1) 빠른 업로드: 기기 내장 변환으로 축소 시도 (아이폰 사파리는 HEIC도 여기서 즉시 JPEG化 — 매우 빠름)
-        if (photoQuality === 'fast') {
-          const c = await compressImage(orig)
-          if (c !== orig) { file = c; ext = 'jpg' }
-        }
+        // 1) 사진은 자동 최적화: 긴 변 2400px 이하 + WebP 80% (아이폰 사파리는 HEIC도 여기서 즉시 변환 — 매우 빠름)
+        const c = await compressImage(orig)
+        if (c !== orig) file = c
         // 2) 아직 HEIC 그대로면(내장 변환 미지원 브라우저) heic2any로 — 한 장씩 순차 처리
         if (file === orig && isHeic(orig)) {
           const r = await convertHeicSerial(orig)
-          file = r.file; ext = r.ext
-          if (photoQuality === 'fast' && r.ext === 'jpg') {
-            const c2 = await compressImage(file)
-            if (c2 !== file) { file = c2; ext = 'jpg' }
-          }
+          file = r.file
+          const c2 = await compressImage(file)
+          if (c2 !== file) file = c2
         }
-        const path = `files/${id}/${Date.now()}_${i + j}.${ext}`
+        const ext = file.name.split('.').pop() || 'bin'
+        const stamp = `${Date.now()}_${i + j}`
+        const path = `files/${id}/${stamp}.${ext}`
         const { error: uploadError } = await supabase.storage.from('uploads').upload(path, file, {
           contentType: file.type || 'application/octet-stream',
           upsert: true,
         })
         if (uploadError) { failMsg = uploadError.message; return }
         const { data: urlData } = supabase.storage.from('uploads').getPublicUrl(path)
-        const { error: insertError } = await supabase.from('project_files').insert([{
+        // 3) 목록 표시용 500px 썸네일 별도 저장 (실패해도 업로드는 계속 — 원본으로 표시)
+        let thumb_url: string | null = null
+        if (isCompressibleImage(file)) {
+          const th = await makeThumbnail(file)
+          if (th) {
+            const tPath = `files/${id}/thumbs/${stamp}.${th.name.split('.').pop()}`
+            const { error: thErr } = await supabase.storage.from('uploads').upload(tPath, th, { contentType: th.type, upsert: true })
+            if (!thErr) thumb_url = supabase.storage.from('uploads').getPublicUrl(tPath).data.publicUrl
+          }
+        }
+        const baseRow = {
           project_id: id,
           file_name: file.name,
           file_url: urlData.publicUrl,
@@ -320,16 +345,23 @@ export default function ProjectDetail() {
           category: fileForm.category.trim() || '기타',
           memo: fileForm.memo || '',
           uploaded_by: profile?.name || '',
+        }
+        let { error: insertError } = await supabase.from('project_files').insert([{
+          ...baseRow, thumb_url, file_size: file.size, file_hash: hash || null,
         }])
+        // 새 컬럼 SQL을 아직 안 돌린 상태라도 업로드는 되게 (컬럼 없음 오류면 기존 방식으로 재시도)
+        if (insertError && /column|thumb_url|file_size|file_hash/i.test(insertError.message)) {
+          ;({ error: insertError } = await supabase.from('project_files').insert([baseRow]))
+        }
         if (insertError) { failMsg = insertError.message; return }
         done++
         setUploadCurrent(done)
-        setUploadProgress(Math.round((done / uploadList.length) * 100))
+        setUploadProgress(Math.round((done / dedupList.length) * 100))
       }))
     }
-    if (failMsg && done < uploadList.length) alert(`${uploadList.length - done}장 업로드 실패: ${failMsg}`)
+    if (failMsg && done < dedupList.length) alert(`${dedupList.length - done}장 업로드 실패: ${failMsg}`)
     setUploadProgress(100)
-    notifyOthers(profile?.id, { type: 'file', title: `${project?.name || '현장'} · 새 자료 ${uploadList.length}건`, body: `${fileForm.category} 자료가 업로드되었습니다`, link: `/projects/${id}?tab=자료` })
+    notifyOthers(profile?.id, { type: 'file', title: `${project?.name || '현장'} · 새 자료 ${dedupList.length}건`, body: `${fileForm.category} 자료가 업로드되었습니다`, link: `/projects/${id}?tab=자료` })
     setFileForm({ category: '공사전사진', memo: '', linkUrl: '', linkTitle: '' })
     setSelectedFiles([])
     setShowFileForm(false)
@@ -465,7 +497,7 @@ export default function ProjectDetail() {
     if (!editFile || savingFileEdit) return
     if (!editFileForm.title.trim()) return
     setSavingFileEdit(true)
-    const payload: Record<string, string> = {
+    const payload: Record<string, string | number | null> = {
       file_name: editFileForm.title.trim(),
       category: editFileForm.category.trim() || '기타',
       memo: editFileForm.memo,
@@ -474,20 +506,37 @@ export default function ProjectDetail() {
       if (!editFileForm.url.trim()) { alert('링크 URL을 입력하세요'); setSavingFileEdit(false); return }
       payload.file_url = editFileForm.url.trim()
     }
-    // 파일 교체 (도면 v2 등): 새 파일 업로드 → 항목은 그대로, 파일만 바뀜. 옛 파일은 정리.
+    // 파일 교체 (도면 v2 등): 새 파일 업로드 → 항목은 그대로, 파일만 바뀜. 옛 파일·썸네일은 정리.
     if (replaceFile && editFile.file_type !== 'link' && editFile.file_type !== 'text') {
       let up = replaceFile
       if ((up.type || '').startsWith('image/')) up = await compressImage(up)
       const ext = up.name.split('.').pop() || 'bin'
-      const path = `files/${id}/${Date.now()}.${ext}`
+      const stamp = `${Date.now()}`
+      const path = `files/${id}/${stamp}.${ext}`
       const { error: upErr } = await supabase.storage.from('uploads').upload(path, up, { contentType: up.type || 'application/octet-stream', upsert: true })
       if (upErr) { alert('파일 업로드 실패: ' + upErr.message); setSavingFileEdit(false); return }
       payload.file_url = supabase.storage.from('uploads').getPublicUrl(path).data.publicUrl
       payload.file_type = up.type || ''
-      const oldPath = editFile.file_url?.split('/uploads/')[1]
-      if (oldPath) await supabase.storage.from('uploads').remove([oldPath])
+      payload.file_size = up.size
+      payload.file_hash = await hashFile(replaceFile) || null
+      payload.thumb_url = null
+      if (isCompressibleImage(up)) {
+        const th = await makeThumbnail(up)
+        if (th) {
+          const tPath = `files/${id}/thumbs/${stamp}.${th.name.split('.').pop()}`
+          const { error: thErr } = await supabase.storage.from('uploads').upload(tPath, th, { contentType: th.type, upsert: true })
+          if (!thErr) payload.thumb_url = supabase.storage.from('uploads').getPublicUrl(tPath).data.publicUrl
+        }
+      }
+      const oldPaths = [editFile.file_url, editFile.thumb_url].map(u => (u || '').split('/uploads/')[1]).filter(Boolean) as string[]
+      if (oldPaths.length) await supabase.storage.from('uploads').remove(oldPaths)
     }
-    const { error } = await supabase.from('project_files').update(payload).eq('id', editFile.id)
+    let { error } = await supabase.from('project_files').update(payload).eq('id', editFile.id)
+    // 새 컬럼 SQL을 아직 안 돌린 상태 대비: 컬럼 없음 오류면 기존 필드만으로 재시도
+    if (error && /column|thumb_url|file_size|file_hash/i.test(error.message)) {
+      delete payload.file_size; delete payload.file_hash; delete payload.thumb_url
+      ;({ error } = await supabase.from('project_files').update(payload).eq('id', editFile.id))
+    }
     setSavingFileEdit(false)
     if (error) { alert('수정 실패: ' + error.message); return }
     // 파일을 실제로 교체한 경우엔 알림 (제목·메모만 고친 건 조용히 — 소음 방지)
@@ -503,12 +552,14 @@ export default function ProjectDetail() {
     fetchAll()
   }
 
+  // 파일이 지워질 때 썸네일도 같이 지워 저장 공간이 새지 않게
+  const storagePathsOf = (f: ProjectFile) =>
+    [f.file_url, f.thumb_url].map(u => (u || '').split('/uploads/')[1]).filter(Boolean) as string[]
+
   async function deleteFile(file: ProjectFile) {
     if (!confirm(`"${file.file_name}" 을 삭제할까요?`)) return
-    if (file.file_url) {
-      const path = file.file_url.split('/uploads/')[1]
-      if (path) await supabase.storage.from('uploads').remove([path])
-    }
+    const paths = storagePathsOf(file)
+    if (paths.length) await supabase.storage.from('uploads').remove(paths)
     await supabase.from('project_files').delete().eq('id', file.id)
     fetchAll()
   }
@@ -517,7 +568,7 @@ export default function ProjectDetail() {
     if (selectedFileIds.size === 0) return
     if (!confirm(`선택한 ${selectedFileIds.size}장을 삭제할까요?`)) return
     const toDelete = files.filter(f => selectedFileIds.has(f.id))
-    const paths = toDelete.map(f => f.file_url.split('/uploads/')[1]).filter(Boolean)
+    const paths = toDelete.flatMap(storagePathsOf)
     if (paths.length > 0) await supabase.storage.from('uploads').remove(paths)
     const ids = Array.from(selectedFileIds)
     const { error } = await supabase.from('project_files').delete().in('id', ids)
@@ -767,7 +818,7 @@ export default function ProjectDetail() {
               isSelected ? 'border-green-500 ring-2 ring-green-500 brightness-90' : 'border-gray-200'
             }`} />
         ) : (
-          <HeicImg src={f.file_url} alt={f.file_name} thumb
+          <HeicImg src={f.thumb_url || f.file_url} alt={f.file_name} thumb
             onClick={() => (selectMode && !readOnly) ? toggleSelectFile(f.id) : setLightbox(f.file_url)}
             className={`w-full h-full object-cover rounded-lg border cursor-pointer transition-all ${
               isSelected ? 'border-green-500 ring-2 ring-green-500 brightness-90' : 'border-gray-200'
@@ -800,11 +851,36 @@ export default function ProjectDetail() {
           <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent rounded-b-lg flex items-end justify-between p-1.5 gap-1">
             <button onClick={e => { e.stopPropagation(); shareFile(f) }}
               className="text-white bg-black/40 text-xs px-1.5 py-0.5 rounded hover:bg-black/60">내보내기</button>
+            {f.file_size ? <span className="text-white/80 text-[10px] pointer-events-none">{formatBytes(f.file_size)}</span> : null}
             <button onClick={e => { e.stopPropagation(); downloadFile(f) }}
               className="text-white bg-black/40 text-xs px-1.5 py-0.5 rounded hover:bg-black/60">저장</button>
           </div>
         )}
       </div>
+    )
+  }
+
+  // 사진 격자를 30장씩 나눠 표시 (한 번에 다 그리면 느려져서) — 화면에 보이는 것만 lazy 로딩과 함께
+  const PHOTOS_PER_PAGE = 30
+  function pagedGrid(key: string, arr: ProjectFile[]) {
+    const totalPages = Math.max(1, Math.ceil(arr.length / PHOTOS_PER_PAGE))
+    const page = Math.min(photoPages[key] || 1, totalPages)
+    const shown = arr.slice((page - 1) * PHOTOS_PER_PAGE, page * PHOTOS_PER_PAGE)
+    return (
+      <>
+        <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-2">
+          {shown.map(f => renderPhotoTile(f))}
+        </div>
+        {totalPages > 1 && (
+          <div className="flex items-center justify-center gap-3 mt-3 text-sm">
+            <button disabled={page <= 1} onClick={() => setPhotoPages(p => ({ ...p, [key]: page - 1 }))}
+              className="px-3 py-1.5 rounded-lg border border-gray-300 text-gray-600 disabled:opacity-30 hover:bg-gray-50">◀ 이전</button>
+            <span className="text-gray-500">{page} / {totalPages} <span className="text-gray-400">(총 {arr.length}장)</span></span>
+            <button disabled={page >= totalPages} onClick={() => setPhotoPages(p => ({ ...p, [key]: page + 1 }))}
+              className="px-3 py-1.5 rounded-lg border border-gray-300 text-gray-600 disabled:opacity-30 hover:bg-gray-50">다음 ▶</button>
+          </div>
+        )}
+      </>
     )
   }
 
@@ -1076,12 +1152,15 @@ export default function ProjectDetail() {
                       className={`px-3 py-2 font-medium border-l border-gray-200 ${photoGroup === 'zone' ? 'bg-green-600 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}>📁 구역별</button>
                   </div>
                 </div>
-                {!readOnly && (
-                  <button onClick={() => setShowFileForm(true)}
-                    className="bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-700">
-                    + 자료 추가
-                  </button>
-                )}
+                <div className="flex items-center gap-3">
+                  {(() => { const sz = files.reduce((s, f) => s + (f.file_size || 0), 0); return sz > 0 ? <span className="text-xs text-gray-400">이 현장 자료 용량 {formatBytes(sz)}</span> : null })()}
+                  {!readOnly && (
+                    <button onClick={() => setShowFileForm(true)}
+                      className="bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-700">
+                      + 자료 추가
+                    </button>
+                  )}
+                </div>
               </div>
               {files.length === 0 ? (
                 <div className="bg-white rounded-xl border border-gray-200 text-center py-16 text-gray-400">
@@ -1105,6 +1184,7 @@ export default function ProjectDetail() {
                             className="flex-1 flex items-center gap-2 text-left">
                             <span className="text-sm font-semibold text-gray-700">
                               {cat} <span className="text-gray-400 font-normal ml-1">({catFiles.length})</span>
+                              {(() => { const sz = catFiles.reduce((s, f) => s + (f.file_size || 0), 0); return sz > 0 ? <span className="text-gray-300 font-normal ml-1.5 text-xs">{formatBytes(sz)}</span> : null })()}
                             </span>
                             <span className="text-gray-400 text-xs">{isCollapsed ? '▼ 펼치기' : '▲ 접기'}</span>
                           </button>
@@ -1138,23 +1218,17 @@ export default function ProjectDetail() {
                           <div className="border-t border-gray-100 p-3">
                             {isPhoto ? (
                               photoGroup === 'date' ? (
-                                // 📅 날짜순 정렬 (묶지 않고 평평하게, 최신 날짜가 맨 위)
-                                <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-2">
-                                  {[...catFiles].sort((a, b) => {
-                                    const d = fileDate(b).localeCompare(fileDate(a))
-                                    if (d !== 0) return d
-                                    const c = (b.created_at || '').localeCompare(a.created_at || '') // 같은 날짜면 나중에 올린 게 위
-                                    return c !== 0 ? c : (a.file_name || '').localeCompare(b.file_name || '', undefined, { numeric: true })
-                                  }).map(f => renderPhotoTile(f))}
-                                </div>
+                                // 📅 날짜순 정렬 (묶지 않고 평평하게, 최신 날짜가 맨 위) — 30장씩 나눠 보기
+                                pagedGrid(cat, [...catFiles].sort((a, b) => {
+                                  const d = fileDate(b).localeCompare(fileDate(a))
+                                  if (d !== 0) return d
+                                  const c = (b.created_at || '').localeCompare(a.created_at || '') // 같은 날짜면 나중에 올린 게 위
+                                  return c !== 0 ? c : (a.file_name || '').localeCompare(b.file_name || '', undefined, { numeric: true })
+                                }))
                               ) : (() => {
                                 const zones = groupByZone(catFiles)
                                 if (zones.length === 1) {
-                                  return (
-                                    <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-2">
-                                      {catFiles.map(f => renderPhotoTile(f))}
-                                    </div>
-                                  )
+                                  return pagedGrid(cat, catFiles)
                                 }
                                 return (
                                   <div className="flex flex-col gap-4">
@@ -1171,9 +1245,7 @@ export default function ProjectDetail() {
                                             <span className="text-gray-400 text-xs ml-auto">{zCollapsed ? '▼ 펼치기' : '▲ 접기'}</span>
                                           </button>
                                           {!zCollapsed && (
-                                            <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-2 mt-2">
-                                              {zFiles.map(f => renderPhotoTile(f))}
-                                            </div>
+                                            <div className="mt-2">{pagedGrid(zKey, zFiles)}</div>
                                           )}
                                         </div>
                                       )
@@ -1217,7 +1289,7 @@ export default function ProjectDetail() {
                                       <p className="text-sm font-medium text-gray-800 hover:text-green-600 truncate">{f.file_name}</p>
                                       {f.memo && <p className={`text-xs text-gray-400 ${f.file_type === 'text' ? 'whitespace-pre-wrap' : ''}`}>{f.memo}</p>}
                                     </button>
-                                    <span className="text-xs text-gray-400 flex-shrink-0 hidden sm:block">{f.uploaded_by ? `${f.uploaded_by} · ` : ''}{new Date(f.created_at).toLocaleDateString('ko-KR')}</span>
+                                    <span className="text-xs text-gray-400 flex-shrink-0 hidden sm:block">{f.uploaded_by ? `${f.uploaded_by} · ` : ''}{new Date(f.created_at).toLocaleDateString('ko-KR')}{f.file_size ? ` · ${formatBytes(f.file_size)}` : ''}</span>
                                     {f.file_type !== 'link' && f.file_type !== 'text' && f.file_url && (<>
                                       <button onClick={() => shareFile(f)}
                                         className="text-xs text-blue-400 hover:text-blue-600 flex-shrink-0">내보내기</button>
@@ -1483,24 +1555,9 @@ export default function ProjectDetail() {
                     파일 선택 {fileForm.category === '미팅내용' ? <span className="text-gray-400 font-normal">(선택 — 글만 저장도 가능)</span> : <>* <span className="text-gray-400 font-normal">(여러 장 동시 선택 가능)</span></>}
                   </label>
                   <DropZone files={selectedFiles} onChange={setSelectedFiles} />
-                  {/* 사진 업로드 속도/화질 선택 */}
-                  <div className="mt-2">
-                    <div className="flex rounded-lg border border-gray-200 overflow-hidden text-xs">
-                      <button type="button" onClick={() => setPhotoQuality('fast')}
-                        className={`flex-1 py-2 font-medium ${photoQuality === 'fast' ? 'bg-green-600 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}>
-                        🚀 빠른 업로드 (권장)
-                      </button>
-                      <button type="button" onClick={() => setPhotoQuality('original')}
-                        className={`flex-1 py-2 font-medium border-l border-gray-200 ${photoQuality === 'original' ? 'bg-green-600 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}>
-                        원본 그대로 (느림)
-                      </button>
-                    </div>
-                    <p className="text-[11px] text-gray-400 mt-1">
-                      {photoQuality === 'fast'
-                        ? '사진 크기를 줄여 5~10배 빨라요. 압축파일이 아니라 바로 보이고, 화면·인쇄에 충분한 화질이에요. (동영상·문서는 그대로)'
-                        : '촬영 원본 그대로 올려요. 용량이 커서 장당 수십 초 걸릴 수 있어요.'}
-                    </p>
-                  </div>
+                  <p className="text-[11px] text-gray-400 mt-1.5">
+                    사진은 자동으로 최적화돼요 (화면·인쇄에 충분한 화질, 저장 공간·속도 절약). 같은 사진을 또 올리면 자동으로 건너뛰어요. 동영상·문서는 그대로 올라가요.
+                  </p>
                 </div>
               )}
 
