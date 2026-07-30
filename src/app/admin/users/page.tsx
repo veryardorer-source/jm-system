@@ -47,6 +47,22 @@ export default function AdminUsersPage() {
     if (typeof bytes === 'number') setStorageBytes(bytes)
   }
 
+  // 회원 내보내기 — 계정 삭제(로그인 불가). 올린 자료·메시지는 기록으로 남음.
+  async function removeUser(u: Profile) {
+    if (u.id === myProfile?.id) return
+    if (!confirm(`"${u.name}" 님을 내보낼까요?\n\n· 계정이 삭제되어 더 이상 로그인할 수 없어요\n· 지금까지 올린 자료·메시지·작업일지는 그대로 남아요\n· 이 작업은 되돌릴 수 없어요`)) return
+    setSaving(u.id)
+    const res = await fetch('/api/admin/delete-user', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId: u.id }),
+    })
+    const data = await res.json()
+    setSaving(null)
+    if (!res.ok) { alert('내보내기 실패: ' + (data.error || '오류')); return }
+    setUsers(us => us.filter(x => x.id !== u.id))
+  }
+
   async function addUser(e: React.FormEvent) {
     e.preventDefault()
     setAdding(true)
@@ -109,7 +125,7 @@ export default function AdminUsersPage() {
         <div className="flex-1 px-4 md:px-8 py-6 pb-20 md:pb-24">
           {/* 저장 공간 사용량 — 한도의 80%를 넘으면 경고 */}
           {storageBytes !== null && (() => {
-            const LIMIT_GB = 1 // Supabase 무료 플랜 Storage 한도. 플랜을 올리면 이 숫자만 바꾸면 됨
+            const LIMIT_GB = 100 // Supabase Pro 플랜 Storage 포함량(100GB). 플랜이 바뀌면 이 숫자만 바꾸면 됨
             const usedGB = storageBytes / 1024 / 1024 / 1024
             const pct = Math.min(100, Math.round((usedGB / LIMIT_GB) * 100))
             const warn = pct >= 80
@@ -157,7 +173,7 @@ export default function AdminUsersPage() {
                           </span>
                         </td>
                         <td className="px-4 py-3">
-                          <div className="flex gap-1.5">
+                          <div className="flex gap-1.5 items-center">
                             {ROLE_OPTIONS.map(r => (
                               <button key={r.value}
                                 disabled={saving === u.id || u.role === r.value || u.id === myProfile?.id}
@@ -170,6 +186,12 @@ export default function AdminUsersPage() {
                                 {r.label}
                               </button>
                             ))}
+                            {u.id !== myProfile?.id && (
+                              <button disabled={saving === u.id} onClick={() => removeUser(u)}
+                                className="text-xs px-2.5 py-1 rounded-lg border border-red-200 text-red-500 hover:bg-red-50 disabled:opacity-40 ml-2">
+                                내보내기
+                              </button>
+                            )}
                           </div>
                         </td>
                       </tr>
@@ -207,6 +229,10 @@ export default function AdminUsersPage() {
                               {r.label}
                             </button>
                           ))}
+                          <button disabled={saving === u.id} onClick={() => removeUser(u)}
+                            className="text-xs px-3 py-1.5 rounded-lg border border-red-200 text-red-500 hover:bg-red-50 disabled:opacity-40">
+                            내보내기
+                          </button>
                         </div>
                       )}
                     </div>
