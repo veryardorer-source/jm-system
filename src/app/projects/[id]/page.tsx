@@ -6,7 +6,7 @@ import Sidebar from '@/components/Sidebar'
 import { supabase, Project, ProjectFile, Schedule, ProjectCost, ProjectAssignment, STATUS_LIST, STATUS_COLOR } from '@/lib/supabase'
 import { useAuth, canEdit } from '@/lib/auth-context'
 import { notifyOthers, notifyDM, notifyRoom } from '@/lib/notify'
-import { compressImage, makeThumbnail, hashFile, formatBytes, isCompressibleImage } from '@/lib/image'
+import { compressImage, makeThumbnail, hashFile, formatBytes, isCompressibleImage, dateStampedName } from '@/lib/image'
 import { openPdfTitled } from '@/lib/media'
 import Image from 'next/image'
 import FileDropInput from '@/components/FileDropInput'
@@ -320,6 +320,9 @@ export default function ProjectDetail() {
           if (c2 !== file) file = c2
         }
         const ext = file.name.split('.').pop() || 'bin'
+        // 사진·동영상은 날짜 이름 유지(폰 공유로 이름이 image.jpg 등으로 바뀐 경우 촬영시각으로 복원) — NAS 날짜순 정렬용
+        const isMedia = (orig.type || '').startsWith('image/') || (orig.type || '').startsWith('video/') || isCompressibleImage(orig)
+        const displayName = isMedia ? dateStampedName(orig, ext, i + j) : file.name
         const stamp = `${Date.now()}_${i + j}`
         const path = `files/${id}/${stamp}.${ext}`
         const { error: uploadError } = await supabase.storage.from('uploads').upload(path, file, {
@@ -340,7 +343,7 @@ export default function ProjectDetail() {
         }
         const baseRow = {
           project_id: id,
-          file_name: file.name,
+          file_name: displayName,
           file_url: urlData.publicUrl,
           file_type: file.type || '',
           category: fileForm.category.trim() || '기타',
@@ -380,7 +383,7 @@ export default function ProjectDetail() {
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = file.file_name
+      a.download = nasName(file)
       document.body.appendChild(a)
       a.click()
       document.body.removeChild(a)
@@ -400,7 +403,7 @@ export default function ProjectDetail() {
       try {
         const res = await fetch(file.file_url, { mode: 'cors', credentials: 'omit' })
         const blob = await res.blob()
-        const fileObj = new File([blob], file.file_name, { type: blob.type })
+        const fileObj = new File([blob], nasName(file), { type: blob.type })
         if (canShareFiles([fileObj])) {
           await navigator.share({ files: [fileObj], title: file.file_name })
           return
@@ -419,7 +422,7 @@ export default function ProjectDetail() {
         const fileObjects = await Promise.all(fileList.map(async f => {
           const res = await fetch(f.file_url, { mode: 'cors', credentials: 'omit' })
           const blob = await res.blob()
-          return new File([blob], f.file_name, { type: blob.type })
+          return new File([blob], nasName(f), { type: blob.type })
         }))
         // 1) 한 번에 전부 공유
         if (canShareFiles(fileObjects)) {
@@ -459,7 +462,7 @@ export default function ProjectDetail() {
           const res = await fetch(f.file_url, { mode: 'cors', credentials: 'omit' })
           if (!res.ok) continue
           const blob = await res.blob()
-          let name = f.file_name || `file_${i}`
+          let name = nasName(f) || `file_${i}`
           if (used.has(name)) {
             const dot = name.lastIndexOf('.')
             name = dot > 0 ? `${name.slice(0, dot)}_${i}${name.slice(dot)}` : `${name}_${i}`
@@ -784,6 +787,12 @@ export default function ProjectDetail() {
     const mt = (f.file_name || '').match(/(20\d{2})[._-]?(0[1-9]|1[0-2])[._-]?(0[1-9]|[12]\d|3[01])/)
     if (mt) return `${mt[1]}-${mt[2]}-${mt[3]}`
     return (f.created_at || '').slice(0, 10)
+  }
+
+  // PC·NAS로 저장할 때의 파일명 — 이름에 날짜가 없으면 앞에 날짜를 붙여 날짜순 정렬 유지 (예전에 올린 자료용)
+  const nasName = (f: ProjectFile): string => {
+    const n = f.file_name || 'file'
+    return /20\d{2}[._-]?(0[1-9]|1[0-2])[._-]?(0[1-9]|[12]\d|3[01])/.test(n) ? n : `${fileDate(f).replace(/-/g, '')}_${n}`
   }
 
   // 사진 분류에 섞인 문서(PDF·엑셀 등) 열기

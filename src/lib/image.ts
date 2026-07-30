@@ -75,6 +75,19 @@ export async function hashFile(file: File): Promise<string> {
   }
 }
 
+// 사진 파일명 규칙 — NAS 등에서 날짜순 정렬이 유지되게.
+// 이름에 이미 날짜(20260730 / 2026-07-30 등)가 있으면 그대로 두고(확장자만 정리),
+// 없으면(폰 공유 시 image.jpg 등으로 바뀌는 경우) 촬영·생성 시각으로 'YYYYMMDD_HHMMSS' 이름을 지어준다.
+export function dateStampedName(file: File, finalExt?: string, seq?: number): string {
+  const ext = (finalExt || file.name.split('.').pop() || 'jpg').replace(/^\./, '')
+  const base = file.name.replace(/\.[^.]+$/, '')
+  if (/20\d{2}[._-]?(0[1-9]|1[0-2])[._-]?(0[1-9]|[12]\d|3[01])/.test(base)) return `${base}.${ext}`
+  const d = new Date(file.lastModified || Date.now())
+  const p = (n: number) => String(n).padStart(2, '0')
+  const stamp = `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`
+  return `${stamp}${seq != null ? '_' + (seq + 1) : ''}.${ext}`
+}
+
 // 용량 표시: 1.2MB / 340KB 식으로
 export function formatBytes(n?: number | null): string {
   if (!n || n <= 0) return ''

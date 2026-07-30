@@ -6,6 +6,7 @@ import Sidebar from '@/components/Sidebar'
 import { supabase } from '@/lib/supabase'
 import { useAuth, canEdit } from '@/lib/auth-context'
 import { notifyOthers } from '@/lib/notify'
+import { compressImage, makeThumbnail, hashFile, isCompressibleImage, dateStampedName } from '@/lib/image'
 
 const CATEGORY_LIST = ['공사전사진', '시공사진', '마감사진', '도면', '3D', '미팅내용', '고객요청', '기타']
 
@@ -123,11 +124,40 @@ export default function SharePage() {
       await Promise.all(chunk.map(async (file, j) => {
         const idx = i + j
         if (dest === 'project') {
-          const url = await uploadOne(file, idx, `files/${projectId}`)
-          if (url) await supabase.from('project_files').insert([{
-            project_id: projectId, file_name: file.name, file_url: url,
-            file_type: file.type || '', category, memo: memo || '', uploaded_by: who,
+          // 현장 자료는 현장 상세와 같은 최적화 적용: 사진 자동 압축(2400px WebP) + 500px 썸네일 + 용량·지문 기록
+          let up = file
+          if (isCompressibleImage(file)) { const c = await compressImage(file); if (c !== file) up = c }
+          const ext = up.name.split('.').pop() || 'bin'
+          const stamp = `${Date.now()}_${idx}`
+          const path = `files/${projectId}/${stamp}.${ext}`
+          const { error: upErr } = await supabase.storage.from('uploads').upload(path, up, {
+            contentType: up.type || 'application/octet-stream', upsert: true,
+          })
+          if (upErr) { alert('업로드 실패: ' + upErr.message); return }
+          const url = supabase.storage.from('uploads').getPublicUrl(path).data.publicUrl
+          let thumb_url: string | null = null
+          if (isCompressibleImage(up)) {
+            const th = await makeThumbnail(up)
+            if (th) {
+              const tPath = `files/${projectId}/thumbs/${stamp}.${th.name.split('.').pop()}`
+              const { error: thErr } = await supabase.storage.from('uploads').upload(tPath, th, { contentType: th.type, upsert: true })
+              if (!thErr) thumb_url = supabase.storage.from('uploads').getPublicUrl(tPath).data.publicUrl
+            }
+          }
+          // 폰 공유로 이름이 image.jpg 등으로 바뀐 사진은 촬영시각 이름으로 — NAS 날짜순 정렬 유지
+          const isMedia = (file.type || '').startsWith('image/') || (file.type || '').startsWith('video/') || isCompressibleImage(file)
+          const displayName = isMedia ? dateStampedName(file, ext, idx) : file.name
+          const baseRow = {
+            project_id: projectId, file_name: displayName, file_url: url,
+            file_type: up.type || '', category, memo: memo || '', uploaded_by: who,
+          }
+          let { error: insErr } = await supabase.from('project_files').insert([{
+            ...baseRow, thumb_url, file_size: up.size, file_hash: await hashFile(file) || null,
           }])
+          if (insErr && /column|thumb_url|file_size|file_hash/i.test(insErr.message)) {
+            ;({ error: insErr } = await supabase.from('project_files').insert([baseRow]))
+          }
+          if (insErr) alert('저장 실패: ' + insErr.message)
         } else if (dest === 'receipt') {
           const url = await uploadOne(file, idx, 'receipts')
           if (url) await supabase.from('receipts').insert([{ image_url: url, memo: reason || '', uploaded_by: who }])
