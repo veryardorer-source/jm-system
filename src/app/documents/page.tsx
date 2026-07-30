@@ -6,6 +6,7 @@ import { useAuth } from '@/lib/auth-context'
 import { notifyOthers } from '@/lib/notify'
 import FileDropInput from '@/components/FileDropInput'
 import { supabase, CompanyDocument, DOC_CATEGORY_LIST, DocVisibility } from '@/lib/supabase'
+import { openPdfTitled } from '@/lib/media'
 
 const EMPTY_FORM = { title: '', category: DOC_CATEGORY_LIST[0] as string, visibility: '전체공개' as DocVisibility, memo: '' }
 
@@ -65,7 +66,7 @@ export default function DocumentsPage() {
 
   function openDoc(doc: CompanyDocument) {
     const name = doc.file_name?.toLowerCase() || ''
-    if (name.endsWith('.pdf')) window.open(doc.file_url, '_blank')
+    if (name.endsWith('.pdf')) openPdfTitled(doc.file_url, doc.file_name)
     else if (/\.(xlsx|xls|xlsb|xlsm|doc|docx|ppt|pptx)$/.test(name)) window.open(`https://view.officeapps.live.com/op/view.aspx?src=${encodeURIComponent(doc.file_url)}`, '_blank')
     else if (/\.(jpg|jpeg|png|gif|webp|heic)$/.test(name)) setLightbox(doc.file_url)
     else window.open(doc.file_url, '_blank')

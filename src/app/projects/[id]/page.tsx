@@ -7,6 +7,7 @@ import { supabase, Project, ProjectFile, Schedule, ProjectCost, ProjectAssignmen
 import { useAuth, canEdit } from '@/lib/auth-context'
 import { notifyOthers, notifyDM, notifyRoom } from '@/lib/notify'
 import { compressImage, makeThumbnail, hashFile, formatBytes, isCompressibleImage } from '@/lib/image'
+import { openPdfTitled } from '@/lib/media'
 import Image from 'next/image'
 import FileDropInput from '@/components/FileDropInput'
 import SnsTab from '@/components/SnsTab'
@@ -789,7 +790,7 @@ export default function ProjectDetail() {
   function openDocFile(f: ProjectFile) {
     const name = (f.file_name || f.file_url).toLowerCase()
     if (/\.(xlsx|xls|xlsb|xlsm|doc|docx|ppt|pptx)$/.test(name)) window.open(`https://view.officeapps.live.com/op/view.aspx?src=${encodeURIComponent(f.file_url)}`, '_blank')
-    else if (name.endsWith('.pdf')) window.open(f.file_url, '_blank')
+    else if (name.endsWith('.pdf')) openPdfTitled(f.file_url, f.file_name)
     else window.open(f.file_url, '_blank')
   }
 
@@ -1462,7 +1463,7 @@ export default function ProjectDetail() {
                               {c.file_url ? (
                                 <button onClick={() => {
                                   const name = c.file_name?.toLowerCase() || ''
-                                  if (name.endsWith('.pdf')) window.open(c.file_url, '_blank')
+                                  if (name.endsWith('.pdf')) openPdfTitled(c.file_url, c.file_name || '')
                                   else if (/\.(jpg|jpeg|png|gif|webp)$/.test(name)) setLightbox(c.file_url)
                                   else window.open(c.file_url, '_blank')
                                 }} className="text-xs text-green-600 hover:underline truncate max-w-[160px] inline-block">📎 {c.file_name}</button>
