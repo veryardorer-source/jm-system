@@ -81,7 +81,12 @@ export async function hashFile(file: File): Promise<string> {
 export function dateStampedName(file: File, finalExt?: string, seq?: number): string {
   const ext = (finalExt || file.name.split('.').pop() || 'jpg').replace(/^\./, '')
   const base = file.name.replace(/\.[^.]+$/, '')
-  if (/20\d{2}[._-]?(0[1-9]|1[0-2])[._-]?(0[1-9]|[12]\d|3[01])/.test(base)) return `${base}.${ext}`
+  const DATE_RE = /20\d{2}[._-]?(0[1-9]|1[0-2])[._-]?(0[1-9]|[12]\d|3[01])/
+  // 정렬은 이름 '맨 앞' 글자로 되므로, 날짜가 맨 앞일 때만 그대로 둔다
+  if (/^20\d{2}[._-]?(0[1-9]|1[0-2])[._-]?(0[1-9]|[12]\d|3[01])/.test(base)) return `${base}.${ext}`
+  // KakaoTalk_20260615_… / Resized_20260701_… 처럼 날짜가 속에 있으면 앞으로 끌어온다
+  const m = base.match(DATE_RE)
+  if (m) return `${m[0].replace(/[._-]/g, '')}_${base}.${ext}`
   const d = new Date(file.lastModified || Date.now())
   const p = (n: number) => String(n).padStart(2, '0')
   const stamp = `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`
