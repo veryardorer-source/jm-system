@@ -16,10 +16,11 @@ export default function FileDropInput({
 
   useEffect(() => {
     const h = (e: ClipboardEvent) => {
-      const img = Array.from(e.clipboardData?.items || []).find(it => it.type.startsWith('image/'))
-      if (!img) return
+      // 캡처(스크린샷)는 물론 복사한 파일(PDF·엑셀 등)도 Ctrl+V로 첨부
+      const item = Array.from(e.clipboardData?.items || []).find(it => it.kind === 'file')
+      if (!item) return
       e.preventDefault()
-      const f = img.getAsFile()
+      const f = item.getAsFile()
       if (f) onFile(f)
     }
     window.addEventListener('paste', h)

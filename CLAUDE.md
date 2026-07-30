@@ -49,7 +49,7 @@ npx vercel --prod  # 배포 (jm-system 폴더에서 실행)
 - **새 DB 세팅 시 SQL 실행 순서** (Supabase SQL Editor):
   1. `db/rls_helpers.sql` — 공통 함수(my_role 등). **가장 먼저, 다른 파일들이 의존**
   2. `db/security_and_realtime.sql` — 기본 테이블 + 공용 정책 + realtime
-  3. 기능 테이블: `payments.sql` `worklogs.sql` `push_subscriptions.sql` `finance_quotes.sql` `employee_records.sql` `chat_features.sql` `chat_reads.sql` `payroll_ledger.sql` `profit_file.sql` 등
+  3. 기능 테이블: `payments.sql` `worklogs.sql` `push_subscriptions.sql` `finance_quotes.sql` `employee_records.sql` `chat_features.sql` `chat_reads.sql` `payroll_ledger.sql` `profit_file.sql` `notice_images.sql` `notice_files.sql` 등
   4. `db/rls_notifications.sql` — **필수** (없으면 알림 전면 차단)
   5. `db/rls_chat.sql` — **필수** (없으면 채팅 전면 차단)
   6. `db/rls_sensitive.sql` → 7. `db/rls_money.sql` → 8. `db/project_access.sql` — **필수** (partner 현장별 접근)

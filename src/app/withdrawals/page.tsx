@@ -418,13 +418,13 @@ function MultiFileZone({ files, onChange }: { files: File[]; onChange: (f: File[
     if (!fl) return
     onChange([...files, ...Array.from(fl)])
   }, [files, onChange])
-  // 캡처(스크린샷) 붙여넣기 — 이 창이 열려 있을 때 Ctrl+V로 이미지 추가
+  // Ctrl+V 붙여넣기 — 캡처(스크린샷)는 물론 복사한 파일(PDF 등)도 추가
   useEffect(() => {
     const onPaste = (e: ClipboardEvent) => {
-      const imgs = Array.from(e.clipboardData?.items || []).filter(it => it.type.startsWith('image/'))
-      if (imgs.length === 0) return
+      const items = Array.from(e.clipboardData?.items || []).filter(it => it.kind === 'file')
+      if (items.length === 0) return
       e.preventDefault()
-      const pasted = imgs.map(it => it.getAsFile()).filter(Boolean) as File[]
+      const pasted = items.map(it => it.getAsFile()).filter(Boolean) as File[]
       if (pasted.length) onChange([...files, ...pasted])
     }
     window.addEventListener('paste', onPaste)
@@ -447,7 +447,7 @@ function MultiFileZone({ files, onChange }: { files: File[]; onChange: (f: File[
         ) : (
           <div className="text-center pointer-events-none">
             <p className="text-sm font-medium text-gray-600">클릭·드래그 또는 <span className="text-green-600">Ctrl+V 붙여넣기</span></p>
-            <p className="text-xs text-gray-400 mt-0.5">캡처한 화면도 바로 붙여넣기 가능</p>
+            <p className="text-xs text-gray-400 mt-0.5">캡처 화면·복사한 파일도 바로 붙여넣기 가능</p>
           </div>
         )}
       </div>

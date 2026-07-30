@@ -872,11 +872,12 @@ export default function ChatPage() {
                           }
                         }}
                         onPaste={e => {
-                          const imgs = Array.from(e.clipboardData?.items || []).filter(it => it.type.startsWith('image/'))
-                          if (imgs.length === 0) return
+                          // 캡처(스크린샷)는 물론 복사한 파일(PDF 등)도 Ctrl+V로 전송
+                          const items = Array.from(e.clipboardData?.items || []).filter(it => it.kind === 'file')
+                          if (items.length === 0) return
                           e.preventDefault()
-                          const fs = imgs.map(it => it.getAsFile()).filter(Boolean) as File[]
-                          if (fs.length) sendImages(fs)
+                          const fs = items.map(it => it.getAsFile()).filter(Boolean) as File[]
+                          if (fs.length) handleIncomingFiles(fs)
                         }}
                         placeholder={editing ? '메시지 수정...' : '메시지 입력 · Shift+Enter 줄바꿈 · 캡처 Ctrl+V'}
                         className="flex-1 border border-gray-300 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 resize-none leading-relaxed" />

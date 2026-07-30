@@ -8,6 +8,7 @@ import { useAuth, canEdit } from '@/lib/auth-context'
 import { notifyOthers } from '@/lib/notify'
 import LinkPreview from '@/components/LinkPreview'
 import { compressImage } from '@/lib/image'
+import { viewInBrowser } from '@/lib/media'
 
 // 내용 속 URL을 클릭 가능한 링크로
 function renderContent(t: string) {
@@ -24,6 +25,7 @@ type Notice = {
   category: string
   author: string
   images?: string[] | null   // 첨부 이미지 (캡처 붙여넣기 등)
+  files?: { name: string; url: string }[] | null   // 첨부 파일 (PDF·엑셀 등)
   created_at: string
 }
 
@@ -53,8 +55,12 @@ export default function NoticesPage() {
   const [imgFiles, setImgFiles] = useState<File[]>([])
   const [existingImgs, setExistingImgs] = useState<string[]>([])
   const [imgView, setImgView] = useState<string | null>(null) // 이미지 크게 보기
+  // 파일 첨부 (PDF·엑셀 등 — 선택·드래그·복사한 파일 Ctrl+V)
+  const [attachFiles, setAttachFiles] = useState<File[]>([])
+  const [existingFiles, setExistingFiles] = useState<{ name: string; url: string }[]>([])
+  const [formDrag, setFormDrag] = useState(false)
   const contentRef = useRef<HTMLTextAreaElement>(null)
-  const addImagesRef = useRef<(fs: File[]) => void>(() => {})
+  const addIncomingRef = useRef<(fs: File[]) => void>(() => {})
 
   useEffect(() => { fetchNotices() }, [])
 
@@ -90,19 +96,35 @@ export default function NoticesPage() {
       uploaded.push(supabase.storage.from('uploads').getPublicUrl(path).data.publicUrl)
     }
     const images = [...existingImgs, ...uploaded]
+    // 첨부 파일 업로드 (PDF·엑셀 등 — 원본 파일명 유지)
+    const upFiles: { name: string; url: string }[] = []
+    for (let i = 0; i < attachFiles.length; i++) {
+      const f = attachFiles[i]
+      const ext = f.name.split('.').pop() || 'bin'
+      const path = `notices/files/${Date.now()}_${i}.${ext}`
+      const { error: upErr } = await supabase.storage.from('uploads').upload(path, f, { contentType: f.type || 'application/octet-stream', upsert: true })
+      if (upErr) { alert('파일 업로드 실패: ' + upErr.message); setSaving(false); return }
+      upFiles.push({ name: f.name, url: supabase.storage.from('uploads').getPublicUrl(path).data.publicUrl })
+    }
+    const files = [...existingFiles, ...upFiles]
+    const colHint = (msg: string) =>
+      msg.includes('files') ? '\n(관리자에게: db/notice_files.sql 실행 필요)'
+      : msg.includes('images') ? '\n(관리자에게: notices에 images 컬럼 추가 SQL 실행 필요)' : ''
     let createdId: string | null = null
     if (editing) {
-      const { error } = await supabase.from('notices').update({ title: form.title, content: form.content, category: form.category, author: form.author, images }).eq('id', editing.id)
-      if (error) { alert('저장 실패: ' + error.message + (error.message.includes('images') ? '\n(관리자에게: notices에 images 컬럼 추가 SQL 실행 필요)' : '')); setSaving(false); return }
+      const { error } = await supabase.from('notices').update({ title: form.title, content: form.content, category: form.category, author: form.author, images, files }).eq('id', editing.id)
+      if (error) { alert('저장 실패: ' + error.message + colHint(error.message)); setSaving(false); return }
     } else {
-      const { data: created, error } = await supabase.from('notices').insert([{ ...form, images }]).select('id').single()
-      if (error) { alert('저장 실패: ' + error.message + (error.message.includes('images') ? '\n(관리자에게: notices에 images 컬럼 추가 SQL 실행 필요)' : '')); setSaving(false); return }
+      const { data: created, error } = await supabase.from('notices').insert([{ ...form, images, files }]).select('id').single()
+      if (error) { alert('저장 실패: ' + error.message + colHint(error.message)); setSaving(false); return }
       createdId = created?.id || null
     }
     if (!editing) notifyOthers(profile?.id, { type: 'notice', title: `새 공지 · ${form.title}`, body: form.category, link: createdId ? `/notices?open=${createdId}` : '/notices' })
     setForm(EMPTY_FORM)
     setImgFiles([])
     setExistingImgs([])
+    setAttachFiles([])
+    setExistingFiles([])
     setEditing(null)
     setShowForm(false)
     setSaving(false)
@@ -114,6 +136,8 @@ export default function NoticesPage() {
     setForm({ title: n.title, content: n.content, category: n.category, author: n.author || '' })
     setExistingImgs(n.images || [])
     setImgFiles([])
+    setExistingFiles(n.files || [])
+    setAttachFiles([])
     setSelected(null)
     setShowForm(true)
   }
@@ -132,17 +156,26 @@ export default function NoticesPage() {
     setForm({ ...form, content: before + sep1 + tokens + sep2 + after })
     setImgFiles(prev => [...prev, ...fs])
   }
-  useEffect(() => { addImagesRef.current = addImagesWithTokens })
 
-  // 등록/수정 창이 열려 있는 동안 캡처 붙여넣기(Ctrl+V)로 이미지 추가
+  // 받은 파일 분배 — 이미지는 글 속 [사진N]으로, 나머지(PDF 등)는 첨부 파일로
+  function addIncoming(fs: File[]) {
+    if (!fs.length) return
+    const imgs = fs.filter(f => (f.type || '').startsWith('image/'))
+    const rest = fs.filter(f => !(f.type || '').startsWith('image/'))
+    if (imgs.length) addImagesWithTokens(imgs)
+    if (rest.length) setAttachFiles(prev => [...prev, ...rest])
+  }
+  useEffect(() => { addIncomingRef.current = addIncoming })
+
+  // 등록/수정 창이 열려 있는 동안 Ctrl+V — 캡처(스크린샷)는 물론 복사한 파일(PDF 등)도 첨부
   useEffect(() => {
     if (!showForm) return
     const onPaste = (e: ClipboardEvent) => {
-      const imgs = Array.from(e.clipboardData?.items || []).filter(it => it.type.startsWith('image/'))
-      if (!imgs.length) return
+      const items = Array.from(e.clipboardData?.items || []).filter(it => it.kind === 'file')
+      if (!items.length) return
       e.preventDefault()
-      const fs = imgs.map(it => it.getAsFile()).filter(Boolean) as File[]
-      if (fs.length) addImagesRef.current(fs)
+      const fs = items.map(it => it.getAsFile()).filter(Boolean) as File[]
+      if (fs.length) addIncomingRef.current(fs)
     }
     window.addEventListener('paste', onPaste)
     return () => window.removeEventListener('paste', onPaste)
@@ -169,7 +202,7 @@ export default function NoticesPage() {
             <p className="text-sm text-gray-500 mt-0.5">전체 {scoped.length}개</p>
           </div>
           {!readOnly && (
-            <button onClick={() => { setEditing(null); setForm(EMPTY_FORM); setImgFiles([]); setExistingImgs([]); setShowForm(true) }}
+            <button onClick={() => { setEditing(null); setForm(EMPTY_FORM); setImgFiles([]); setExistingImgs([]); setAttachFiles([]); setExistingFiles([]); setShowForm(true) }}
               className="bg-green-600 text-white px-4 py-2.5 rounded-lg text-sm font-medium hover:bg-green-700">
               + 공지 등록
             </button>
@@ -214,7 +247,7 @@ export default function NoticesPage() {
                         </span>
                         {n.author && <span className="text-xs text-gray-400">{n.author}</span>}
                       </div>
-                      <p className="font-semibold text-gray-900">{n.title}{n.images && n.images.length > 0 && <span className="ml-1.5 text-xs text-gray-400">📷 {n.images.length}</span>}</p>
+                      <p className="font-semibold text-gray-900">{n.title}{n.images && n.images.length > 0 && <span className="ml-1.5 text-xs text-gray-400">📷 {n.images.length}</span>}{n.files && n.files.length > 0 && <span className="ml-1.5 text-xs text-gray-400">📎 {n.files.length}</span>}</p>
                       <p className="text-sm text-gray-500 mt-1 line-clamp-2">{n.content}</p>
                     </div>
                     <span className="text-xs text-gray-400 flex-shrink-0 mt-1">
@@ -276,6 +309,19 @@ export default function NoticesPage() {
                   </>
                 )
               })()}
+              {(selected.files || []).length > 0 && (
+                <div className="mt-4 flex flex-col gap-1.5">
+                  {(selected.files || []).map((f, i) => (
+                    <div key={i} onClick={() => viewInBrowser(f.url, f.name)}
+                      className="flex items-center gap-2 w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm text-gray-700 hover:border-green-300 hover:bg-green-50 transition-colors cursor-pointer">
+                      <span className="flex-shrink-0">📎</span>
+                      <span className="flex-1 truncate font-medium">{f.name}</span>
+                      <a href={f.url} download={f.name} onClick={e => e.stopPropagation()}
+                        className="flex-shrink-0 text-xs text-gray-400 hover:text-green-600 px-1.5 py-0.5 rounded border border-gray-200">저장</a>
+                    </div>
+                  ))}
+                </div>
+              )}
               {(() => { const u = (selected.content || '').match(/https?:\/\/[^\s]+/)?.[0]; return u ? <div className="mt-3"><LinkPreview url={u} /></div> : null })()}
             </div>
             <div className="px-6 py-4 border-t border-gray-100 flex items-center justify-between">
@@ -302,10 +348,13 @@ export default function NoticesPage() {
       {/* 공지 등록 모달 */}
       {showForm && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl w-full max-w-lg shadow-xl max-h-[90vh] overflow-y-auto">
+          <div className={`bg-white rounded-2xl w-full max-w-lg shadow-xl max-h-[90vh] overflow-y-auto ${formDrag ? 'ring-2 ring-green-500' : ''}`}
+            onDragOver={e => { if (Array.from(e.dataTransfer.types).includes('Files')) { e.preventDefault(); setFormDrag(true) } }}
+            onDragLeave={() => setFormDrag(false)}
+            onDrop={e => { if (!Array.from(e.dataTransfer.types).includes('Files')) return; e.preventDefault(); setFormDrag(false); addIncoming(Array.from(e.dataTransfer.files)) }}>
             <div className="flex items-center justify-between px-6 py-5 border-b border-gray-100 sticky top-0 bg-white">
               <h2 className="text-lg font-bold">{editing ? '공지 수정' : '공지 등록'}</h2>
-              <button onClick={() => { setShowForm(false); setForm(EMPTY_FORM); setEditing(null) }} className="text-gray-400 text-2xl">&times;</button>
+              <button onClick={() => { setShowForm(false); setForm(EMPTY_FORM); setEditing(null); setImgFiles([]); setExistingImgs([]); setAttachFiles([]); setExistingFiles([]) }} className="text-gray-400 text-2xl">&times;</button>
             </div>
             <form onSubmit={handleCreate} className="px-6 py-5 flex flex-col gap-4">
               <div>
@@ -330,16 +379,16 @@ export default function NoticesPage() {
               <div>
                 <label className="text-sm font-medium text-gray-700 block mb-1.5">내용 *</label>
                 <textarea required ref={contentRef} value={form.content} onChange={e => setForm({...form, content: e.target.value})}
-                  placeholder="공지 내용을 입력하세요. 글 쓰다가 캡처를 Ctrl+V 하면 그 위치에 [사진1]이 들어가고, 볼 때 그 자리에 이미지가 나와요 (블로그처럼 글·사진 번갈아 작성 가능). 링크도 붙여넣으면 클릭돼요."
+                  placeholder="공지 내용을 입력하세요. 글 쓰다가 캡처를 Ctrl+V 하면 그 위치에 [사진1]이 들어가고, 볼 때 그 자리에 이미지가 나와요 (블로그처럼 글·사진 번갈아 작성 가능). PDF 등 파일도 드래그하거나 복사해서 Ctrl+V로 첨부돼요. 링크도 붙여넣으면 클릭돼요."
                   rows={6}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 resize-none" />
               </div>
               <div>
-                <label className="text-sm font-medium text-gray-700 block mb-1.5">이미지 첨부 <span className="text-gray-400 font-normal">(글 속 [사진N] 위치에 표시돼요)</span></label>
-                <label className="flex items-center justify-center w-full border-2 border-dashed border-gray-300 rounded-lg py-3 text-sm text-gray-500 cursor-pointer hover:border-green-400">
-                  클릭해서 선택 · 또는 내용 쓰다가 캡처 <span className="text-green-600 font-medium ml-1">Ctrl+V</span>
-                  <input type="file" multiple accept="image/*" className="hidden"
-                    onChange={e => { const fs = Array.from(e.target.files || []); if (fs.length) addImagesWithTokens(fs); e.currentTarget.value = '' }} />
+                <label className="text-sm font-medium text-gray-700 block mb-1.5">사진·파일 첨부 <span className="text-gray-400 font-normal">(사진은 글 속 [사진N] 위치에, PDF 등 파일은 아래 첨부로)</span></label>
+                <label className="flex items-center justify-center w-full border-2 border-dashed border-gray-300 rounded-lg py-3 text-sm text-gray-500 cursor-pointer hover:border-green-400 text-center">
+                  클릭 선택 · 드래그 · 캡처나 복사한 파일 <span className="text-green-600 font-medium ml-1">Ctrl+V</span>
+                  <input type="file" multiple className="hidden"
+                    onChange={e => { const fs = Array.from(e.target.files || []); if (fs.length) addIncoming(fs); e.currentTarget.value = '' }} />
                 </label>
                 {(existingImgs.length > 0 || imgFiles.length > 0) && (
                   <div className="grid grid-cols-4 gap-2 mt-2">
@@ -361,7 +410,30 @@ export default function NoticesPage() {
                     ))}
                   </div>
                 )}
-                <p className="text-[11px] text-gray-400 mt-1">이미지를 삭제하면 뒷번호가 하나씩 당겨지니, 글 속 [사진N] 번호도 함께 확인하세요.</p>
+                {(existingImgs.length > 0 || imgFiles.length > 0) && (
+                  <p className="text-[11px] text-gray-400 mt-1">이미지를 삭제하면 뒷번호가 하나씩 당겨지니, 글 속 [사진N] 번호도 함께 확인하세요.</p>
+                )}
+                {(existingFiles.length > 0 || attachFiles.length > 0) && (
+                  <div className="flex flex-col gap-1.5 mt-2">
+                    {existingFiles.map((f, i) => (
+                      <div key={'ef' + i} className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700">
+                        <span className="flex-shrink-0">📎</span>
+                        <span className="flex-1 truncate">{f.name}</span>
+                        <button type="button" onClick={() => setExistingFiles(prev => prev.filter((_, j) => j !== i))}
+                          className="flex-shrink-0 text-gray-400 hover:text-red-500 text-lg leading-none">×</button>
+                      </div>
+                    ))}
+                    {attachFiles.map((f, i) => (
+                      <div key={'nf' + i} className="flex items-center gap-2 bg-green-50 border border-green-200 rounded-lg px-3 py-2 text-sm text-gray-700">
+                        <span className="flex-shrink-0">📎</span>
+                        <span className="flex-1 truncate">{f.name}</span>
+                        <span className="flex-shrink-0 text-xs text-gray-400">{(f.size / 1024 / 1024).toFixed(1)}MB</span>
+                        <button type="button" onClick={() => setAttachFiles(prev => prev.filter((_, j) => j !== i))}
+                          className="flex-shrink-0 text-gray-400 hover:text-red-500 text-lg leading-none">×</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
               <div>
                 <label className="text-sm font-medium text-gray-700 block mb-1.5">작성자</label>
@@ -370,7 +442,7 @@ export default function NoticesPage() {
                   className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
               </div>
               <div className="flex gap-3 mt-2">
-                <button type="button" onClick={() => { setShowForm(false); setForm(EMPTY_FORM); setEditing(null) }}
+                <button type="button" onClick={() => { setShowForm(false); setForm(EMPTY_FORM); setEditing(null); setImgFiles([]); setExistingImgs([]); setAttachFiles([]); setExistingFiles([]) }}
                   className="flex-1 border border-gray-300 text-gray-700 py-2.5 rounded-lg text-sm font-medium">취소</button>
                 <button type="submit" disabled={saving}
                   className="flex-1 bg-green-600 text-white py-2.5 rounded-lg text-sm font-medium disabled:opacity-50">
