@@ -77,6 +77,12 @@ export default function ChatPage() {
   const [active, setActive] = useState<Active>(null)
   const [messages, setMessages] = useState<Message[]>([])
   const [reactions, setReactions] = useState<Record<string, Reaction[]>>({})
+  // 대화방 공지 (카톡식 상단 고정 공지 — 등록·수정·삭제)
+  const [convNotice, setConvNotice] = useState<{ content: string; author_name: string; updated_at: string } | null>(null)
+  const [noticeExpand, setNoticeExpand] = useState(false)
+  const [noticeEditOpen, setNoticeEditOpen] = useState(false)
+  const [noticeText, setNoticeText] = useState('')
+  const [noticeSaving, setNoticeSaving] = useState(false)
   const [reads, setReads] = useState<{ uid: string; t: string }[]>([]) // 상대(들)의 마지막 읽은 시각 — 누가 읽었는지 이름 표시용
   const [memberIds, setMemberIds] = useState<string[]>([])             // 나를 제외한 대화 상대 id 목록
   const [readInfoFor, setReadInfoFor] = useState<string | null>(null)  // 읽음 확인 팝업이 열린 메시지 id
@@ -147,6 +153,52 @@ export default function ChatPage() {
     await supabase.from('chat_reads').upsert({ user_id: me, conv_key: key, last_read_at: new Date().toISOString() }, { onConflict: 'user_id,conv_key' })
   }, [me])
 
+  // 대화방 공지 키 — 1:1은 두 사람 모두 같은 공지를 보도록 id를 정렬해 하나의 키로
+  const noticeKey = useCallback((a: Active): string | null => {
+    if (!a || !me) return null
+    if (a.kind === 'all') return 'all'
+    if (a.kind === 'room') return 'room:' + a.id
+    return 'dm:' + [me, a.id].sort().join(':')
+  }, [me])
+
+  const loadNotice = useCallback(async (a: Active) => {
+    const key = noticeKey(a)
+    if (!key) { setConvNotice(null); return }
+    const { data } = await supabase.from('chat_notices').select('content, author_name, updated_at').eq('conv_key', key).maybeSingle()
+    setConvNotice(data?.content ? data : null)
+  }, [noticeKey])
+
+  async function saveNotice() {
+    const key = noticeKey(active)
+    if (!key || noticeSaving) return
+    setNoticeSaving(true)
+    const t = noticeText.trim()
+    if (!t) { // 빈 내용으로 저장 = 공지 내리기
+      await supabase.from('chat_notices').delete().eq('conv_key', key)
+      setConvNotice(null)
+    } else {
+      const row = { conv_key: key, content: t, author_name: profile?.name || '', updated_at: new Date().toISOString() }
+      const { error } = await supabase.from('chat_notices').upsert(row, { onConflict: 'conv_key' })
+      if (error) {
+        alert('공지 저장 실패: ' + error.message + (/relation|exist|schema/i.test(error.message) ? '\n(관리자에게: db/chat_notices.sql 실행 필요)' : ''))
+        setNoticeSaving(false)
+        return
+      }
+      setConvNotice({ content: t, author_name: row.author_name, updated_at: row.updated_at })
+    }
+    setNoticeSaving(false)
+    setNoticeEditOpen(false)
+  }
+
+  async function removeNotice() {
+    const key = noticeKey(active)
+    if (!key) return
+    if (!confirm('공지를 내릴까요?')) return
+    await supabase.from('chat_notices').delete().eq('conv_key', key)
+    setConvNotice(null)
+    setNoticeEditOpen(false)
+  }
+
   useEffect(() => {
     if (!me) return
     supabase.from('profiles').select('id, name').neq('id', me).then(({ data }) => setPeople(data || []))
@@ -190,9 +242,10 @@ export default function ChatPage() {
   // 대화 열면: 읽음 기록 + 상대 읽음 상태 로드
   useEffect(() => {
     activeRef.current = active
-    if (active) { markMyRead(active); loadReads(active) }
-    else { setReads([]); setMemberIds([]) }
+    if (active) { markMyRead(active); loadReads(active); loadNotice(active) }
+    else { setReads([]); setMemberIds([]); setConvNotice(null) }
     setReadInfoFor(null)
+    setNoticeExpand(false)
   }, [active, markMyRead, loadReads])
 
   const belongs = useCallback((m: Message) => {
@@ -242,9 +295,12 @@ export default function ChatPage() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'chat_reads' }, () => {
         loadReads(activeRef.current)
       })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'chat_notices' }, () => {
+        loadNotice(activeRef.current)
+      })
       .subscribe()
     return () => { on = false; supabase.removeChannel(ch) }
-  }, [active, me, belongs, rooms, reloadReactions, markMyRead, loadReads])
+  }, [active, me, belongs, rooms, reloadReactions, markMyRead, loadReads, loadNotice])
 
   useEffect(() => { msgsRef.current = messages; reloadReactions() }, [messages, reloadReactions])
   useEffect(() => { scrollToBottom() }, [messages, scrollToBottom])
@@ -657,6 +713,10 @@ export default function ChatPage() {
                   <button onClick={() => setActive(null)} className="md:hidden text-gray-400 text-sm">←</button>
                   <span className="font-bold text-gray-900 truncate">{active.kind === 'room' ? '# ' : ''}{activeName}</span>
                   <div className="ml-auto flex items-center gap-1">
+                    {!readOnly && (
+                      <button onClick={() => { setNoticeText(convNotice?.content || ''); setNoticeEditOpen(true) }} title="공지 등록/수정"
+                        className="w-9 h-9 rounded-full flex items-center justify-center text-base hover:bg-gray-100">📢</button>
+                    )}
                     <button onClick={() => { setSearchOpen(o => !o); setSearchQ('') }} title="대화 검색"
                       className={`w-9 h-9 rounded-full flex items-center justify-center text-base hover:bg-gray-100 ${searchOpen ? 'bg-green-50' : ''}`}>🔍</button>
                     {active.kind === 'room' && !readOnly && (
@@ -670,6 +730,22 @@ export default function ChatPage() {
                     <input autoFocus value={searchQ} onChange={e => setSearchQ(e.target.value)} placeholder="대화 내용 검색"
                       className="flex-1 border border-gray-300 rounded-full px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
                     {searchQ.trim() && <span className="text-xs text-gray-400 flex-shrink-0">{shown.length}건</span>}
+                  </div>
+                )}
+
+                {/* 대화방 공지 — 상단 고정, 눌러서 펼치기/접기 */}
+                {convNotice && !searchQ.trim() && (
+                  <div className="bg-green-50 border-b border-green-200 px-4 py-2 flex items-start gap-2 flex-shrink-0">
+                    <span className="flex-shrink-0">📢</span>
+                    <button onClick={() => setNoticeExpand(v => !v)} className="flex-1 text-left min-w-0">
+                      <p className={`text-xs text-green-900 whitespace-pre-wrap break-words ${noticeExpand ? '' : 'truncate'}`}>{convNotice.content}</p>
+                      {noticeExpand && <p className="text-[10px] text-green-600 mt-1">{convNotice.author_name} · {new Date(convNotice.updated_at).toLocaleDateString('ko-KR')}</p>}
+                    </button>
+                    <span className="text-[10px] text-green-500 flex-shrink-0 mt-1">{noticeExpand ? '▲' : '▼'}</span>
+                    {!readOnly && (
+                      <button onClick={() => { setNoticeText(convNotice.content); setNoticeEditOpen(true) }}
+                        className="text-xs text-green-600 hover:text-green-800 flex-shrink-0">수정</button>
+                    )}
                   </div>
                 )}
 
@@ -990,6 +1066,28 @@ export default function ChatPage() {
           </div>
         )
       })()}
+
+      {/* 대화방 공지 등록/수정 */}
+      {noticeEditOpen && active && (
+        <div className="fixed inset-0 bg-black/30 z-[70] flex items-center justify-center p-4" onClick={() => setNoticeEditOpen(false)}>
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-sm p-4" onClick={e => e.stopPropagation()}>
+            <p className="text-sm font-semibold text-gray-800 mb-2">📢 {activeName} 공지</p>
+            <textarea autoFocus value={noticeText} onChange={e => setNoticeText(e.target.value)} rows={5}
+              placeholder="공지 내용을 입력하세요 — 이 대화방 맨 위에 고정돼요"
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 resize-none" />
+            <div className="flex gap-2 mt-3">
+              {convNotice && (
+                <button onClick={removeNotice}
+                  className="px-3 py-2 rounded-lg border border-red-200 text-red-500 text-sm hover:bg-red-50">공지 내리기</button>
+              )}
+              <button onClick={() => setNoticeEditOpen(false)}
+                className="flex-1 py-2 rounded-lg bg-gray-100 text-gray-600 text-sm hover:bg-gray-200">취소</button>
+              <button onClick={saveNotice} disabled={noticeSaving}
+                className="flex-1 py-2 rounded-lg bg-green-600 text-white text-sm hover:bg-green-700 disabled:opacity-50">{noticeSaving ? '저장 중…' : '저장'}</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 읽음 확인 — 누가 읽었는지 이름으로 보기 (단체방) */}
       {readInfoFor && active?.kind === 'room' && (() => {
