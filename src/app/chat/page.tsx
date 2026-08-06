@@ -1074,7 +1074,7 @@ export default function ChatPage() {
             <p className="text-sm font-semibold text-gray-800 mb-2">📢 {activeName} 공지</p>
             <textarea autoFocus value={noticeText} onChange={e => setNoticeText(e.target.value)}
               placeholder="공지 내용을 입력하세요 — 이 대화방 맨 위에 고정돼요. 게시판처럼 길게 적어도 돼요."
-              className="w-full flex-1 h-[55vh] border border-gray-300 rounded-lg px-3 py-2.5 text-sm leading-relaxed focus:outline-none focus:ring-2 focus:ring-green-500 resize-none" />
+              className="w-full h-[60vh] border border-gray-300 rounded-lg px-3 py-2.5 text-sm leading-relaxed focus:outline-none focus:ring-2 focus:ring-green-500 resize-none" />
             <div className="flex gap-2 mt-3">
               {convNotice && (
                 <button onClick={removeNotice}
