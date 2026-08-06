@@ -738,7 +738,7 @@ export default function ChatPage() {
                   <div className="bg-green-50 border-b border-green-200 px-4 py-2 flex items-start gap-2 flex-shrink-0">
                     <span className="flex-shrink-0">📢</span>
                     <button onClick={() => setNoticeExpand(v => !v)} className="flex-1 text-left min-w-0">
-                      <p className={`text-xs text-green-900 whitespace-pre-wrap break-words ${noticeExpand ? '' : 'truncate'}`}>{convNotice.content}</p>
+                      <p className={`text-xs text-green-900 whitespace-pre-wrap break-words ${noticeExpand ? 'max-h-[45vh] overflow-y-auto leading-relaxed' : 'truncate'}`}>{convNotice.content}</p>
                       {noticeExpand && <p className="text-[10px] text-green-600 mt-1">{convNotice.author_name} · {new Date(convNotice.updated_at).toLocaleDateString('ko-KR')}</p>}
                     </button>
                     <span className="text-[10px] text-green-500 flex-shrink-0 mt-1">{noticeExpand ? '▲' : '▼'}</span>
@@ -1070,11 +1070,11 @@ export default function ChatPage() {
       {/* 대화방 공지 등록/수정 */}
       {noticeEditOpen && active && (
         <div className="fixed inset-0 bg-black/30 z-[70] flex items-center justify-center p-4" onClick={() => setNoticeEditOpen(false)}>
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-sm p-4" onClick={e => e.stopPropagation()}>
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl p-4 md:p-5 flex flex-col max-h-[92vh]" onClick={e => e.stopPropagation()}>
             <p className="text-sm font-semibold text-gray-800 mb-2">📢 {activeName} 공지</p>
-            <textarea autoFocus value={noticeText} onChange={e => setNoticeText(e.target.value)} rows={5}
-              placeholder="공지 내용을 입력하세요 — 이 대화방 맨 위에 고정돼요"
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 resize-none" />
+            <textarea autoFocus value={noticeText} onChange={e => setNoticeText(e.target.value)}
+              placeholder="공지 내용을 입력하세요 — 이 대화방 맨 위에 고정돼요. 게시판처럼 길게 적어도 돼요."
+              className="w-full flex-1 h-[55vh] border border-gray-300 rounded-lg px-3 py-2.5 text-sm leading-relaxed focus:outline-none focus:ring-2 focus:ring-green-500 resize-none" />
             <div className="flex gap-2 mt-3">
               {convNotice && (
                 <button onClick={removeNotice}
