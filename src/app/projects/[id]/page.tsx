@@ -653,6 +653,13 @@ export default function ProjectDetail() {
     fetchAll()
   }
 
+  // 파일 하나를 바로 채팅으로 전달 — 그 파일만 선택된 상태로 대상 선택창 열기
+  function chatShareOne(f: ProjectFile) {
+    if (f.file_type === 'link' || f.file_type === 'text' || !f.file_url) { alert('링크·글 항목은 채팅 전달이 안 돼요'); return }
+    setSelectedFileIds(new Set([f.id]))
+    setShowChatShare(true)
+  }
+
   // 선택 자료를 채팅으로 보내기 — 파일을 다시 올리지 않고 기존 URL 그대로 메시지로 전송
   async function sendToChat(target: { kind: 'all' | 'dm' | 'room'; id?: string; name: string }) {
     if (moving || !profile?.id) return
@@ -860,6 +867,8 @@ export default function ProjectDetail() {
         )}
         {isHovered && (
           <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent rounded-b-lg flex items-end justify-between p-1.5 gap-1">
+            <button onClick={e => { e.stopPropagation(); chatShareOne(f) }} title="시스템 채팅방으로 전달"
+              className="text-white bg-black/40 text-xs px-1.5 py-0.5 rounded hover:bg-black/60">💬</button>
             <button onClick={e => { e.stopPropagation(); shareFile(f) }}
               className="text-white bg-black/40 text-xs px-1.5 py-0.5 rounded hover:bg-black/60">내보내기</button>
             {f.file_size ? <span className="text-white/80 text-[10px] pointer-events-none">{formatBytes(f.file_size)}</span> : null}
@@ -1302,6 +1311,8 @@ export default function ProjectDetail() {
                                     </button>
                                     <span className="text-xs text-gray-400 flex-shrink-0 hidden sm:block">{f.uploaded_by ? `${f.uploaded_by} · ` : ''}{new Date(f.created_at).toLocaleDateString('ko-KR')}{f.file_size ? ` · ${formatBytes(f.file_size)}` : ''}</span>
                                     {f.file_type !== 'link' && f.file_type !== 'text' && f.file_url && (<>
+                                      <button onClick={() => chatShareOne(f)} title="시스템 채팅방으로 전달"
+                                        className="text-xs text-green-500 hover:text-green-700 flex-shrink-0">💬 전달</button>
                                       <button onClick={() => shareFile(f)}
                                         className="text-xs text-blue-400 hover:text-blue-600 flex-shrink-0">내보내기</button>
                                       {/* 저장: 직접 다운로드 */}
