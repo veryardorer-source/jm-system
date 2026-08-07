@@ -15,8 +15,11 @@ type WorkLog = {
   memo: string
   author: string
   author_id: string | null
+  status?: string | null   // '작성중'(임시저장 — 본인만 보임) | '제출'
   created_at: string
 }
+
+const isDraft = (l: WorkLog) => l.status === '작성중'
 
 const today = () => new Date().toISOString().slice(0, 10)
 const EMPTY = { log_date: today(), today_work: '', tomorrow_work: '', special_notes: '', memo: '' }
@@ -29,6 +32,7 @@ export default function WorkLogsPage() {
   const [showForm, setShowForm] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [form, setForm] = useState<typeof EMPTY>(EMPTY)
+  const [editingStatus, setEditingStatus] = useState<string | null>(null) // 수정 중인 일지의 원래 상태
   const [saving, setSaving] = useState(false)
   const [filterMine, setFilterMine] = useState(false)
 
@@ -41,35 +45,63 @@ export default function WorkLogsPage() {
     setLoading(false)
   }
 
+  // 내가 아직 제출 안 한 일지 (이어쓰기 대상 — 가장 최근 것)
+  const myDraft = logs.find(l => isDraft(l) && l.author_id === profile?.id) || null
+
   function openAdd() {
+    // 작성중인 일지가 있으면 새로 만들지 않고 이어쓰기
+    if (myDraft) { openEdit(myDraft); return }
     setEditingId(null)
+    setEditingStatus(null)
     setForm({ ...EMPTY, log_date: today() })
     setShowForm(true)
   }
   function openEdit(l: WorkLog) {
     setEditingId(l.id)
+    setEditingStatus(l.status || '제출')
     setForm({ log_date: l.log_date, today_work: l.today_work || '', tomorrow_work: l.tomorrow_work || '', special_notes: l.special_notes || '', memo: l.memo || '' })
     setShowForm(true)
   }
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    if (!form.log_date) return
+  // action: 'draft' = 임시저장(알림 없음, 나만 보임) / 'submit' = 제출(모두 공개+알림)
+  async function save(action: 'draft' | 'submit') {
+    if (!form.log_date || saving) return
     setSaving(true)
+    const status = action === 'draft' ? '작성중' : '제출'
+    const fields = {
+      log_date: form.log_date, today_work: form.today_work, tomorrow_work: form.tomorrow_work, special_notes: form.special_notes, memo: form.memo,
+    }
+    let error = null as { message: string } | null
     if (editingId) {
-      await supabase.from('work_logs').update({
-        log_date: form.log_date, today_work: form.today_work, tomorrow_work: form.tomorrow_work, special_notes: form.special_notes, memo: form.memo,
-      }).eq('id', editingId)
+      ;({ error } = await supabase.from('work_logs').update({ ...fields, status }).eq('id', editingId))
+      if (error && /column|status/i.test(error.message)) {
+        ;({ error } = await supabase.from('work_logs').update(fields).eq('id', editingId))
+      }
     } else {
-      await supabase.from('work_logs').insert([{
-        log_date: form.log_date, today_work: form.today_work, tomorrow_work: form.tomorrow_work, special_notes: form.special_notes, memo: form.memo,
-        author: profile?.name || '', author_id: profile?.id || null,
-      }])
+      const row = { ...fields, author: profile?.name || '', author_id: profile?.id || null }
+      ;({ error } = await supabase.from('work_logs').insert([{ ...row, status }]))
+      if (error && /column|status/i.test(error.message)) {
+        ;({ error } = await supabase.from('work_logs').insert([row]))
+      }
+    }
+    setSaving(false)
+    if (error) { alert('저장 실패: ' + error.message); return }
+    // 알림은 '제출' 순간에 한 번만 (임시저장·제출 후 수정은 조용히)
+    if (action === 'submit' && editingStatus !== '제출') {
       notifyOthers(profile?.id, { type: 'worklog', title: `새 작업일지 · ${profile?.name || ''}`.trim(), body: form.log_date, link: '/worklogs' })
     }
     setShowForm(false)
     setEditingId(null)
-    setSaving(false)
+    setEditingStatus(null)
+    fetchLogs()
+  }
+
+  // 목록 카드에서 바로 제출
+  async function quickSubmit(l: WorkLog) {
+    if (!confirm(`${fmtDate(l.log_date)} 작업일지를 제출할까요?\n제출하면 다른 직원들에게 공개되고 알림이 가요.`)) return
+    const { error } = await supabase.from('work_logs').update({ status: '제출' }).eq('id', l.id)
+    if (error) { alert('제출 실패: ' + error.message); return }
+    notifyOthers(profile?.id, { type: 'worklog', title: `새 작업일지 · ${profile?.name || ''}`.trim(), body: l.log_date, link: '/worklogs' })
     fetchLogs()
   }
 
@@ -79,7 +111,9 @@ export default function WorkLogsPage() {
     setLogs(ls => ls.filter(x => x.id !== l.id))
   }
 
-  const visible = filterMine ? logs.filter(l => l.author_id === profile?.id) : logs
+  // 작성중(임시저장) 일지는 본인에게만 보임
+  const visible = (filterMine ? logs.filter(l => l.author_id === profile?.id) : logs)
+    .filter(l => !isDraft(l) || l.author_id === profile?.id)
 
   const fmtDate = (d: string) => {
     const dt = new Date(d + 'T00:00:00')
@@ -104,7 +138,9 @@ export default function WorkLogsPage() {
             <p className="text-sm text-gray-500 mt-0.5">하루 업무 기록 · 총 {logs.length}건</p>
           </div>
           {!readOnly && (
-            <button onClick={openAdd} className="bg-green-600 text-white px-4 py-2.5 rounded-lg text-sm font-medium hover:bg-green-700">+ 작업일지 작성</button>
+            <button onClick={openAdd} className={`px-4 py-2.5 rounded-lg text-sm font-medium text-white ${myDraft ? 'bg-amber-500 hover:bg-amber-600' : 'bg-green-600 hover:bg-green-700'}`}>
+              {myDraft ? '✏ 일지 이어쓰기' : '+ 작업일지 작성'}
+            </button>
           )}
         </header>
 
@@ -129,10 +165,14 @@ export default function WorkLogsPage() {
                     <div className="flex items-center gap-2">
                       <span className="text-sm font-bold text-gray-800">{fmtDate(l.log_date)}</span>
                       {l.author && <span className="text-xs text-gray-400">· {l.author}</span>}
+                      {isDraft(l) && <span className="text-[11px] px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 font-medium">작성중 — 나만 보임</span>}
                     </div>
                     {!readOnly && (
-                      <div className="flex gap-2">
-                        <button onClick={() => openEdit(l)} className="text-xs text-green-600 hover:text-green-800">수정</button>
+                      <div className="flex gap-2 items-center">
+                        {isDraft(l) && (
+                          <button onClick={() => quickSubmit(l)} className="text-xs px-2.5 py-1 rounded-lg bg-green-600 text-white hover:bg-green-700">제출</button>
+                        )}
+                        <button onClick={() => openEdit(l)} className="text-xs text-green-600 hover:text-green-800">{isDraft(l) ? '이어쓰기' : '수정'}</button>
                         <button onClick={() => remove(l)} className="text-xs text-red-400 hover:text-red-600">삭제</button>
                       </div>
                     )}
@@ -154,10 +194,15 @@ export default function WorkLogsPage() {
         <div className="fixed inset-0 bg-black/40 z-50 flex items-end sm:items-center justify-center p-4">
           <div className="bg-white rounded-2xl w-full max-w-lg shadow-xl max-h-[92vh] overflow-auto">
             <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 sticky top-0 bg-white">
-              <h2 className="text-lg font-bold">{editingId ? '작업일지 수정' : '작업일지 작성'}</h2>
+              <h2 className="text-lg font-bold">{editingStatus === '작성중' ? '작업일지 이어쓰기' : editingId ? '작업일지 수정' : '작업일지 작성'}</h2>
               <button onClick={() => setShowForm(false)} className="text-gray-400 text-2xl">&times;</button>
             </div>
-            <form onSubmit={handleSubmit} className="px-6 py-5 flex flex-col gap-4">
+            <form onSubmit={e => { e.preventDefault(); save('submit') }} className="px-6 py-5 flex flex-col gap-4">
+              {editingStatus !== '제출' && (
+                <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                  업무가 있을 때마다 적고 <b>임시저장</b> 해두세요 (나만 보여요). 퇴근할 때 <b>제출</b>하면 모두에게 공개되고 알림이 가요.
+                </p>
+              )}
               <div>
                 <label className="text-sm font-medium text-gray-700 block mb-1.5">날짜 *</label>
                 <input type="date" required value={form.log_date} onChange={e => setForm(f => ({ ...f, log_date: e.target.value }))}
@@ -188,10 +233,23 @@ export default function WorkLogsPage() {
                   className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 resize-y leading-relaxed" />
               </div>
               <div className="flex gap-2 pt-1">
-                <button type="button" onClick={() => setShowForm(false)} className="flex-1 border border-gray-300 text-gray-700 py-2.5 rounded-lg text-sm">취소</button>
-                <button type="submit" disabled={saving} className="flex-1 bg-green-600 text-white py-2.5 rounded-lg text-sm font-medium disabled:opacity-50">
-                  {saving ? '저장 중...' : editingId ? '수정 완료' : '저장'}
-                </button>
+                <button type="button" onClick={() => setShowForm(false)} className="border border-gray-300 text-gray-700 px-4 py-2.5 rounded-lg text-sm">취소</button>
+                {editingStatus === '제출' ? (
+                  <button type="submit" disabled={saving} className="flex-1 bg-green-600 text-white py-2.5 rounded-lg text-sm font-medium disabled:opacity-50">
+                    {saving ? '저장 중...' : '수정 완료'}
+                  </button>
+                ) : (
+                  <>
+                    <button type="button" disabled={saving} onClick={() => save('draft')}
+                      className="flex-1 bg-amber-500 text-white py-2.5 rounded-lg text-sm font-medium hover:bg-amber-600 disabled:opacity-50">
+                      {saving ? '저장 중...' : '임시저장'}
+                    </button>
+                    <button type="submit" disabled={saving}
+                      className="flex-1 bg-green-600 text-white py-2.5 rounded-lg text-sm font-medium disabled:opacity-50">
+                      {saving ? '저장 중...' : '제출하기'}
+                    </button>
+                  </>
+                )}
               </div>
             </form>
           </div>
