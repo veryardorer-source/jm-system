@@ -846,14 +846,14 @@ export default function ProjectDetail() {
           onClick={e => { e.stopPropagation(); toggleSelectFile(f.id) }}
           title="선택"
           className={`absolute top-1.5 left-1.5 w-7 h-7 rounded-full border-2 flex items-center justify-center text-sm font-bold transition-all shadow-sm z-10 ${
-            isSelected ? 'bg-green-500 border-green-500 text-white' : `bg-white/80 border-gray-300 ${selectMode ? 'opacity-100' : 'opacity-100 md:opacity-0 md:group-hover:opacity-100'}`
+            isSelected ? 'bg-green-500 border-green-500 text-white' : `bg-white/80 border-gray-300 ${selectMode ? 'opacity-100' : 'opacity-100 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100'}`
           }`}>
           {isSelected ? '✓' : ''}
         </button>
         )}
         <button
           onClick={e => { e.stopPropagation(); setLightbox(f.file_url) }}
-          className="absolute top-1.5 right-1.5 w-6 h-6 rounded-full bg-black/50 text-white flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-opacity z-10"
+          className="absolute top-1.5 right-1.5 w-6 h-6 rounded-full bg-black/50 text-white flex items-center justify-center text-xs opacity-100 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 transition-opacity z-10"
           title="크게 보기">⛶</button>
         {f.uploaded_by && !isHovered && (
           <span className="absolute bottom-1 left-1 bg-black/55 text-white text-[10px] px-1.5 py-0.5 rounded max-w-[85%] truncate pointer-events-none">{f.uploaded_by}</span>

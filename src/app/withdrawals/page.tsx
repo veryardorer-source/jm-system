@@ -262,7 +262,7 @@ export default function WithdrawalsPage() {
                       <span className="text-xs text-gray-400">{p.requested_by || ''} {new Date(p.created_at).toLocaleDateString('ko-KR', { month: 'numeric', day: 'numeric' })}</span>
                       {!readOnly && (
                         <button onClick={() => deletePhoto(p)}
-                          className="text-xs text-red-500 hover:text-red-700 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity px-2 py-0.5">삭제</button>
+                          className="text-xs text-red-500 hover:text-red-700 opacity-100 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 transition-opacity px-2 py-0.5">삭제</button>
                       )}
                     </div>
                     {isAdmin && (

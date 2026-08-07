@@ -839,7 +839,7 @@ export default function ChatPage() {
                               </span>
                               {!m.is_deleted && !readOnly && (
                                 <button onClick={() => setMenuFor(menuFor === m.id ? null : m.id)}
-                                  className="text-gray-300 hover:text-gray-500 text-sm px-0.5 flex-shrink-0 opacity-100 md:opacity-0 md:group-hover:opacity-100">⋯</button>
+                                  className="text-gray-300 hover:text-gray-500 text-sm px-0.5 flex-shrink-0 opacity-100 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100">⋯</button>
                               )}
                               <div className={`max-w-[75vw] md:max-w-md flex flex-col gap-1 ${mine ? 'items-end' : 'items-start'}`}>
                                 {m.is_deleted ? (
