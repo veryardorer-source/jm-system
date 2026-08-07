@@ -77,6 +77,9 @@ export default function ChatPage() {
   const [active, setActive] = useState<Active>(null)
   const [messages, setMessages] = useState<Message[]>([])
   const [reactions, setReactions] = useState<Record<string, Reaction[]>>({})
+  // 메시지 전달 (카톡식 — 사진·파일·글을 다른 대화방으로)
+  const [forwardMsg, setForwardMsg] = useState<Message | null>(null)
+  const [forwarding, setForwarding] = useState(false)
   // 대화방 공지 (카톡식 상단 고정 공지 — 등록·수정·삭제)
   const [convNotice, setConvNotice] = useState<{ content: string; author_name: string; updated_at: string } | null>(null)
   const [noticeExpand, setNoticeExpand] = useState(false)
@@ -366,6 +369,37 @@ export default function ChatPage() {
       : {}
     const link = active.kind === 'room' ? `/chat?room=${active.id}` : active.kind === 'dm' ? `/chat?dm=${me}` : '/chat'
     notifyMention(ids, ctx, `${profile?.name || '직원'} 님이 회원님을 언급했어요`, content.slice(0, 60), link)
+  }
+
+  // 메시지 내용 한 줄 요약 (전달 미리보기·알림용)
+  function msgSummary(m: Message): string {
+    if (m.content) return m.content.slice(0, 40)
+    if (m.images && m.images.length) return `📷 사진 ${m.images.length}장`
+    if (m.image_url) return '📷 사진'
+    if (m.file_name) return '📎 ' + m.file_name
+    return '메시지'
+  }
+
+  // 다른 대화방으로 전달 — 저장소 파일은 그대로 두고 같은 주소를 새 메시지로 보냄
+  async function doForward(dest: { kind: 'all' | 'room' | 'dm'; id: string; name: string }) {
+    const m = forwardMsg
+    if (!m || forwarding) return
+    setForwarding(true)
+    const recipient_id = dest.kind === 'dm' ? dest.id : null
+    const room_id = dest.kind === 'room' ? dest.id : null
+    const { error } = await supabase.from('messages').insert([{
+      sender_id: me ?? null, sender_name: profile?.name ?? '직원', recipient_id, room_id,
+      content: m.content || '', image_url: m.image_url || null,
+      images: m.images && m.images.length ? m.images : null,
+      file_url: m.file_url || null, file_name: m.file_name || null,
+    }])
+    setForwarding(false)
+    if (error) { alert('전달 실패: ' + error.message); return }
+    const body = msgSummary(m)
+    if (dest.kind === 'dm' && dest.id !== me) notifyDM(dest.id, `${profile?.name || '직원'} 님의 메시지`, body, `/chat?dm=${me}`)
+    else if (dest.kind === 'room') notifyRoom(dest.id, `${dest.name} · ${profile?.name || '직원'}`, body, `/chat?room=${dest.id}`)
+    setForwardMsg(null)
+    alert(`"${dest.name}"(으)로 전달했어요`)
   }
 
   function replyFields() {
@@ -884,6 +918,7 @@ export default function ChatPage() {
                                     <button onClick={() => { navigator.clipboard.writeText(m.content); setMenuFor(null) }}
                                       className="text-xs px-2.5 py-1.5 rounded-lg hover:bg-gray-100 text-gray-700">📋 복사</button>
                                   )}
+                                  <button onClick={() => { setForwardMsg(m); setMenuFor(null) }} className="text-xs px-2.5 py-1.5 rounded-lg hover:bg-gray-100 text-gray-700">➦ 전달</button>
                                   <button onClick={() => startReply(m)} className="text-xs px-2.5 py-1.5 rounded-lg hover:bg-gray-100 text-gray-700">↩ 답장</button>
                                   {(mine || isAdmin) && <button onClick={() => togglePin(m)} className="text-xs px-2.5 py-1.5 rounded-lg hover:bg-gray-100 text-gray-700">{m.pinned ? '📌 고정해제' : '📌 고정'}</button>}
                                   {canEditMsg && <button onClick={() => startEdit(m)} className="text-xs px-2.5 py-1.5 rounded-lg hover:bg-gray-100 text-gray-700">✏ 수정</button>}
@@ -1066,6 +1101,34 @@ export default function ChatPage() {
           </div>
         )
       })()}
+
+      {/* 메시지 전달 — 보낼 대화방 선택 */}
+      {forwardMsg && (
+        <div className="fixed inset-0 bg-black/30 z-[70] flex items-center justify-center p-4" onClick={() => setForwardMsg(null)}>
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-xs p-4 max-h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
+            <p className="text-sm font-semibold text-gray-800 mb-1">➦ 어디로 전달할까요?</p>
+            <p className="text-xs text-gray-400 mb-3 truncate">{msgSummary(forwardMsg)}</p>
+            <div className="flex-1 overflow-y-auto flex flex-col gap-1">
+              <button disabled={forwarding} onClick={() => doForward({ kind: 'all', id: '', name: '전체 채팅방' })}
+                className="text-left px-3 py-2.5 rounded-lg hover:bg-gray-50 text-sm text-gray-800 disabled:opacity-50">💬 전체 채팅방</button>
+              {rooms.map(r => (
+                <button key={r.id} disabled={forwarding} onClick={() => doForward({ kind: 'room', id: r.id, name: r.name })}
+                  className="text-left px-3 py-2.5 rounded-lg hover:bg-gray-50 text-sm text-gray-800 disabled:opacity-50"># {r.name}</button>
+              ))}
+              {me && (
+                <button disabled={forwarding} onClick={() => doForward({ kind: 'dm', id: me, name: '나와의 채팅' })}
+                  className="text-left px-3 py-2.5 rounded-lg hover:bg-gray-50 text-sm text-gray-800 disabled:opacity-50">🔒 나와의 채팅 (보관)</button>
+              )}
+              {people.map(p => (
+                <button key={p.id} disabled={forwarding} onClick={() => doForward({ kind: 'dm', id: p.id, name: p.name })}
+                  className="text-left px-3 py-2.5 rounded-lg hover:bg-gray-50 text-sm text-gray-800 disabled:opacity-50">👤 {p.name}</button>
+              ))}
+            </div>
+            <button onClick={() => setForwardMsg(null)}
+              className="mt-3 w-full py-2 rounded-lg bg-gray-100 text-gray-600 text-sm hover:bg-gray-200">취소</button>
+          </div>
+        </div>
+      )}
 
       {/* 대화방 공지 등록/수정 */}
       {noticeEditOpen && active && (
