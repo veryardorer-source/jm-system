@@ -34,10 +34,9 @@ select public._drop_all_policies('profiles');
 create policy profiles_select on public.profiles for select to authenticated
   using (public.is_approved() or id = auth.uid());
 
--- 만들기: 회원가입 시 본인 행을 '승인 대기'로만 (다른 역할로 자기 등록 불가.
---         관리자 직원 추가는 서버 API(service role)라 이 정책과 무관하게 동작)
-create policy profiles_insert_self on public.profiles for insert to authenticated
-  with check (id = auth.uid() and role = 'pending');
+-- 만들기: 클라이언트에서는 불가 — 공개 가입 폐쇄(2026-08-11, 초대제 전환).
+-- 계정 생성은 관리자 [회원 관리 > 직원 추가] 서버 API(service role)만 하므로
+-- authenticated 용 insert 정책을 아예 만들지 않는다(= 전면 차단).
 
 -- 수정/삭제: 관리자만 (회원 관리 화면의 이름·권한 변경)
 create policy profiles_update_admin on public.profiles for update to authenticated

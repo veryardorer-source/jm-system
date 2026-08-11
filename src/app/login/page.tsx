@@ -70,8 +70,7 @@ export default function LoginPage() {
           </form>
         </div>
         <p className="text-center text-sm text-gray-500">
-          처음 오셨나요?{' '}
-          <Link href="/signup" className="text-green-600 hover:underline font-medium">회원가입</Link>
+          계정이 없나요? 관리자(대표)에게 계정 생성을 요청하세요.
         </p>
       </div>
     </div>
