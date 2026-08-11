@@ -6,12 +6,13 @@ import { createClient } from './supabase-browser'
 
 const supabase = createClient()
 
-export type UserRole = 'admin' | 'designer' | 'field' | 'partner' | 'staff'
+// 실제 운영 역할 4가지 + 승인 대기(pending). ('staff'는 어디에도 안 쓰여 제거 — 2026-08-11)
+export type UserRole = 'admin' | 'designer' | 'field' | 'partner'
 
 export type Profile = {
   id: string
   name: string
-  role: UserRole
+  role: UserRole | 'pending'
   team: string | null
 }
 
@@ -75,9 +76,11 @@ export function isAdmin(profile: Profile | null) {
   return profile?.role === 'admin'
 }
 
-// 외부협력업체(partner)는 보기 전용 — 추가/수정/삭제 불가
+// 수정 가능 = 승인된 내부 직원(admin/designer/field)만.
+// 프로필 없음·pending·partner·알 수 없는 역할은 전부 보기 전용/차단.
+// (구버전은 "partner가 아니면 가능"이라 profile=null 도 true 가 되는 버그 — 2026-08-11 수정)
 export function canEdit(profile: Profile | null) {
-  return profile?.role !== 'partner'
+  return profile?.role === 'admin' || profile?.role === 'designer' || profile?.role === 'field'
 }
 
 // 관리자가 부여하는 정식 역할. 이 중 하나가 아니면 '승인 대기'(가입만 한 상태)로 보고 접근 차단.

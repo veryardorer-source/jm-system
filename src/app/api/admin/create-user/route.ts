@@ -29,6 +29,17 @@ export async function POST(req: NextRequest) {
   if (!name || !email || !password || !role) {
     return NextResponse.json({ error: '모든 항목을 입력해주세요' }, { status: 400 })
   }
+  // 서버 검증: 허용된 역할만 저장 (클라이언트 값 신뢰 금지 — 'admin' 외 임의 문자열 차단)
+  const ALLOWED_ROLES = ['admin', 'designer', 'field', 'partner']
+  if (typeof role !== 'string' || !ALLOWED_ROLES.includes(role)) {
+    return NextResponse.json({ error: '허용되지 않은 역할입니다' }, { status: 400 })
+  }
+  if (typeof name !== 'string' || !name.trim() || name.length > 50) {
+    return NextResponse.json({ error: '이름이 올바르지 않습니다' }, { status: 400 })
+  }
+  if (typeof password !== 'string' || password.length < 6) {
+    return NextResponse.json({ error: '비밀번호는 6자 이상이어야 합니다' }, { status: 400 })
+  }
 
   // service role key로 사용자 생성
   const adminClient = createAdminClient()
@@ -45,7 +56,7 @@ export async function POST(req: NextRequest) {
 
   const { error: profileError } = await adminClient.from('profiles').insert([{
     id: newUser.user.id,
-    name,
+    name: name.trim(),
     role,
     team: null,
   }])
