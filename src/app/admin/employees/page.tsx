@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
+import { toast } from '@/components/Toaster'
 import { useRouter } from 'next/navigation'
 import Sidebar from '@/components/Sidebar'
 import { useAuth } from '@/lib/auth-context'
@@ -55,7 +56,7 @@ export default function AdminEmployeesPage() {
       ? await supabase.from('employees').update(payload).eq('id', editingId)
       : await supabase.from('employees').insert([{ ...payload, is_active: true }])
     if (error) {
-      alert('저장 실패: ' + error.message)
+      toast('저장 실패: ' + error.message)
       setSaving(false)
       return
     }

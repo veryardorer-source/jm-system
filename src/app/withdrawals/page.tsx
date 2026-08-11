@@ -1,6 +1,7 @@
 ﻿'use client'
 
 import { useEffect, useState, useRef, useCallback } from 'react'
+import { toast } from '@/components/Toaster'
 import Image from 'next/image'
 import { useSearchParams } from 'next/navigation'
 import Sidebar from '@/components/Sidebar'
@@ -162,7 +163,7 @@ export default function WithdrawalsPage() {
   async function toggleDone(p: Photo) {
     const next = isDone(p) ? '요청' : '처리완료'
     const { error } = await supabase.from('withdrawal_requests').update({ status: next }).eq('id', p.id)
-    if (error) { alert('변경 실패: ' + error.message); return }
+    if (error) { toast('변경 실패: ' + error.message); return }
     setPhotos(ps => ps.map(x => x.id === p.id ? { ...x, status: next } : x))
     if (viewer?.id === p.id) setViewer(v => v ? { ...v, status: next } : v)
   }

@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { toast } from '@/components/Toaster'
 import Sidebar from '@/components/Sidebar'
 import { supabase } from '@/lib/supabase'
 import { useAuth, canEdit } from '@/lib/auth-context'
@@ -85,7 +86,7 @@ export default function WorkLogsPage() {
       }
     }
     setSaving(false)
-    if (error) { alert('저장 실패: ' + error.message); return }
+    if (error) { toast('저장 실패: ' + error.message); return }
     // 알림은 '제출' 순간에 한 번만 (임시저장·제출 후 수정은 조용히)
     if (action === 'submit' && editingStatus !== '제출') {
       notifyOthers(profile?.id, { type: 'worklog', title: `새 작업일지 · ${profile?.name || ''}`.trim(), body: form.log_date, link: '/worklogs' })
@@ -100,7 +101,7 @@ export default function WorkLogsPage() {
   async function quickSubmit(l: WorkLog) {
     if (!confirm(`${fmtDate(l.log_date)} 작업일지를 제출할까요?\n제출하면 다른 직원들에게 공개되고 알림이 가요.`)) return
     const { error } = await supabase.from('work_logs').update({ status: '제출' }).eq('id', l.id)
-    if (error) { alert('제출 실패: ' + error.message); return }
+    if (error) { toast('제출 실패: ' + error.message); return }
     notifyOthers(profile?.id, { type: 'worklog', title: `새 작업일지 · ${profile?.name || ''}`.trim(), body: l.log_date, link: '/worklogs' })
     fetchLogs()
   }

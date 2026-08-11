@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { toast } from '@/components/Toaster'
 import { useRouter } from 'next/navigation'
 import Sidebar from '@/components/Sidebar'
 import { supabase } from '@/lib/supabase'
@@ -37,7 +38,7 @@ export default function NotificationsPage() {
   async function enablePush() {
     setEnabling(true)
     const res = await subscribeToPush(profile?.id || '')
-    if (!res.ok) alert('알림 켜기 실패: ' + (res.reason || '알 수 없는 오류'))
+    if (!res.ok) toast('알림 켜기 실패: ' + (res.reason || '알 수 없는 오류'))
     await refreshPushState()
     setEnabling(false)
   }
@@ -45,7 +46,7 @@ export default function NotificationsPage() {
   async function disablePush() {
     setEnabling(true)
     const res = await unsubscribeFromPush()
-    if (!res.ok) alert('알림 끄기 실패: ' + (res.reason || '알 수 없는 오류'))
+    if (!res.ok) toast('알림 끄기 실패: ' + (res.reason || '알 수 없는 오류'))
     await refreshPushState()
     setEnabling(false)
   }

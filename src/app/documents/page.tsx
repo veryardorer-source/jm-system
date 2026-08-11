@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { toast } from '@/components/Toaster'
 import Image from 'next/image'
 import Sidebar from '@/components/Sidebar'
 import { useAuth } from '@/lib/auth-context'
@@ -85,7 +86,7 @@ export default function DocumentsPage() {
       const { error: upErr } = await supabase.storage.from('uploads').upload(path, file, {
         contentType: file.type || 'application/octet-stream', upsert: true,
       })
-      if (upErr) { alert('업로드 실패: ' + upErr.message); setSaving(false); return }
+      if (upErr) { toast('업로드 실패: ' + upErr.message); setSaving(false); return }
       const { data } = supabase.storage.from('uploads').getPublicUrl(path)
       file_url = data.publicUrl
       file_name = file.name
@@ -94,7 +95,7 @@ export default function DocumentsPage() {
     const { error } = editing
       ? await supabase.from('company_documents').update(payload).eq('id', editing.id)
       : await supabase.from('company_documents').insert([payload])
-    if (error) { alert('저장 실패: ' + error.message); setSaving(false); return }
+    if (error) { toast('저장 실패: ' + error.message); setSaving(false); return }
     if (!editing && form.visibility === '전체공개') {
       notifyOthers(profile?.id, { type: 'document', title: `새 회사 서류 · ${form.title}`, body: form.category, link: '/documents' })
     }

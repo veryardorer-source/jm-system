@@ -1,6 +1,7 @@
 ﻿'use client'
 
 import { useEffect, useState } from 'react'
+import { toast } from '@/components/Toaster'
 import Link from 'next/link'
 import Sidebar from '@/components/Sidebar'
 import { supabase, Project, STATUS_LIST, STATUS_COLOR, HIDDEN_STATUSES } from '@/lib/supabase'
@@ -69,7 +70,7 @@ export default function ProjectsPage() {
     if (created && pickedPartners.size > 0) {
       const { error: ae } = await supabase.from('project_access').insert(
         Array.from(pickedPartners).map(uid => ({ project_id: created.id, user_id: uid })))
-      if (ae) alert('현장은 만들어졌지만 협력업체 공개 설정에 실패했어요.\n(현장 상세 → 🔒 외부공개에서 다시 시도)\n' + ae.message)
+      if (ae) toast('현장은 만들어졌지만 협력업체 공개 설정에 실패했어요.\n(현장 상세 → 🔒 외부공개에서 다시 시도)\n' + ae.message)
     }
     notifyOthers(profile?.id, { type: 'project', title: `새 현장 등록 · ${form.name}`, body: [form.client_name, form.address].filter(Boolean).join(' · '), link: '/projects' })
     setForm(EMPTY_FORM)

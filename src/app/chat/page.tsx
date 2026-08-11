@@ -8,6 +8,7 @@ import { supabase } from '@/lib/supabase'
 import { useAuth, canEdit } from '@/lib/auth-context'
 import { notifyDM, notifyRoom, notifyMention } from '@/lib/notify'
 import { shareUrl, downloadUrl, viewInBrowser } from '@/lib/media'
+import { toast } from '@/components/Toaster'
 import LinkPreview from '@/components/LinkPreview'
 
 type Message = {
@@ -31,6 +32,8 @@ type Message = {
 type Reaction = { id: string; message_id: string; user_id: string; user_name: string | null; emoji: string }
 type Person = { id: string; name: string }
 type Room = { id: string; name: string }
+const MSG_PAGE = 100 // 메시지 페이지 크기 — 최신 100개 로드 후 '이전 대화 보기'로 위로 확장
+
 type Active =
   | { kind: 'all' }
   | { kind: 'dm'; id: string; name: string }
@@ -81,6 +84,12 @@ export default function ChatPage() {
   // 메시지 전달 (카톡식 — 사진·파일·글을 다른 대화방으로)
   const [forwardMsg, setForwardMsg] = useState<Message | null>(null)
   const [forwarding, setForwarding] = useState(false)
+  // 메시지 페이지네이션·오류 상태
+  const [hasOlder, setHasOlder] = useState(false)     // 위로 더 불러올 이전 대화가 있는지
+  const [loadingOlder, setLoadingOlder] = useState(false)
+  const [loadError, setLoadError] = useState('')      // 네트워크 오류 — 빈 화면 대신 안내+재시도
+  const [reloadTick, setReloadTick] = useState(0)     // 재시도 버튼용
+  const skipScrollRef = useRef(false)                 // 이전 대화 붙일 때 맨 아래로 튀지 않게
   // 대화방 공지 (카톡식 상단 고정 공지 — 등록·수정·삭제)
   const [convNotice, setConvNotice] = useState<{ content: string; author_name: string; updated_at: string } | null>(null)
   const [noticeExpand, setNoticeExpand] = useState(false)
@@ -184,7 +193,7 @@ export default function ChatPage() {
       const row = { conv_key: key, content: t, author_name: profile?.name || '', updated_at: new Date().toISOString() }
       const { error } = await supabase.from('chat_notices').upsert(row, { onConflict: 'conv_key' })
       if (error) {
-        alert('공지 저장 실패: ' + error.message + (/relation|exist|schema/i.test(error.message) ? '\n(관리자에게: db/chat_notices.sql 실행 필요)' : ''))
+        toast('공지 저장 실패: ' + error.message + (/relation|exist|schema/i.test(error.message) ? '\n(관리자에게: db/chat_notices.sql 실행 필요)' : ''))
         setNoticeSaving(false)
         return
       }
@@ -244,6 +253,7 @@ export default function ChatPage() {
     setReplyTo(null); setEditing(null); setMenuFor(null); setSearchOpen(false); setSearchQ('')
     setReads([]); setMemberIds([]); setConvNotice(null)
     setReadInfoFor(null); setNoticeExpand(false)
+    setHasOlder(false); setLoadError('')
     if (activeKey) setUnread(u => (u[activeKey] ? { ...u, [activeKey]: 0 } : u))
   }
 
@@ -274,16 +284,32 @@ export default function ChatPage() {
     return false
   }, [active, me])
 
+  // 대화별 메시지 조건 (최초 로드·이전 페이지 로드 공용)
+  const convFilter = useCallback(<T,>(q: T, a: NonNullable<Active>): T => {
+    /* eslint-disable @typescript-eslint/no-explicit-any */
+    let qq: any = q
+    if (a.kind === 'all') qq = qq.is('recipient_id', null).is('room_id', null)
+    else if (a.kind === 'room') qq = qq.eq('room_id', a.id)
+    else qq = qq.is('room_id', null).or(`and(sender_id.eq.${me},recipient_id.eq.${a.id}),and(sender_id.eq.${a.id},recipient_id.eq.${me})`)
+    return qq
+    /* eslint-enable @typescript-eslint/no-explicit-any */
+  }, [me])
+
   useEffect(() => {
     if (!active || !me) return // 대화 없을 때의 비우기는 렌더 중 보정이 담당
     let on = true
     async function load() {
-      let q = supabase.from('messages').select('*').order('created_at', { ascending: true }).limit(300)
-      if (active!.kind === 'all') q = q.is('recipient_id', null).is('room_id', null)
-      else if (active!.kind === 'room') q = q.eq('room_id', active!.id)
-      else q = q.is('room_id', null).or(`and(sender_id.eq.${me},recipient_id.eq.${active!.id}),and(sender_id.eq.${active!.id},recipient_id.eq.${me})`)
-      const { data } = await q
-      if (on) setMessages(data || [])
+      // 최신부터 한 페이지(100개)만 — 예전엔 '오래된 순 300개'라 긴 대화에서 최신 메시지가 잘렸음
+      const q = convFilter(
+        supabase.from('messages').select('*').order('created_at', { ascending: false }).limit(MSG_PAGE),
+        active!,
+      )
+      const { data, error } = await q
+      if (!on) return
+      if (error) { setLoadError(error.message); return }
+      setLoadError('')
+      setMessages((data || []).reverse())
+      setHasOlder((data || []).length === MSG_PAGE)
     }
     load()
     const roomIds = new Set(rooms.map(r => r.id))
@@ -318,10 +344,31 @@ export default function ChatPage() {
       })
       .subscribe()
     return () => { on = false; supabase.removeChannel(ch) }
-  }, [active, me, belongs, rooms, reloadReactions, markMyRead, loadReads, loadNotice])
+  }, [active, me, belongs, rooms, reloadReactions, markMyRead, loadReads, loadNotice, convFilter, reloadTick])
+
+  // 이전 대화 더 불러오기 (100개씩 위로)
+  async function loadOlder() {
+    if (!active || !me || loadingOlder || !messages.length) return
+    setLoadingOlder(true)
+    const q = convFilter(
+      supabase.from('messages').select('*')
+        .lt('created_at', messages[0].created_at)
+        .order('created_at', { ascending: false }).limit(MSG_PAGE),
+      active,
+    )
+    const { data, error } = await q
+    setLoadingOlder(false)
+    if (error) { toast('이전 대화를 못 불러왔어요. 잠시 후 다시 시도해주세요.', 'error'); return }
+    setHasOlder((data || []).length === MSG_PAGE)
+    skipScrollRef.current = true // 위에 붙일 때는 아래로 스크롤하지 않기
+    setMessages(prev => [...(data || []).reverse(), ...prev])
+  }
 
   useEffect(() => { msgsRef.current = messages; reloadReactions() }, [messages, reloadReactions])
-  useEffect(() => { scrollToBottom() }, [messages, scrollToBottom])
+  useEffect(() => {
+    if (skipScrollRef.current) { skipScrollRef.current = false; return } // 이전 대화 붙인 직후는 제자리 유지
+    scrollToBottom()
+  }, [messages, scrollToBottom])
 
   // 파일 드래그를 채팅 화면 어디에 놓아도 전송되게 (벗어나 놓으면 브라우저가 파일을 열어버리는 문제 방지)
   const handleFilesRef = useRef<(fs: File[]) => void>(() => {})
@@ -409,12 +456,12 @@ export default function ChatPage() {
       file_url: m.file_url || null, file_name: m.file_name || null,
     }])
     setForwarding(false)
-    if (error) { alert('전달 실패: ' + error.message); return }
+    if (error) { toast('전달 실패: ' + error.message, 'error'); return }
     const body = msgSummary(m)
     if (dest.kind === 'dm' && dest.id !== me) notifyDM(dest.id, `${profile?.name || '직원'} 님의 메시지`, body, `/chat?dm=${me}`)
     else if (dest.kind === 'room') notifyRoom(dest.id, `${dest.name} · ${profile?.name || '직원'}`, body, `/chat?room=${dest.id}`)
     setForwardMsg(null)
-    alert(`"${dest.name}"(으)로 전달했어요`)
+    toast(`"${dest.name}"(으)로 전달했어요`, 'ok')
   }
 
   function replyFields() {
@@ -435,7 +482,7 @@ export default function ChatPage() {
     if (editing) {
       const { error } = await supabase.from('messages').update({ content, edited_at: new Date().toISOString() }).eq('id', editing.id)
       setSending(false)
-      if (error) { alert('수정 실패: ' + error.message); return }
+      if (error) { toast('수정 실패: ' + error.message, 'error'); return }
       setEditing(null); setText(''); return
     }
     const recipient_id = active.kind === 'dm' ? active.id : null
@@ -443,7 +490,7 @@ export default function ChatPage() {
     const { error } = await supabase.from('messages').insert([{ sender_id: me ?? null, sender_name: profile?.name ?? '직원', recipient_id, room_id, content, ...replyFields() }])
     if (!error) { await pushNotif(content.slice(0, 40)); await notifyMentions(content) }
     setSending(false)
-    if (error) { alert('전송 실패: ' + error.message); return }
+    if (error) { toast('전송 실패: ' + error.message, 'error'); return }
     setText(''); setReplyTo(null)
   }
 
@@ -453,14 +500,14 @@ export default function ChatPage() {
     const ext = file.name.split('.').pop() || 'jpg'
     const path = `chat/${Date.now()}.${ext}`
     const { error: upErr } = await supabase.storage.from('uploads').upload(path, file, { contentType: file.type || 'image/jpeg', upsert: true })
-    if (upErr) { setSending(false); alert('이미지 업로드 실패: ' + upErr.message); return }
+    if (upErr) { setSending(false); toast('이미지 업로드 실패: ' + upErr.message, 'error'); return }
     const { data: urlData } = supabase.storage.from('uploads').getPublicUrl(path)
     const recipient_id = active.kind === 'dm' ? active.id : null
     const room_id = active.kind === 'room' ? active.id : null
     const { error } = await supabase.from('messages').insert([{ sender_id: me ?? null, sender_name: profile?.name ?? '직원', recipient_id, room_id, content: '', image_url: urlData.publicUrl, ...replyFields() }])
     if (!error) await pushNotif('📷 사진')
     setSending(false); setReplyTo(null)
-    if (error) alert('전송 실패: ' + error.message)
+    if (error) toast('전송 실패: ' + error.message, 'error')
   }
 
   // 여러 장 이미지를 한 메시지(묶음)로 전송 — 카톡식
@@ -480,7 +527,7 @@ export default function ChatPage() {
       }))
     }
     const urls = slots.filter(Boolean) as string[]
-    if (!urls.length) { setSending(false); alert('이미지 업로드에 실패했어요'); return }
+    if (!urls.length) { setSending(false); toast('이미지 업로드에 실패했어요', 'error'); return }
     const recipient_id = active.kind === 'dm' ? active.id : null
     const room_id = active.kind === 'room' ? active.id : null
     const { error } = await supabase.from('messages').insert([{
@@ -489,7 +536,7 @@ export default function ChatPage() {
     }])
     if (!error) pushNotif(`📷 사진 ${urls.length}장`)
     setSending(false); setReplyTo(null)
-    if (error) alert('전송 실패: ' + error.message + (error.message.includes('images') ? '\n(관리자에게: db/chat_images.sql 실행 필요)' : ''))
+    if (error) toast('전송 실패: ' + error.message + (error.message.includes('images') ? '\n(관리자에게: db/chat_images.sql 실행 필요)' : ''))
   }
 
   // 받은 파일들 분배: 이미지 여러 장 → 한 묶음, 나머지는 개별 파일 전송
@@ -508,14 +555,14 @@ export default function ChatPage() {
     const ext = file.name.split('.').pop() || 'bin'
     const path = `chat/${Date.now()}.${ext}`
     const { error: upErr } = await supabase.storage.from('uploads').upload(path, file, { contentType: file.type || 'application/octet-stream', upsert: true })
-    if (upErr) { setSending(false); alert('파일 업로드 실패: ' + upErr.message); return }
+    if (upErr) { setSending(false); toast('파일 업로드 실패: ' + upErr.message, 'error'); return }
     const { data: urlData } = supabase.storage.from('uploads').getPublicUrl(path)
     const recipient_id = active.kind === 'dm' ? active.id : null
     const room_id = active.kind === 'room' ? active.id : null
     const { error } = await supabase.from('messages').insert([{ sender_id: me ?? null, sender_name: profile?.name ?? '직원', recipient_id, room_id, content: '', file_url: urlData.publicUrl, file_name: file.name, ...replyFields() }])
     if (!error) await pushNotif('📎 ' + file.name)
     setSending(false); setReplyTo(null)
-    if (error) alert('전송 실패: ' + error.message)
+    if (error) toast('전송 실패: ' + error.message, 'error')
   }
 
   // ── 메시지 동작: 반응 / 답장 / 수정 / 삭제 / 고정 ──
@@ -546,7 +593,7 @@ export default function ChatPage() {
     }
     await supabase.from('message_reactions').delete().eq('message_id', m.id)
     const { error } = await supabase.from('messages').delete().eq('id', m.id)
-    if (error) { alert('삭제 실패: ' + error.message); return }
+    if (error) { toast('삭제 실패: ' + error.message, 'error'); return }
     setMessages(prev => prev.filter(x => x.id !== m.id))
   }
   async function togglePin(m: Message) {
@@ -566,7 +613,7 @@ export default function ChatPage() {
     if (!me || !roomName.trim() || picked.size === 0) return
     setCreating(true)
     const { data: room, error } = await supabase.from('chat_rooms').insert([{ name: roomName.trim(), created_by: me }]).select('id, name').single()
-    if (error || !room) { setCreating(false); alert('생성 실패: ' + (error?.message || '')); return }
+    if (error || !room) { setCreating(false); toast('생성 실패: ' + (error?.message || ''), 'error'); return }
     const members = Array.from(new Set([me, ...picked])).map(uid => ({ room_id: room.id, user_id: uid }))
     await supabase.from('chat_room_members').insert(members)
     setCreating(false)
@@ -815,12 +862,27 @@ export default function ChatPage() {
                       <p className="text-green-700 font-medium text-sm">여기에 놓으면 파일이 전송돼요 📎</p>
                     </div>
                   )}
-                  {shown.length === 0 ? (
+                  {loadError && shown.length === 0 ? (
+                    // 네트워크 오류 — 빈 화면 대신 안내 + 재시도
+                    <div className="text-center py-10">
+                      <p className="text-3xl mb-2">📡</p>
+                      <p className="text-sm text-gray-500 mb-1">대화를 불러오지 못했어요</p>
+                      <p className="text-xs text-gray-400 mb-4">인터넷 연결을 확인해주세요</p>
+                      <button onClick={() => setReloadTick(t => t + 1)}
+                        className="bg-green-600 text-white px-5 py-2 rounded-lg text-sm font-medium hover:bg-green-700">다시 시도</button>
+                    </div>
+                  ) : shown.length === 0 ? (
                     <div className="text-center text-gray-400 py-10 text-sm">
                       {searchQ.trim() ? '검색 결과가 없어요' : <>아직 대화가 없어요. 첫 메시지를 남겨보세요!<br/><span className="text-xs">파일을 끌어다 놓아도 전송됩니다</span></>}
                     </div>
                   ) : (
                     <div className="flex flex-col gap-2 max-w-2xl mx-auto">
+                      {hasOlder && !searchQ.trim() && (
+                        <button onClick={loadOlder} disabled={loadingOlder}
+                          className="self-center text-xs text-gray-500 bg-white border border-gray-200 rounded-full px-4 py-1.5 hover:bg-gray-50 disabled:opacity-50 mb-1">
+                          {loadingOlder ? '불러오는 중...' : '↑ 이전 대화 보기'}
+                        </button>
+                      )}
                       {shown.map((m, mi) => {
                         const mine = m.sender_id === me
                         const canEditMsg = mine && !m.is_deleted && !!m.content

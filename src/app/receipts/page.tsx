@@ -1,6 +1,7 @@
 ﻿'use client'
 
 import { useEffect, useState, useRef, useCallback } from 'react'
+import { toast } from '@/components/Toaster'
 import Image from 'next/image'
 import Sidebar from '@/components/Sidebar'
 import { supabase } from '@/lib/supabase'
@@ -86,7 +87,7 @@ export default function ReceiptsPage() {
     setMemoSaving(true)
     const { error } = await supabase.from('receipts').update({ memo: memoText }).eq('id', memoEdit.id)
     setMemoSaving(false)
-    if (error) { alert('저장 실패: ' + error.message); return }
+    if (error) { toast('저장 실패: ' + error.message); return }
     setPhotos(ps => ps.map(p => p.id === memoEdit.id ? { ...p, memo: memoText } : p))
     setMemoEdit(null)
   }

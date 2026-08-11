@@ -1,6 +1,7 @@
 ﻿'use client'
 
 import { useEffect, useState, useRef } from 'react'
+import { toast } from '@/components/Toaster'
 import Image from 'next/image'
 import { useSearchParams } from 'next/navigation'
 import Sidebar from '@/components/Sidebar'
@@ -93,7 +94,7 @@ export default function NoticesPage() {
       const ext = file.name.split('.').pop() || 'jpg'
       const path = `notices/${Date.now()}_${i}.${ext}`
       const { error: upErr } = await supabase.storage.from('uploads').upload(path, file, { contentType: file.type || 'image/jpeg', upsert: true })
-      if (upErr) { alert('이미지 업로드 실패: ' + upErr.message); setSaving(false); return }
+      if (upErr) { toast('이미지 업로드 실패: ' + upErr.message); setSaving(false); return }
       uploaded.push(supabase.storage.from('uploads').getPublicUrl(path).data.publicUrl)
     }
     const images = [...existingImgs, ...uploaded]
@@ -104,7 +105,7 @@ export default function NoticesPage() {
       const ext = f.name.split('.').pop() || 'bin'
       const path = `notices/files/${Date.now()}_${i}.${ext}`
       const { error: upErr } = await supabase.storage.from('uploads').upload(path, f, { contentType: f.type || 'application/octet-stream', upsert: true })
-      if (upErr) { alert('파일 업로드 실패: ' + upErr.message); setSaving(false); return }
+      if (upErr) { toast('파일 업로드 실패: ' + upErr.message); setSaving(false); return }
       upFiles.push({ name: f.name, url: supabase.storage.from('uploads').getPublicUrl(path).data.publicUrl })
     }
     const files = [...existingFiles, ...upFiles]
@@ -114,10 +115,10 @@ export default function NoticesPage() {
     let createdId: string | null = null
     if (editing) {
       const { error } = await supabase.from('notices').update({ title: form.title, content: form.content, category: form.category, author: form.author, images, files }).eq('id', editing.id)
-      if (error) { alert('저장 실패: ' + error.message + colHint(error.message)); setSaving(false); return }
+      if (error) { toast('저장 실패: ' + error.message + colHint(error.message)); setSaving(false); return }
     } else {
       const { data: created, error } = await supabase.from('notices').insert([{ ...form, images, files }]).select('id').single()
-      if (error) { alert('저장 실패: ' + error.message + colHint(error.message)); setSaving(false); return }
+      if (error) { toast('저장 실패: ' + error.message + colHint(error.message)); setSaving(false); return }
       createdId = created?.id || null
     }
     if (!editing) notifyOthers(profile?.id, { type: 'notice', title: `새 공지 · ${form.title}`, body: form.category, link: createdId ? `/notices?open=${createdId}` : '/notices' })

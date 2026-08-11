@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState, useRef, useCallback } from 'react'
+import { toast } from '@/components/Toaster'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import Sidebar from '@/components/Sidebar'
 import { supabase, Project, ProjectFile, Schedule, ProjectCost, ProjectAssignment, STATUS_LIST, STATUS_COLOR } from '@/lib/supabase'
@@ -208,7 +209,7 @@ export default function ProjectDetail() {
       end_date: editForm.end_date || null,
     }).eq('id', id)
     setSavingEdit(false)
-    if (error) { alert('수정 실패: ' + error.message); return }
+    if (error) { toast('수정 실패: ' + error.message); return }
     setShowEditForm(false)
     fetchAll()
   }
@@ -228,7 +229,7 @@ export default function ProjectDetail() {
         memo: fileForm.memo || '',
         uploaded_by: profile?.name || '',
       }])
-      if (error) { alert('저장 실패: ' + error.message); return }
+      if (error) { toast('저장 실패: ' + error.message); return }
       notifyOthers(profile?.id, { type: 'file', title: `${project?.name || '현장'} · 새 구매링크`, body: fileForm.linkTitle.trim() || '구매링크가 추가되었습니다', link: `/projects/${id}?tab=자료` })
       setFileForm({ category: '구매링크', memo: '', linkUrl: '', linkTitle: '' })
       setShowFileForm(false)
@@ -244,7 +245,7 @@ export default function ProjectDetail() {
         project_id: id, file_name: title, file_url: '', file_type: 'text',
         category: '미팅내용', memo: text, uploaded_by: profile?.name || '',
       }])
-      if (error) { alert('저장 실패: ' + error.message); return }
+      if (error) { toast('저장 실패: ' + error.message); return }
       notifyOthers(profile?.id, { type: 'file', title: `${project?.name || '현장'} · 미팅내용 등록`, body: title, link: `/projects/${id}?tab=자료` })
       setFileForm({ category: '공사전사진', memo: '', linkUrl: '', linkTitle: '' })
       setShowFileForm(false)
@@ -368,7 +369,7 @@ export default function ProjectDetail() {
         setUploadProgress(Math.round((done / dedupList.length) * 100))
       }))
     }
-    if (failMsg && done < dedupList.length) alert(`${dedupList.length - done}장 업로드 실패: ${failMsg}`)
+    if (failMsg && done < dedupList.length) toast(`${dedupList.length - done}장 업로드 실패: ${failMsg}`)
     setUploadProgress(100)
     notifyOthers(profile?.id, { type: 'file', title: `${project?.name || '현장'} · 새 자료 ${dedupList.length}건`, body: `${fileForm.category} 자료가 업로드되었습니다`, link: `/projects/${id}?tab=자료` })
     setFileForm({ category: '공사전사진', memo: '', linkUrl: '', linkTitle: '' })
@@ -480,7 +481,7 @@ export default function ProjectDetail() {
           ok++
         } catch { /* 개별 실패는 건너뜀 */ }
       }
-      alert(`${ok}개 저장 완료!`)
+      toast(`${ok}개 저장 완료!`)
       return
     }
     // 폴더 선택 미지원(모바일/사파리) → 공유 또는 개별 다운로드
@@ -506,7 +507,7 @@ export default function ProjectDetail() {
       memo: editFileForm.memo,
     }
     if (editFile.file_type === 'link') {
-      if (!editFileForm.url.trim()) { alert('링크 URL을 입력하세요'); setSavingFileEdit(false); return }
+      if (!editFileForm.url.trim()) { toast('링크 URL을 입력하세요'); setSavingFileEdit(false); return }
       payload.file_url = editFileForm.url.trim()
     }
     // 파일 교체 (도면 v2 등): 새 파일 업로드 → 항목은 그대로, 파일만 바뀜. 옛 파일·썸네일은 정리.
@@ -517,7 +518,7 @@ export default function ProjectDetail() {
       const stamp = `${Date.now()}`
       const path = `files/${id}/${stamp}.${ext}`
       const { error: upErr } = await supabase.storage.from('uploads').upload(path, up, { contentType: up.type || 'application/octet-stream', upsert: true })
-      if (upErr) { alert('파일 업로드 실패: ' + upErr.message); setSavingFileEdit(false); return }
+      if (upErr) { toast('파일 업로드 실패: ' + upErr.message); setSavingFileEdit(false); return }
       payload.file_url = supabase.storage.from('uploads').getPublicUrl(path).data.publicUrl
       payload.file_type = up.type || ''
       payload.file_size = up.size
@@ -541,7 +542,7 @@ export default function ProjectDetail() {
       ;({ error } = await supabase.from('project_files').update(payload).eq('id', editFile.id))
     }
     setSavingFileEdit(false)
-    if (error) { alert('수정 실패: ' + error.message); return }
+    if (error) { toast('수정 실패: ' + error.message); return }
     // 파일을 실제로 교체한 경우엔 알림 (제목·메모만 고친 건 조용히 — 소음 방지)
     if (replaceFile && editFile.file_type !== 'link' && editFile.file_type !== 'text') {
       notifyOthers(profile?.id, {
@@ -575,7 +576,7 @@ export default function ProjectDetail() {
     if (paths.length > 0) await supabase.storage.from('uploads').remove(paths)
     const ids = Array.from(selectedFileIds)
     const { error } = await supabase.from('project_files').delete().in('id', ids)
-    if (error) { alert('삭제 실패: ' + error.message); return }
+    if (error) { toast('삭제 실패: ' + error.message); return }
     setSelectedFileIds(new Set())
     fetchAll()
   }
@@ -599,7 +600,7 @@ export default function ProjectDetail() {
     if (!showAccess) return
     supabase.from('profiles').select('id, name').eq('role', 'partner').then(({ data }) => setPartners(data || []))
     supabase.from('project_access').select('user_id').eq('project_id', id).then(({ data, error }) => {
-      if (error) { alert('공개설정을 불러오지 못했어요.\n(관리자에게: db/project_access.sql 실행 필요)\n' + error.message); setShowAccess(false); return }
+      if (error) { toast('공개설정을 불러오지 못했어요.\n(관리자에게: db/project_access.sql 실행 필요)\n' + error.message); setShowAccess(false); return }
       setAccessIds(new Set((data || []).map(r => r.user_id)))
     })
   }, [showAccess, id])
@@ -610,11 +611,11 @@ export default function ProjectDetail() {
     if (accessIds.has(uid)) {
       const { error } = await supabase.from('project_access').delete().eq('project_id', id).eq('user_id', uid)
       if (!error) setAccessIds(prev => { const n = new Set(prev); n.delete(uid); return n })
-      else alert('해제 실패: ' + error.message)
+      else toast('해제 실패: ' + error.message)
     } else {
       const { error } = await supabase.from('project_access').insert([{ project_id: id, user_id: uid }])
       if (!error) setAccessIds(prev => new Set(prev).add(uid))
-      else alert('공개 실패: ' + error.message)
+      else toast('공개 실패: ' + error.message)
     }
     setAccessBusy(false)
   }
@@ -644,7 +645,7 @@ export default function ProjectDetail() {
     if (moveProj && moveProj !== id) payload.project_id = moveProj
     const { error } = await supabase.from('project_files').update(payload).in('id', Array.from(selectedFileIds))
     setMoving(false)
-    if (error) { alert('이동 실패: ' + error.message); return }
+    if (error) { toast('이동 실패: ' + error.message); return }
     setShowMove(false)
     clearSelection()
     fetchAll()
@@ -652,7 +653,7 @@ export default function ProjectDetail() {
 
   // 파일 하나를 바로 채팅으로 전달 — 그 파일만 선택된 상태로 대상 선택창 열기
   function chatShareOne(f: ProjectFile) {
-    if (f.file_type === 'link' || f.file_type === 'text' || !f.file_url) { alert('링크·글 항목은 채팅 전달이 안 돼요'); return }
+    if (f.file_type === 'link' || f.file_type === 'text' || !f.file_url) { toast('링크·글 항목은 채팅 전달이 안 돼요'); return }
     setSelectedFileIds(new Set([f.id]))
     setShowChatShare(true)
   }
@@ -661,7 +662,7 @@ export default function ProjectDetail() {
   async function sendToChat(target: { kind: 'all' | 'dm' | 'room'; id?: string; name: string }) {
     if (moving || !profile?.id) return
     const sel = files.filter(f => selectedFileIds.has(f.id) && f.file_type !== 'link' && f.file_url)
-    if (!sel.length) { alert('보낼 수 있는 파일이 없어요 (링크 항목은 제외됩니다)'); return }
+    if (!sel.length) { toast('보낼 수 있는 파일이 없어요 (링크 항목은 제외됩니다)'); return }
     setMoving(true)
     const isImg = (f: ProjectFile) => (f.file_type || '').startsWith('image') || /\.(jpg|jpeg|png|gif|webp|heic)$/i.test(f.file_name || '')
     const recipient_id = target.kind === 'dm' ? target.id : null
@@ -676,13 +677,13 @@ export default function ProjectDetail() {
     others.forEach(f => rows.push({ ...base, file_url: f.file_url, file_name: f.file_name }))
     const { error } = await supabase.from('messages').insert(rows)
     setMoving(false)
-    if (error) { alert('공유 실패: ' + error.message); return }
+    if (error) { toast('공유 실패: ' + error.message); return }
     const body = `${project?.name || '현장'} 자료 ${sel.length}건`
     if (target.kind === 'dm' && target.id && target.id !== profile.id) notifyDM(target.id, `${profile.name || '직원'} 님의 메시지`, body, `/chat?dm=${profile.id}`)
     else if (target.kind === 'room' && target.id) notifyRoom(target.id, `${target.name} · ${profile.name || '직원'}`, body, `/chat?room=${target.id}`)
     setShowChatShare(false)
     clearSelection()
-    alert(`${sel.length}건을 "${target.name}"(으)로 보냈어요. 채팅에서 확인하세요!`)
+    toast(`${sel.length}건을 "${target.name}"(으)로 보냈어요. 채팅에서 확인하세요!`)
   }
 
   async function handleSchedule(e: React.FormEvent) {
@@ -734,7 +735,7 @@ export default function ProjectDetail() {
         contentType: costFile.type || 'application/octet-stream',
         upsert: true,
       })
-      if (upErr) { alert('파일 업로드 실패: ' + upErr.message); setSavingC(false); return }
+      if (upErr) { toast('파일 업로드 실패: ' + upErr.message); setSavingC(false); return }
       const { data: urlData } = supabase.storage.from('uploads').getPublicUrl(path)
       file_url = urlData.publicUrl
       file_name = costFile.name

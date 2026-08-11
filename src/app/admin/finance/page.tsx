@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState, type ReactNode } from 'react'
+import { toast } from '@/components/Toaster'
 import { useRouter } from 'next/navigation'
 import Sidebar from '@/components/Sidebar'
 import { useAuth } from '@/lib/auth-context'
@@ -125,7 +126,7 @@ function FixedCostTab({ list, onRefresh }: { list: FixedCost[]; onRefresh: () =>
     const { error } = await sb.from('finance_fixed_costs').insert(
       rows.map(r => ({ month: month + '-01', title: r.label, amount: r.amount, memo: '' }))
     )
-    if (error) { alert('저장 실패: ' + error.message); return }
+    if (error) { toast('저장 실패: ' + error.message); return }
     setShowBulk(false)
     onRefresh()
   }
@@ -139,7 +140,7 @@ function FixedCostTab({ list, onRefresh }: { list: FixedCost[]; onRefresh: () =>
     const { error } = editing
       ? await sb.from('finance_fixed_costs').update(payload).eq('id', editing.id)
       : await sb.from('finance_fixed_costs').insert([payload])
-    if (error) { alert('저장 실패: ' + error.message); setSaving(false); return }
+    if (error) { toast('저장 실패: ' + error.message); setSaving(false); return }
     setForm({ month: '', title: '', amount: '', memo: '' })
     setEditing(null); setShowForm(false); setSaving(false)
     onRefresh()
@@ -211,7 +212,7 @@ function PayrollTab({ list, onRefresh }: { list: Payroll[]; onRefresh: () => voi
     const { error } = await sb.from('finance_payroll').insert(
       rows.map(r => ({ month: month + '-01', employee_name: r.label, amount: r.amount, memo: '' }))
     )
-    if (error) { alert('저장 실패: ' + error.message); return }
+    if (error) { toast('저장 실패: ' + error.message); return }
     setShowBulk(false)
     onRefresh()
   }
@@ -223,7 +224,7 @@ function PayrollTab({ list, onRefresh }: { list: Payroll[]; onRefresh: () => voi
     // 같은 달 기존 것 전부 삭제 후 교체 — 삭제 실패 시 중단(중복 방지)
     const { error: delErr } = await sb.from('finance_payroll').delete()
       .gte('month', data.month + '-01').lte('month', data.month + '-31')
-    if (delErr) { alert('기존 자료 삭제 실패(중복 방지를 위해 중단): ' + delErr.message); return }
+    if (delErr) { toast('기존 자료 삭제 실패(중복 방지를 위해 중단): ' + delErr.message); return }
     const { error } = await sb.from('finance_payroll').insert(
       data.rows.map(r => ({
         month: monthKey,
@@ -232,13 +233,13 @@ function PayrollTab({ list, onRefresh }: { list: Payroll[]; onRefresh: () => voi
         memo: `실지급 ${r.net.toLocaleString()}원${r.base ? ` · 기본급 ${r.base.toLocaleString()}` : ''}`,
       }))
     )
-    if (error) { alert('저장 실패: ' + error.message); return }
+    if (error) { toast('저장 실패: ' + error.message); return }
     // 전체 시트(수당·공제 항목 포함) 저장 — '급여대장' 보기에서 사용
     if (full) {
       const { error: le } = await sb.from('finance_payroll_ledger').upsert({
         month: data.month, headers: full.headers, rows: full.rows, total: full.total, updated_at: new Date().toISOString(),
       }, { onConflict: 'month' })
-      if (le) alert('요약은 저장됐지만 전체 시트 저장에 실패했어요.\n(관리자에게: db/payroll_ledger.sql 실행 필요)\n' + le.message)
+      if (le) toast('요약은 저장됐지만 전체 시트 저장에 실패했어요.\n(관리자에게: db/payroll_ledger.sql 실행 필요)\n' + le.message)
     }
     setShowLedger(false)
     setLedgerRefresh(n => n + 1)
@@ -254,7 +255,7 @@ function PayrollTab({ list, onRefresh }: { list: Payroll[]; onRefresh: () => voi
     const { error } = editing
       ? await sb.from('finance_payroll').update(payload).eq('id', editing.id)
       : await sb.from('finance_payroll').insert([payload])
-    if (error) { alert('저장 실패: ' + error.message); setSaving(false); return }
+    if (error) { toast('저장 실패: ' + error.message); setSaving(false); return }
     setForm({ month: '', employee_name: '', amount: '', memo: '' })
     setEditing(null); setShowForm(false); setSaving(false)
     onRefresh()
@@ -587,7 +588,7 @@ function ProfitTab({ list, projects, onRefresh }: { list: ProjectProfit[]; proje
       const ext = profitFile.name.split('.').pop() || 'bin'
       const path = `finance/profit/${Date.now()}.${ext}`
       const { error: upErr } = await sb.storage.from('uploads').upload(path, profitFile, { contentType: profitFile.type || 'application/octet-stream', upsert: true })
-      if (upErr) { alert('파일 업로드 실패: ' + upErr.message); setSaving(false); return }
+      if (upErr) { toast('파일 업로드 실패: ' + upErr.message); setSaving(false); return }
       file_url = sb.storage.from('uploads').getPublicUrl(path).data.publicUrl
       file_name = profitFile.name
     }
@@ -595,7 +596,7 @@ function ProfitTab({ list, projects, onRefresh }: { list: ProjectProfit[]; proje
     const { error } = editing
       ? await sb.from('finance_project_profit').update(payload).eq('id', editing.id)
       : await sb.from('finance_project_profit').insert([payload])
-    if (error) { alert('저장 실패: ' + error.message); setSaving(false); return }
+    if (error) { toast('저장 실패: ' + error.message); setSaving(false); return }
     setForm({ project_id: '', month: '', revenue: '', cost: '', memo: '' })
     setProfitFile(null)
     setEditing(null); setShowForm(false); setSaving(false)
@@ -704,7 +705,7 @@ function SalesTab({ list, onRefresh }: { list: SalesRecord[]; onRefresh: () => v
       const ext = file.name.split('.').pop() || 'bin'
       const path = `finance/sales/${Date.now()}.${ext}`
       const { error: upErr } = await sb.storage.from('uploads').upload(path, file, { contentType: file.type, upsert: true })
-      if (upErr) { alert('파일 업로드 실패: ' + upErr.message); setSaving(false); return }
+      if (upErr) { toast('파일 업로드 실패: ' + upErr.message); setSaving(false); return }
       const { data } = sb.storage.from('uploads').getPublicUrl(path)
       file_url = data.publicUrl
       file_name = file.name
@@ -713,7 +714,7 @@ function SalesTab({ list, onRefresh }: { list: SalesRecord[]; onRefresh: () => v
     const { error } = editing
       ? await sb.from('finance_sales').update(payload).eq('id', editing.id)
       : await sb.from('finance_sales').insert([payload])
-    if (error) { alert('저장 실패: ' + error.message); setSaving(false); return }
+    if (error) { toast('저장 실패: ' + error.message); setSaving(false); return }
     setForm({ month: '', type: '매출', amount: '', memo: '' }); setFile(null)
     setEditing(null); setShowForm(false); setSaving(false)
     onRefresh()
@@ -855,7 +856,7 @@ function QuoteTab({ list, onRefresh }: { list: Quote[]; onRefresh: () => void })
       const ext = file.name.split('.').pop() || 'bin'
       const path = `finance/quotes/${Date.now()}.${ext}`
       const { error: upErr } = await sb.storage.from('uploads').upload(path, file, { contentType: file.type || 'application/octet-stream', upsert: true })
-      if (upErr) { alert('파일 업로드 실패: ' + upErr.message); setSaving(false); return }
+      if (upErr) { toast('파일 업로드 실패: ' + upErr.message); setSaving(false); return }
       file_url = sb.storage.from('uploads').getPublicUrl(path).data.publicUrl
       file_name = file.name
     }
@@ -863,7 +864,7 @@ function QuoteTab({ list, onRefresh }: { list: Quote[]; onRefresh: () => void })
     const { error } = editing
       ? await sb.from('finance_quotes').update(payload).eq('id', editing.id)
       : await sb.from('finance_quotes').insert([payload])
-    if (error) { alert('저장 실패: ' + error.message); setSaving(false); return }
+    if (error) { toast('저장 실패: ' + error.message); setSaving(false); return }
     setForm({ title: '', amount: '' }); setFile(null)
     setEditing(null); setShowForm(false); setSaving(false)
     onRefresh()

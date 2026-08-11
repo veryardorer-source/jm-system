@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { toast } from '@/components/Toaster'
 import Sidebar from '@/components/Sidebar'
 import { supabase } from '@/lib/supabase'
 import { useAuth, canEdit } from '@/lib/auth-context'
@@ -52,7 +53,7 @@ export default function ContactsPage() {
       ? await supabase.from('contacts').update(payload).eq('id', editing.id)
       : await supabase.from('contacts').insert([payload])
     setSaving(false)
-    if (error) { alert('저장 실패: ' + error.message + (error.message.includes('does not exist') ? '\n(관리자에게: db/contacts.sql 실행 필요)' : '')); return }
+    if (error) { toast('저장 실패: ' + error.message + (error.message.includes('does not exist') ? '\n(관리자에게: db/contacts.sql 실행 필요)' : '')); return }
     setForm(EMPTY); setEditing(null); setShowForm(false)
     fetchList()
   }

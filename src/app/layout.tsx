@@ -3,6 +3,7 @@ import "./globals.css";
 import { AuthProvider } from "@/lib/auth-context";
 import SWRegister from "@/components/SWRegister";
 import NotifPopup from "@/components/NotifPopup";
+import Toaster from "@/components/Toaster";
 import AuthGate from "@/components/AuthGate";
 
 export const metadata: Metadata = {
@@ -40,6 +41,7 @@ export default function RootLayout({
         <AuthProvider>
           <AuthGate>
             <NotifPopup />
+            <Toaster />
             {children}
           </AuthGate>
         </AuthProvider>

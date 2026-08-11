@@ -1,6 +1,7 @@
 ﻿'use client'
 
 import { useEffect, useState } from 'react'
+import { toast } from '@/components/Toaster'
 import { useRouter } from 'next/navigation'
 import Sidebar from '@/components/Sidebar'
 import { useAuth, Profile, UserRole } from '@/lib/auth-context'
@@ -62,7 +63,7 @@ export default function AdminUsersPage() {
     })
     const data = await res.json()
     setSaving(null)
-    if (!res.ok) { alert('내보내기 실패: ' + (data.error || '오류')); return }
+    if (!res.ok) { toast('내보내기 실패: ' + (data.error || '오류')); return }
     setUsers(us => us.filter(x => x.id !== u.id))
   }
 

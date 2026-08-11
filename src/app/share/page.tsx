@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { toast } from '@/components/Toaster'
 import Image from 'next/image'
 import { useRouter } from 'next/navigation'
 import Sidebar from '@/components/Sidebar'
@@ -88,12 +89,12 @@ export default function SharePage() {
     const { error } = await supabase.storage.from('uploads').upload(path, file, {
       contentType: file.type || 'application/octet-stream', upsert: true,
     })
-    if (error) { alert('업로드 실패: ' + error.message); return null }
+    if (error) { toast('업로드 실패: ' + error.message); return null }
     return supabase.storage.from('uploads').getPublicUrl(path).data.publicUrl
   }
 
   async function handleUpload() {
-    if (readOnly) { alert('외부협력업체 계정은 저장할 수 없습니다.'); return }
+    if (readOnly) { toast('외부협력업체 계정은 저장할 수 없습니다.'); return }
     if (files.length === 0 && !sharedText.trim()) return
     if (dest === 'project' && !projectId) return
     // 사진 없이 텍스트만 공유한 경우 — 영수증/출금요청에 글만 기록
@@ -134,7 +135,7 @@ export default function SharePage() {
           const { error: upErr } = await supabase.storage.from('uploads').upload(path, up, {
             contentType: up.type || 'application/octet-stream', upsert: true,
           })
-          if (upErr) { alert('업로드 실패: ' + upErr.message); return }
+          if (upErr) { toast('업로드 실패: ' + upErr.message); return }
           const url = supabase.storage.from('uploads').getPublicUrl(path).data.publicUrl
           let thumb_url: string | null = null
           if (isCompressibleImage(up)) {
@@ -158,7 +159,7 @@ export default function SharePage() {
           if (insErr && /column|thumb_url|file_size|file_hash/i.test(insErr.message)) {
             ;({ error: insErr } = await supabase.from('project_files').insert([baseRow]))
           }
-          if (insErr) alert('저장 실패: ' + insErr.message)
+          if (insErr) toast('저장 실패: ' + insErr.message)
         } else if (dest === 'receipt') {
           const url = await uploadOne(file, idx, 'receipts')
           if (url) await supabase.from('receipts').insert([{ image_url: url, memo: reason || '', uploaded_by: who }])
