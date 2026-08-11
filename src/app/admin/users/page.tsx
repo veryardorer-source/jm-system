@@ -26,6 +26,7 @@ export default function AdminUsersPage() {
   const [adding, setAdding] = useState(false)
   const [addError, setAddError] = useState('')
   const [storageBytes, setStorageBytes] = useState<number | null>(null) // 전체 Storage 사용량
+  const [inviteMode, setInviteMode] = useState(true) // true=초대 메일(권장) / false=임시 비밀번호 직접 설정
 
   useEffect(() => {
     if (!authLoading) {
@@ -67,10 +68,15 @@ export default function AdminUsersPage() {
     e.preventDefault()
     setAdding(true)
     setAddError('')
-    const res = await fetch('/api/admin/create-user', {
+    // 기본은 초대 메일(직원이 비밀번호를 직접 정함) — 메일이 안 갈 때만 임시 비밀번호 방식
+    const url = inviteMode ? '/api/admin/invite-user' : '/api/admin/create-user'
+    const body = inviteMode
+      ? { name: addForm.name, email: addForm.email, role: addForm.role }
+      : addForm
+    const res = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(addForm),
+      body: JSON.stringify(body),
     })
     const data = await res.json()
     if (!res.ok) {
@@ -78,6 +84,7 @@ export default function AdminUsersPage() {
       setAdding(false)
       return
     }
+    if (inviteMode) alert(`${addForm.email} 로 초대 메일을 보냈어요.\n직원이 메일의 링크를 눌러 비밀번호를 정하면 바로 로그인할 수 있어요.`)
     setAddForm(INITIAL_FORM)
     setShowAddForm(false)
     setAdding(false)
@@ -266,12 +273,22 @@ export default function AdminUsersPage() {
                   placeholder="example@email.com"
                   className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
               </div>
-              <div>
-                <label className="text-sm font-medium text-gray-700 block mb-1.5">임시 비밀번호 *</label>
-                <input required type="text" value={addForm.password} onChange={e => setAddForm({ ...addForm, password: e.target.value })}
-                  placeholder="직원에게 알려줄 임시 비밀번호"
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
-              </div>
+              {inviteMode ? (
+                <p className="text-xs text-green-700 bg-green-50 border border-green-200 rounded-lg px-3 py-2">
+                  📧 이 이메일로 <b>초대 메일</b>이 가고, 직원이 메일의 링크에서 <b>비밀번호를 직접 정해요</b>. (관리자는 비밀번호를 모름 — 권장)
+                </p>
+              ) : (
+                <div>
+                  <label className="text-sm font-medium text-gray-700 block mb-1.5">임시 비밀번호 *</label>
+                  <input required type="text" value={addForm.password} onChange={e => setAddForm({ ...addForm, password: e.target.value })}
+                    placeholder="직원에게 알려줄 임시 비밀번호"
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
+                </div>
+              )}
+              <label className="flex items-center gap-2 text-xs text-gray-500 cursor-pointer">
+                <input type="checkbox" checked={!inviteMode} onChange={e => setInviteMode(!e.target.checked)} className="rounded" />
+                초대 메일 대신 임시 비밀번호로 바로 만들기 (메일이 안 갈 때만)
+              </label>
               <div>
                 <label className="text-sm font-medium text-gray-700 block mb-1.5">권한 *</label>
                 <div className="grid grid-cols-2 gap-2">
@@ -294,7 +311,7 @@ export default function AdminUsersPage() {
                   className="flex-1 border border-gray-300 text-gray-700 py-2.5 rounded-lg text-sm font-medium">취소</button>
                 <button type="submit" disabled={adding}
                   className="flex-1 bg-green-600 text-white py-2.5 rounded-lg text-sm font-medium disabled:opacity-50">
-                  {adding ? '생성 중...' : '계정 생성'}
+                  {adding ? (inviteMode ? '초대 중...' : '생성 중...') : (inviteMode ? '📧 초대 메일 보내기' : '계정 생성')}
                 </button>
               </div>
             </form>
