@@ -300,9 +300,11 @@ export default function AdminUsersPage() {
                   className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
               </div>
               <div>
-                <label className="text-sm font-medium text-gray-700 block mb-1.5">이메일 *</label>
+                <label className="text-sm font-medium text-gray-700 block mb-1.5">
+                  이메일 * <span className="text-gray-400 font-normal">(로그인 아이디용 — 메일이 가진 않아요)</span>
+                </label>
                 <input required type="email" value={addForm.email} onChange={e => setAddForm({ ...addForm, email: e.target.value })}
-                  placeholder="example@email.com"
+                  placeholder="직원이 로그인할 때 쓸 이메일 주소"
                   className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
               </div>
               {inviteMode ? (
