@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import Sidebar from '@/components/Sidebar'
 import { supabase } from '@/lib/supabase'
 import { useAuth, canEdit } from '@/lib/auth-context'
+import SortSelect from '@/components/SortSelect'
 
 type Contact = {
   id: string
@@ -26,6 +27,7 @@ export default function ContactsPage() {
   const [loading, setLoading] = useState(true)
   const [q, setQ] = useState('')
   const [cat, setCat] = useState('전체')
+  const [sort, setSort] = useState('name') // 정렬: 업체명/최신 등록/분야
   const [showForm, setShowForm] = useState(false)
   const [editing, setEditing] = useState<Contact | null>(null)
   const [form, setForm] = useState(EMPTY)
@@ -73,6 +75,10 @@ export default function ContactsPage() {
     const s = q.trim().toLowerCase()
     if (!s) return true
     return [c.company, c.category, c.person, c.phone, c.memo].some(v => (v || '').toLowerCase().includes(s))
+  }).sort((a, b) => {
+    if (sort === 'recent') return (b.created_at || '').localeCompare(a.created_at || '')
+    if (sort === 'category') return (a.category || '').localeCompare(b.category || '', 'ko') || (a.company || '').localeCompare(b.company || '', 'ko')
+    return (a.company || '').localeCompare(b.company || '', 'ko', { numeric: true }) // 업체명순
   })
 
   if (profile?.role === 'partner') return (
@@ -100,8 +106,15 @@ export default function ContactsPage() {
         <div className="flex-1 overflow-auto px-4 md:px-8 py-4 md:py-6 pb-20 md:pb-24">
           {/* 검색 + 분야 필터 */}
           <div className="flex flex-col gap-2 mb-4 max-w-3xl">
-            <input value={q} onChange={e => setQ(e.target.value)} placeholder="업체명·담당자·전화번호·메모 검색"
-              className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
+            <div className="flex gap-2">
+              <input value={q} onChange={e => setQ(e.target.value)} placeholder="업체명·담당자·전화번호·메모 검색"
+                className="flex-1 border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
+              <SortSelect value={sort} onChange={setSort} options={[
+                { value: 'name', label: '업체명순' },
+                { value: 'recent', label: '최신 등록순' },
+                { value: 'category', label: '분야순' },
+              ]} />
+            </div>
             {cats.length > 0 && (
               <div className="flex gap-1.5 flex-wrap">
                 {['전체', ...cats].map(c => (

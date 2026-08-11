@@ -6,6 +6,7 @@ import Sidebar from '@/components/Sidebar'
 import { supabase, Project, STATUS_LIST, STATUS_COLOR, HIDDEN_STATUSES } from '@/lib/supabase'
 import { useAuth, canEdit } from '@/lib/auth-context'
 import { notifyOthers } from '@/lib/notify'
+import SortSelect from '@/components/SortSelect'
 
 const EMPTY_FORM = {
   name: '', client_name: '', address: '', manager: '',
@@ -24,6 +25,7 @@ export default function ProjectsPage() {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [search, setSearch] = useState('')
+  const [sort, setSort] = useState('recent') // 정렬: 최신 등록/현장명/착공일/상태
   const [editingStatusId, setEditingStatusId] = useState<string | null>(null)
   const [showClosed, setShowClosed] = useState(false)
   // 새 현장 만들 때 공개할 외부협력업체 선택 (잔디식 초대)
@@ -84,6 +86,12 @@ export default function ProjectsPage() {
   const filtered = visibleProjects
     .filter(p => filter === '전체' || p.status === filter)
     .filter(p => !search || p.name.includes(search) || p.client_name?.includes(search) || p.manager?.includes(search))
+    .sort((a, b) => {
+      if (sort === 'name') return (a.name || '').localeCompare(b.name || '', 'ko', { numeric: true })
+      if (sort === 'start_desc') return (b.start_date || '').localeCompare(a.start_date || '')
+      if (sort === 'status') return STATUS_LIST.indexOf(a.status) - STATUS_LIST.indexOf(b.status) || (b.created_at || '').localeCompare(a.created_at || '')
+      return (b.created_at || '').localeCompare(a.created_at || '') // 최신 등록순
+    })
 
   return (
     <div className="flex flex-col md:flex-row min-h-screen">
@@ -108,6 +116,12 @@ export default function ProjectsPage() {
             <input value={search} onChange={e => setSearch(e.target.value)}
               placeholder="현장명, 고객명, 담당자 검색..."
               className="border border-gray-300 rounded-lg px-3 py-2 text-sm w-56 focus:outline-none focus:ring-2 focus:ring-green-500" />
+            <SortSelect value={sort} onChange={setSort} options={[
+              { value: 'recent', label: '최신 등록순' },
+              { value: 'name', label: '현장명순' },
+              { value: 'start_desc', label: '착공일순' },
+              { value: 'status', label: '상태순' },
+            ]} />
             <div className="flex gap-1 overflow-x-auto">
               <button onClick={() => setFilter('전체')}
                 className={`px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap ${filter === '전체' ? 'bg-gray-800 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>

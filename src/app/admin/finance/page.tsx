@@ -9,6 +9,7 @@ import { FixedCost, Payroll, ProjectProfit, SalesRecord, Project, supabase } fro
 import { parseExcelRows, parseExcelTotal, ParsedRow, parsePayrollLedger, PayrollLedger, parsePayrollLedgerFull, PayrollLedgerFull } from '@/lib/excel-parse'
 import FileDropInput from '@/components/FileDropInput'
 import { openPdfTitled } from '@/lib/media'
+import SortSelect from '@/components/SortSelect'
 
 const TAB_LIST = ['고정지출', '급여내역', '현장별 이익', '매출매입', '견적서'] as const
 type Tab = typeof TAB_LIST[number]
@@ -686,6 +687,7 @@ function ProfitTab({ list, projects, onRefresh }: { list: ProjectProfit[]; proje
 
 // ───────────── 매출매입 ─────────────
 function SalesTab({ list, onRefresh }: { list: SalesRecord[]; onRefresh: () => void }) {
+  const [sort, setSort] = useState('date_desc')
   const [showForm, setShowForm] = useState(false)
   const [editing, setEditing] = useState<SalesRecord | null>(null)
   const [form, setForm] = useState({ month: '', type: '매출' as '매출' | '매입', amount: '', memo: '' })
@@ -732,9 +734,25 @@ function SalesTab({ list, onRefresh }: { list: SalesRecord[]; onRefresh: () => v
     return acc
   }, {} as Record<string, { label: string; value: number; key: string }>)).sort((a, b) => a.key.localeCompare(b.key))
 
+  // 정렬 — 월/금액/구분
+  const sortedList = [...list].sort((a, b) => {
+    if (sort === 'date_asc') return (a.month || '').localeCompare(b.month || '')
+    if (sort === 'amount_desc') return (b.amount || 0) - (a.amount || 0)
+    if (sort === 'amount_asc') return (a.amount || 0) - (b.amount || 0)
+    if (sort === 'type') return (a.type || '').localeCompare(b.type || '') || (b.month || '').localeCompare(a.month || '')
+    return (b.month || '').localeCompare(a.month || '')
+  })
+
   return (
     <div>
-      <div className="flex justify-end mb-4">
+      <div className="flex justify-between items-center mb-4 gap-2">
+        <SortSelect value={sort} onChange={setSort} options={[
+          { value: 'date_desc', label: '최신순' },
+          { value: 'date_asc', label: '오래된순' },
+          { value: 'amount_desc', label: '금액 높은순' },
+          { value: 'amount_asc', label: '금액 낮은순' },
+          { value: 'type', label: '매출/매입 구분' },
+        ]} />
         <button onClick={() => { setEditing(null); setForm({ month: '', type: '매출', amount: '', memo: '' }); setFile(null); setShowForm(true) }}
           className="bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-700">+ 매출/매입 자료 추가</button>
       </div>
@@ -756,7 +774,7 @@ function SalesTab({ list, onRefresh }: { list: SalesRecord[]; onRefresh: () => v
                 </tr>
               </thead>
               <tbody>
-                {list.map(s => (
+                {sortedList.map(s => (
                   <tr key={s.id} className="border-b border-gray-50 hover:bg-gray-50">
                     <td className="px-6 py-3 text-sm font-medium text-gray-800">{s.month?.slice(0,7)}</td>
                     <td className="px-4 py-3">
@@ -820,6 +838,7 @@ function SalesTab({ list, onRefresh }: { list: SalesRecord[]; onRefresh: () => v
 
 // ───────────── 견적서 ─────────────
 function QuoteTab({ list, onRefresh }: { list: Quote[]; onRefresh: () => void }) {
+  const [sort, setSort] = useState('date_desc')
   const [showForm, setShowForm] = useState(false)
   const [editing, setEditing] = useState<Quote | null>(null)
   const [form, setForm] = useState({ title: '', amount: '' })
@@ -870,9 +889,26 @@ function QuoteTab({ list, onRefresh }: { list: Quote[]; onRefresh: () => void })
     }
   }
 
+  // 정렬 — 날짜(견적일 없으면 등록일)/현장명/금액
+  const dateOf = (q: Quote) => q.quote_date || q.created_at || ''
+  const sorted = [...list].sort((a, b) => {
+    if (sort === 'date_asc') return dateOf(a).localeCompare(dateOf(b))
+    if (sort === 'name') return (a.title || '').localeCompare(b.title || '', 'ko', { numeric: true })
+    if (sort === 'amount_desc') return (b.amount || 0) - (a.amount || 0)
+    if (sort === 'amount_asc') return (a.amount || 0) - (b.amount || 0)
+    return dateOf(b).localeCompare(dateOf(a))
+  })
+
   return (
     <div>
-      <div className="flex justify-end mb-4">
+      <div className="flex justify-between items-center mb-4 gap-2">
+        <SortSelect value={sort} onChange={setSort} options={[
+          { value: 'date_desc', label: '최신순' },
+          { value: 'date_asc', label: '오래된순' },
+          { value: 'name', label: '현장명순' },
+          { value: 'amount_desc', label: '금액 높은순' },
+          { value: 'amount_asc', label: '금액 낮은순' },
+        ]} />
         <button onClick={() => { setEditing(null); setForm({ title: '', amount: '' }); setFile(null); setShowForm(true) }}
           className="bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-700">+ 견적서 추가</button>
       </div>
@@ -891,7 +927,7 @@ function QuoteTab({ list, onRefresh }: { list: Quote[]; onRefresh: () => void })
               </tr>
             </thead>
             <tbody>
-              {list.map(q => (
+              {sorted.map(q => (
                 <tr key={q.id} className="border-b border-gray-50 hover:bg-gray-50 align-top">
                   <td className="px-6 py-3 text-sm font-medium text-gray-800">{q.title}</td>
                   <td className="px-4 py-3 text-sm text-right font-semibold text-gray-800 whitespace-nowrap">{q.amount ? q.amount.toLocaleString() + '원' : '-'}</td>
