@@ -38,7 +38,7 @@ export default function AdminUsersPage() {
       }
       fetchUsers()
     }
-  }, [authLoading, myProfile])
+  }, [authLoading, myProfile, router])
 
   async function fetchUsers() {
     const supabase = createClient()

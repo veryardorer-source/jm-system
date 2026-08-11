@@ -1,6 +1,7 @@
 ﻿'use client'
 
 import { useEffect, useState, useRef, useCallback } from 'react'
+import Image from 'next/image'
 import { useSearchParams } from 'next/navigation'
 import Sidebar from '@/components/Sidebar'
 import { supabase } from '@/lib/supabase'
@@ -30,7 +31,9 @@ export default function WithdrawalsPage() {
   const [showForm, setShowForm] = useState(false)
   const [selectedFiles, setSelectedFiles] = useState<File[]>([])
   const [reason, setReason] = useState('')
-  const [requestedBy, setRequestedBy] = useState('')
+  // 요청자 기본값은 내 이름 — 입력 전엔 null로 두고 표시할 때 파생 (effect 동기 setState 회피)
+  const [requestedByEdit, setRequestedByEdit] = useState<string | null>(null)
+  const requestedBy = requestedByEdit ?? profile?.name ?? ''
   const [uploading, setUploading] = useState(false)
   const [uploadCurrent, setUploadCurrent] = useState(0)
   const [viewer, setViewer] = useState<Photo | null>(null)
@@ -41,18 +44,17 @@ export default function WithdrawalsPage() {
   const viewerFileRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => { fetchPhotos() }, [])
-  useEffect(() => { if (profile?.name) setRequestedBy(profile.name) }, [profile?.name])
 
-  // 알림 링크(?open=id)로 들어오면 해당 건 상세를 바로 열기 (화면이 이미 열려 있어도 동작)
+  // 알림 링크(?open=id)로 들어오면 해당 건 상세를 바로 열기 — 렌더 중 보정 패턴(같은 링크는 1회만)
   const searchParams = useSearchParams()
-  const openedIdRef = useRef('')
-  useEffect(() => {
-    if (loading) return
+  const [openedId, setOpenedId] = useState('')
+  {
     const oid = searchParams.get('open')
-    if (!oid || openedIdRef.current === oid) return
-    const p = photos.find(x => x.id === oid)
-    if (p) { openViewer(p); openedIdRef.current = oid }
-  }, [searchParams, loading, photos]) // eslint-disable-line react-hooks/exhaustive-deps
+    if (!loading && oid && openedId !== oid) {
+      const p = photos.find(x => x.id === oid)
+      if (p) { setOpenedId(oid); openViewer(p) }
+    }
+  }
 
   function imgsOf(p: Photo) {
     return (p.images && p.images.length ? p.images : [p.image_url]).filter(Boolean)
@@ -149,7 +151,7 @@ export default function WithdrawalsPage() {
     }
     setSelectedFiles([])
     setReason('')
-    setRequestedBy(profile?.name || '')
+    setRequestedByEdit(null)
     setShowForm(false)
     setUploading(false)
     setUploadCurrent(0)
@@ -235,7 +237,7 @@ export default function WithdrawalsPage() {
                     {imgs.length > 0 ? (
                       <>
                         {isImageUrl(imgs[0]) ? (
-                          <img src={imgs[0]} alt="출금요청" loading="lazy" decoding="async" className="w-full aspect-square object-cover" />
+                          <Image src={imgs[0]} alt="출금요청" width={400} height={400} unoptimized loading="lazy" className="w-full aspect-square object-cover" />
                         ) : (
                           <div className="w-full aspect-square bg-gray-50 flex flex-col items-center justify-center gap-1.5 px-2">
                             <span className="text-3xl">📄</span>
@@ -342,7 +344,7 @@ export default function WithdrawalsPage() {
                   {viewerImages.map((u, i) => (
                     <div key={i} className="relative">
                       {isImageUrl(u) ? (
-                        <img src={u} alt="" loading="lazy" decoding="async" className="w-full rounded-lg" />
+                        <Image src={u} alt="" width={800} height={600} unoptimized loading="lazy" className="w-full h-auto rounded-lg" />
                       ) : (
                         <button onClick={() => viewInBrowser(u, `출금자료_${i + 1}`)}
                           className="w-full bg-gray-50 hover:bg-gray-100 border border-gray-200 rounded-lg py-8 flex flex-col items-center gap-2">
@@ -389,7 +391,7 @@ export default function WithdrawalsPage() {
               </div>
               <div>
                 <label className="text-sm font-medium text-gray-700 block mb-1.5">요청자 <span className="text-gray-400 font-normal">(선택)</span></label>
-                <input value={requestedBy} onChange={e => setRequestedBy(e.target.value)} placeholder="이름"
+                <input value={requestedBy} onChange={e => setRequestedByEdit(e.target.value)} placeholder="이름"
                   className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
               </div>
               {uploading && selectedFiles.length > 0 && (

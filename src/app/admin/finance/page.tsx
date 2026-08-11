@@ -51,7 +51,7 @@ export default function FinancePage() {
       if (!myProfile || myProfile.role !== 'admin') { router.push('/'); return }
       fetchAll()
     }
-  }, [authLoading, myProfile])
+  }, [authLoading, myProfile, router])
 
   async function fetchAll() {
     setLoading(true)

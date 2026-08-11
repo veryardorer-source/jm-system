@@ -31,7 +31,8 @@ export default function NotificationsPage() {
     if (Notification.permission === 'denied') { setPushState('denied'); return }
     setPushState((await isPushSubscribed()) ? 'on' : 'off')
   }
-  useEffect(() => { refreshPushState() }, [])
+  // 로더는 마이크로태스크로 미뤄 effect 안 동기 상태 변경을 피한다
+  useEffect(() => { Promise.resolve().then(refreshPushState) }, [])
 
   async function enablePush() {
     setEnabling(true)
@@ -49,12 +50,13 @@ export default function NotificationsPage() {
     setEnabling(false)
   }
 
+  const myId = profile?.id
   useEffect(() => {
-    if (!profile?.id) return
+    if (!myId) return
     let active = true
     async function load() {
       const { data } = await supabase.from('notifications').select('*')
-        .eq('user_id', profile!.id).order('created_at', { ascending: false }).limit(100)
+        .eq('user_id', myId).order('created_at', { ascending: false }).limit(100)
       if (!active) return
       setItems(data || [])
       setLoading(false)
@@ -64,7 +66,7 @@ export default function NotificationsPage() {
     }
     load()
     return () => { active = false }
-  }, [profile?.id])
+  }, [myId])
 
   function fmt(iso: string) {
     return new Date(iso).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })

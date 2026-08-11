@@ -51,12 +51,13 @@ function HeicImg({ src, alt, className, onClick, thumb }: {
   thumb?: boolean // true=격자 썸네일 — 원본 대신 최적화된 작은 이미지 로드(모바일 속도)
 }) {
   const heicSrc = /\.(heic|heif)$/i.test((src || '').split('?')[0])
-  const [url, setUrl] = useState(heicSrc ? '' : src)
+  // 변환 결과를 {원본, 변환주소} 쌍으로 저장 — 표시 주소는 파생 (src가 바뀌면 자동으로 '변환 중' 상태)
+  const [conv, setConv] = useState<{ src: string; url: string } | null>(null)
+  const url = heicSrc ? (conv?.src === src ? conv.url : '') : src
   useEffect(() => {
-    if (!/\.(heic|heif)$/i.test((src || '').split('?')[0])) { setUrl(src); return }
+    if (!heicSrc) return
     let created: string | null = null
     let cancelled = false
-    setUrl('')
     ;(async () => {
       try {
         const heic2any = (await import('heic2any')).default
@@ -66,11 +67,11 @@ function HeicImg({ src, alt, className, onClick, thumb }: {
         const b = (Array.isArray(out) ? out[0] : out) as Blob
         if (cancelled) return
         created = URL.createObjectURL(b)
-        setUrl(created)
-      } catch { if (!cancelled) setUrl(src) }
+        setConv({ src, url: created })
+      } catch { if (!cancelled) setConv({ src, url: src }) }
     })()
     return () => { cancelled = true; if (created) URL.revokeObjectURL(created) }
-  }, [src])
+  }, [src, heicSrc])
   if (!url) return (
     <div className={`${className || ''} bg-gray-100 flex items-center justify-center`} onClick={onClick}>
       <span className="text-[10px] text-gray-400 animate-pulse">사진 변환 중...</span>
@@ -81,7 +82,7 @@ function HeicImg({ src, alt, className, onClick, thumb }: {
     return <Image src={url} alt={alt || ''} fill sizes="(max-width: 768px) 33vw, 200px"
       className={className} onClick={onClick} />
   }
-  return <img src={url} alt={alt} className={className} onClick={onClick} loading="lazy" decoding="async" />
+  return <Image src={url} alt={alt || ''} width={800} height={600} unoptimized className={className} onClick={onClick} loading="lazy" />
 }
 
 export default function ProjectDetail() {
@@ -91,19 +92,19 @@ export default function ProjectDetail() {
   const [project, setProject] = useState<Project | null>(null)
   const [tab, setTab] = useState('현황')
 
-  // 알림 링크(?tab=자료/공정/비용)로 들어오면 해당 탭 바로 열기
-  // 앱이 이미 켜져 있어 페이지가 재활용될 때도 동작하도록 주소 변화에 반응(searchParams)
+  // 알림 링크(?tab=자료/공정/비용)로 들어오면 해당 탭 바로 열기 — 렌더 중 보정 패턴(같은 링크는 1회만)
   const searchParams = useSearchParams()
-  useEffect(() => {
+  const [handledTab, setHandledTab] = useState('')
+  {
     const t = searchParams.get('tab')
-    if (!t) return
-    if (t === '비용') {
-      // 비용 탭은 권한 확인 후에만 (field·partner는 금액 숨김)
-      if (profile && profile.role !== 'field' && profile.role !== 'partner') setTab('비용')
-      return
+    if (t && handledTab !== t) {
+      if (t === '비용') {
+        // 비용 탭은 권한 확인 후에만 (field·partner는 금액 숨김)
+        if (profile && profile.role !== 'field' && profile.role !== 'partner') { setHandledTab(t); setTab('비용') }
+        else if (profile) setHandledTab(t) // 권한 없으면 무시 처리
+      } else { setHandledTab(t); if (TAB_LIST.includes(t)) setTab(t) }
     }
-    if (TAB_LIST.includes(t)) setTab(t)
-  }, [searchParams, profile, id])
+  }
   const [files, setFiles] = useState<ProjectFile[]>([])
   const [schedules, setSchedules] = useState<Schedule[]>([])
   const [costs, setCosts] = useState<ProjectCost[]>([])
@@ -125,7 +126,6 @@ export default function ProjectDetail() {
   const [uploading, setUploading] = useState(false)
   const [uploadProgress, setUploadProgress] = useState(0)
   const [uploadCurrent, setUploadCurrent] = useState(0)
-  const [copiedUrlId, setCopiedUrlId] = useState<string | null>(null)
   const [lightbox, setLightbox] = useState<string | null>(null)
   const touchStartX = useRef(0)
 
@@ -160,9 +160,7 @@ export default function ProjectDetail() {
   const [savingC, setSavingC] = useState(false)
   const [editingCost, setEditingCost] = useState<ProjectCost | null>(null)
 
-  useEffect(() => { fetchAll() }, [id])
-
-  async function fetchAll() {
+  const fetchAll = useCallback(async () => {
     setLoading(true)
     const [p, f, s, c, a] = await Promise.all([
       supabase.from('projects').select('*').eq('id', id).single(),
@@ -177,7 +175,14 @@ export default function ProjectDetail() {
     setCosts(c.data || [])
     setAssignments(a.data || [])
     setLoading(false)
-  }
+  }, [id])
+
+  // 로더는 마이크로태스크로 미뤄 effect 안 동기 상태 변경을 피한다
+  useEffect(() => {
+    let on = true
+    Promise.resolve().then(() => { if (on) fetchAll() })
+    return () => { on = false }
+  }, [fetchAll])
 
   function openEditProject() {
     if (!project) return
@@ -482,12 +487,6 @@ export default function ProjectDetail() {
     await shareFiles(fileList)
   }
 
-  async function copyFileUrl(file: ProjectFile) {
-    await navigator.clipboard.writeText(`${file.file_name}\n${file.file_url}`)
-    setCopiedUrlId(file.id)
-    setTimeout(() => setCopiedUrlId(null), 2000)
-  }
-
   // 자료 수정 열기/저장 — 모든 분류 공통 (제목·분류·메모, 링크는 URL도)
   function openEditFile(f: ProjectFile) {
     setEditFile(f)
@@ -584,7 +583,7 @@ export default function ProjectDetail() {
   function toggleSelectFile(fileId: string) {
     setSelectedFileIds(prev => {
       const next = new Set(prev)
-      next.has(fileId) ? next.delete(fileId) : next.add(fileId)
+      if (next.has(fileId)) next.delete(fileId); else next.add(fileId)
       return next
     })
     setSelectMode(true) // 한 번 선택을 시작하면 탭으로 계속 선택되게
@@ -623,8 +622,6 @@ export default function ProjectDetail() {
   // ── 선택 자료 이동/공유 ──
   useEffect(() => {
     if (!showMove) return
-    setMoveProj(id)   // 기본: 현재 현장
-    setMoveCat('')    // 분류는 직접 선택해야 이동 가능
     supabase.from('projects').select('id, name').neq('id', id).order('name').then(({ data }) => setMoveProjects(data || []))
   }, [showMove, id])
 
@@ -1082,7 +1079,7 @@ export default function ProjectDetail() {
                             <video src={f.file_url} muted playsInline preload="metadata"
                               className="w-full h-full object-cover rounded-lg border border-gray-200" />
                           ) : (
-                            <img src={f.file_url} alt={f.file_name}
+                            <Image src={f.thumb_url || f.file_url} alt={f.file_name} width={200} height={200} unoptimized
                               className="w-full h-full object-cover rounded-lg border border-gray-200 hover:brightness-95" />
                           )}
                           {isVideoFile(f) && (
@@ -1195,7 +1192,6 @@ export default function ProjectDetail() {
                     const isPhoto = ['공사전사진','시공전사진','시공사진','마감사진'].includes(cat)
                     const isCollapsed = collapsedCats[cat] !== false
                     const allSelected = catFiles.every(f => selectedFileIds.has(f.id))
-                    const anySelected = selectedFileIds.size > 0
                     return (
                       <div key={cat} className="bg-white rounded-xl border border-gray-200 overflow-hidden">
                         {/* 카테고리 헤더 토글 */}
@@ -1633,7 +1629,7 @@ export default function ProjectDetail() {
       {selectedFileIds.size > 0 && (
         <div className="fixed bottom-20 md:bottom-6 left-1/2 -translate-x-1/2 z-40 bg-gray-900 text-white rounded-2xl shadow-2xl px-3 py-2.5 flex items-center gap-1.5 max-w-[95vw] flex-wrap justify-center">
           <span className="text-sm font-semibold text-green-300 whitespace-nowrap mr-1">{selectedFileIds.size}개</span>
-          <button onClick={() => setShowMove(true)}
+          <button onClick={() => { setMoveProj(id); setMoveCat(''); setShowMove(true) }}
             className="bg-white/10 hover:bg-white/20 text-white text-sm px-2.5 py-1.5 rounded-lg transition-colors">📁 이동</button>
           <button onClick={() => setShowChatShare(true)}
             className="bg-white/10 hover:bg-white/20 text-white text-sm px-2.5 py-1.5 rounded-lg transition-colors">💬 채팅</button>

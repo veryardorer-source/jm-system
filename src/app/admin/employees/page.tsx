@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Sidebar from '@/components/Sidebar'
 import { useAuth } from '@/lib/auth-context'
@@ -33,7 +33,7 @@ export default function AdminEmployeesPage() {
       }
       fetchEmployees()
     }
-  }, [authLoading, myProfile])
+  }, [authLoading, myProfile, router]) // eslint deps: router는 안정적
 
   async function fetchEmployees() {
     const supabase = createClient()
@@ -331,7 +331,7 @@ function EmployeeDetailModal({ emp, onClose }: { emp: Employee; onClose: () => v
   const [aForm, setAForm] = useState({ att_date: '', att_type: '지각', memo: '' })
   const [busy, setBusy] = useState(false)
 
-  async function load() {
+  const load = useCallback(async () => {
     const sb = createClient()
     const [s, a] = await Promise.all([
       sb.from('employee_salaries').select('*').eq('employee_id', emp.id).order('month', { ascending: false }),
@@ -340,8 +340,13 @@ function EmployeeDetailModal({ emp, onClose }: { emp: Employee; onClose: () => v
     setSalaries(s.data || [])
     setAttendance(a.data || [])
     setLoading(false)
-  }
-  useEffect(() => { load() }, [emp.id])
+  }, [emp.id])
+  // 로더는 마이크로태스크로 미뤄 effect 안 동기 상태 변경을 피한다
+  useEffect(() => {
+    let on = true
+    Promise.resolve().then(() => { if (on) load() })
+    return () => { on = false }
+  }, [load])
 
   async function addSalary(e: React.FormEvent) {
     e.preventDefault()

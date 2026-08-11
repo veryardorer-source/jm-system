@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState, useRef, useCallback } from 'react'
+import Image from 'next/image'
 import { useSearchParams } from 'next/navigation'
 import Sidebar from '@/components/Sidebar'
 import { supabase } from '@/lib/supabase'
@@ -205,7 +206,7 @@ export default function ChatPage() {
   useEffect(() => {
     if (!me) return
     supabase.from('profiles').select('id, name').neq('id', me).then(({ data }) => setPeople(data || []))
-    loadRooms()
+    Promise.resolve().then(loadRooms) // 로더는 마이크로태스크로 — effect 안 동기 상태 변경 회피
     // 채팅 화면을 열면 안 읽은 채팅 알림을 읽음 처리 (사이드바 채팅 배지 사라짐)
     supabase.from('notifications').update({ is_read: true })
       .eq('user_id', me).eq('type', 'chat').eq('is_read', false).then(() => {})
@@ -233,23 +234,37 @@ export default function ChatPage() {
     return () => { on = false }
   }, [me, rooms])
 
-  // 대화를 열면 그 대화는 읽음 처리 (점 사라짐)
+  // ── 대화 전환을 '렌더 중'에 감지해 즉시 상태 정리 (React 권장: 이전 값 비교 패턴) ──
+  // 이전 대화의 메시지·답장·검색 상태가 화면에 잠깐 남는 깜빡임을 원천 차단한다.
+  const [prevConvKey, setPrevConvKey] = useState<string | null>('__init__')
+  const activeKey = convKey(active)
+  if (prevConvKey !== activeKey) {
+    setPrevConvKey(activeKey)
+    setMessages([])
+    setReplyTo(null); setEditing(null); setMenuFor(null); setSearchOpen(false); setSearchQ('')
+    setReads([]); setMemberIds([]); setConvNotice(null)
+    setReadInfoFor(null); setNoticeExpand(false)
+    if (activeKey) setUnread(u => (u[activeKey] ? { ...u, [activeKey]: 0 } : u))
+  }
+
+  // 대화를 열면 그 대화는 읽음 처리 (기기 저장 — 상태 변경 아님)
   useEffect(() => {
     const key = convKey(active)
-    if (!key) return
-    markRead(key)
-    setUnread(u => (u[key] ? { ...u, [key]: 0 } : u))
-    setReplyTo(null); setEditing(null); setMenuFor(null); setSearchOpen(false); setSearchQ('')
+    if (key) markRead(key)
   }, [active])
 
-  // 대화 열면: 읽음 기록 + 상대 읽음 상태 로드
+  // 대화 열면: 읽음 기록 + 상대 읽음 상태 로드 (초기화는 위 렌더 중 보정이 담당)
+  // 로더는 마이크로태스크로 미뤄 effect 안 동기 상태 변경을 피한다
   useEffect(() => {
     activeRef.current = active
-    if (active) { markMyRead(active); loadReads(active); loadNotice(active) }
-    else { setReads([]); setMemberIds([]); setConvNotice(null) }
-    setReadInfoFor(null)
-    setNoticeExpand(false)
-  }, [active, markMyRead, loadReads])
+    if (!active) return
+    let on = true
+    Promise.resolve().then(() => {
+      if (!on) return
+      markMyRead(active); loadReads(active); loadNotice(active)
+    })
+    return () => { on = false }
+  }, [active, markMyRead, loadReads, loadNotice])
 
   const belongs = useCallback((m: Message) => {
     if (!active) return false
@@ -260,7 +275,7 @@ export default function ChatPage() {
   }, [active, me])
 
   useEffect(() => {
-    if (!active || !me) { setMessages([]); return }
+    if (!active || !me) return // 대화 없을 때의 비우기는 렌더 중 보정이 담당
     let on = true
     async function load() {
       let q = supabase.from('messages').select('*').order('created_at', { ascending: true }).limit(300)
@@ -331,21 +346,21 @@ export default function ChatPage() {
   // 알림 링크(?dm=상대id / ?room=방id)로 들어오면 그 대화를 바로 열기
   // 채팅 화면이 이미 열려 있어도 동작하도록 주소 변화에 반응(searchParams)
   const searchParams = useSearchParams()
-  const openedKeyRef = useRef('')
-  useEffect(() => {
-    if (!me) return
+  const [openedKey, setOpenedKey] = useState('')
+  // 알림 딥링크(?dm/?room) — 렌더 중 보정 패턴 (같은 링크는 ref로 1회만)
+  {
     const dm = searchParams.get('dm'), room = searchParams.get('room')
-    if (!dm && !room) return
-    const targetKey = dm ? 'dm:' + dm : 'room:' + room
-    if (openedKeyRef.current === targetKey) return // 같은 링크 반복 처리 방지
-    if (dm) {
-      if (dm === me) { setActive({ kind: 'dm', id: me, name: '나와의 채팅' }); openedKeyRef.current = targetKey }
-      else { const p = people.find(x => x.id === dm); if (p) { setActive({ kind: 'dm', id: p.id, name: p.name }); openedKeyRef.current = targetKey } }
-    } else if (room) {
-      const r = rooms.find(x => x.id === room)
-      if (r) { setActive({ kind: 'room', id: r.id, name: r.name }); openedKeyRef.current = targetKey }
+    const targetKey = dm ? 'dm:' + dm : room ? 'room:' + room : ''
+    if (me && targetKey && openedKey !== targetKey) {
+      if (dm) {
+        if (dm === me) { setOpenedKey(targetKey); setActive({ kind: 'dm', id: me, name: '나와의 채팅' }) }
+        else { const p = people.find(x => x.id === dm); if (p) { setOpenedKey(targetKey); setActive({ kind: 'dm', id: p.id, name: p.name }) } }
+      } else if (room) {
+        const r = rooms.find(x => x.id === room)
+        if (r) { setOpenedKey(targetKey); setActive({ kind: 'room', id: r.id, name: r.name }) }
+      }
     }
-  }, [searchParams, me, people, rooms])
+  }
 
   // 알림/푸시는 서버(/api/push/send)가 대상 계산·검증. 나와의 채팅은 알림 없음.
   // 링크에 대화 정보를 넣어 알림 클릭 시 그 대화가 바로 열리게 한다.
@@ -561,7 +576,7 @@ export default function ChatPage() {
   }
 
   function togglePick(id: string) {
-    setPicked(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
+    setPicked(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n })
   }
 
   // ── 방 관리 ──
@@ -856,7 +871,7 @@ export default function ChatPage() {
                                       const imgs = m.images && m.images.length ? m.images : (m.image_url ? [m.image_url] : [])
                                       if (!imgs.length) return null
                                       if (imgs.length === 1) return (
-                                        <img src={imgs[0]} alt="" loading="lazy" decoding="async" onClick={() => setChatLightbox(imgs[0])}
+                                        <Image src={imgs[0]} alt="" width={220} height={260} unoptimized loading="lazy" onClick={() => setChatLightbox(imgs[0])}
                                           className="rounded-2xl max-w-[220px] max-h-[260px] object-cover cursor-pointer border border-gray-200" />
                                       )
                                       // 여러 장 = 한 묶음 격자 (카톡식) — 4장까지 보여주고 나머지는 +N
@@ -864,7 +879,7 @@ export default function ChatPage() {
                                         <div className={`grid gap-1 w-[240px] max-w-[70vw] ${imgs.length === 2 ? 'grid-cols-2' : 'grid-cols-2'}`}>
                                           {imgs.slice(0, 4).map((u, i) => (
                                             <div key={i} className="relative aspect-square">
-                                              <img src={u} alt="" loading="lazy" decoding="async" onClick={() => setChatLightbox(u)}
+                                              <Image src={u} alt="" width={200} height={200} unoptimized loading="lazy" onClick={() => setChatLightbox(u)}
                                                 className="w-full h-full object-cover rounded-lg cursor-pointer border border-gray-200" />
                                               {i === 3 && imgs.length > 4 && (
                                                 <button onClick={() => setChatLightbox(u)}
@@ -1089,7 +1104,7 @@ export default function ChatPage() {
         const go = (d: number) => { const n = idx + d; if (n >= 0 && n < gallery.length) setChatLightbox(gallery[n]) }
         return (
           <div className="fixed inset-0 bg-black/90 z-[60] flex items-center justify-center p-4" onClick={() => setChatLightbox(null)}>
-            <img src={chatLightbox} alt="" onClick={e => e.stopPropagation()} className="max-w-full max-h-[85vh] object-contain rounded-lg" />
+            <Image src={chatLightbox} alt="" width={1600} height={1200} unoptimized onClick={e => e.stopPropagation()} className="w-auto h-auto max-w-full max-h-[85vh] object-contain rounded-lg" />
             {idx > 0 && <button onClick={e => { e.stopPropagation(); go(-1) }} className="absolute left-2 md:left-6 top-1/2 -translate-y-1/2 w-11 h-11 rounded-full bg-white/20 hover:bg-white/30 text-white text-2xl flex items-center justify-center">‹</button>}
             {idx < gallery.length - 1 && <button onClick={e => { e.stopPropagation(); go(1) }} className="absolute right-2 md:right-6 top-1/2 -translate-y-1/2 w-11 h-11 rounded-full bg-white/20 hover:bg-white/30 text-white text-2xl flex items-center justify-center">›</button>}
             <div className="absolute bottom-5 left-1/2 -translate-x-1/2 flex items-center gap-2" onClick={e => e.stopPropagation()}>

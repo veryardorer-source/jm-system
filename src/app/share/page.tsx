@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import Image from 'next/image'
 import { useRouter } from 'next/navigation'
 import Sidebar from '@/components/Sidebar'
 import { supabase } from '@/lib/supabase'
@@ -223,7 +224,7 @@ export default function SharePage() {
                   {files.slice(0, 8).map((f, i) => (
                     <div key={i} className="aspect-square bg-gray-100 rounded-lg flex items-center justify-center overflow-hidden">
                       {f.type.startsWith('image') ? (
-                        <img src={URL.createObjectURL(f)} alt="" className="w-full h-full object-cover" />
+                        <Image src={URL.createObjectURL(f)} alt="" width={160} height={160} unoptimized className="w-full h-full object-cover" />
                       ) : f.type.startsWith('video') ? (
                         <span className="text-2xl">🎬</span>
                       ) : (

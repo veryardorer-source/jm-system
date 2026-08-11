@@ -1,6 +1,7 @@
 ﻿'use client'
 
 import { useEffect, useState, useRef } from 'react'
+import Image from 'next/image'
 import { useSearchParams } from 'next/navigation'
 import Sidebar from '@/components/Sidebar'
 import { supabase } from '@/lib/supabase'
@@ -64,16 +65,16 @@ export default function NoticesPage() {
 
   useEffect(() => { fetchNotices() }, [])
 
-  // 알림에서 특정 공지 링크(?open=id)로 들어오면 그 공지를 바로 열기 (화면이 이미 열려 있어도 동작)
+  // 알림에서 특정 공지 링크(?open=id)로 들어오면 그 공지를 바로 열기 — 렌더 중 보정 패턴(같은 링크는 1회만)
   const searchParams = useSearchParams()
-  const openedIdRef = useRef('')
-  useEffect(() => {
-    if (loading) return
-    const id = searchParams.get('open')
-    if (!id || openedIdRef.current === id) return
-    const n = notices.find(x => x.id === id)
-    if (n) { setSelected(n); openedIdRef.current = id }
-  }, [searchParams, loading, notices])
+  const [openedId, setOpenedId] = useState('')
+  {
+    const openId = searchParams.get('open')
+    if (!loading && openId && openedId !== openId) {
+      const n = notices.find(x => x.id === openId)
+      if (n) { setOpenedId(openId); setSelected(n) }
+    }
+  }
 
   async function fetchNotices() {
     setLoading(true)
@@ -287,7 +288,7 @@ export default function NoticesPage() {
                     const u = imgs[idx]
                     if (u) {
                       used.add(idx)
-                      return <img key={i} src={u} alt="" loading="lazy" onClick={() => setImgView(u)}
+                      return <Image key={i} src={u} alt="" width={640} height={480} unoptimized loading="lazy" onClick={() => setImgView(u)}
                         className="block w-full max-w-md rounded-lg border border-gray-200 my-2 cursor-pointer hover:opacity-90" />
                     }
                     return null
@@ -301,7 +302,7 @@ export default function NoticesPage() {
                     {rest.length > 0 && (
                       <div className="grid grid-cols-2 gap-2 mt-4">
                         {rest.map((u, i) => (
-                          <img key={i} src={u} alt="" loading="lazy" onClick={() => setImgView(u)}
+                          <Image key={i} src={u} alt="" width={640} height={480} unoptimized loading="lazy" onClick={() => setImgView(u)}
                             className="w-full rounded-lg border border-gray-200 cursor-pointer hover:opacity-90" />
                         ))}
                       </div>
@@ -394,7 +395,7 @@ export default function NoticesPage() {
                   <div className="grid grid-cols-4 gap-2 mt-2">
                     {existingImgs.map((u, i) => (
                       <div key={'e' + i} className="relative aspect-square">
-                        <img src={u} alt="" className="w-full h-full object-cover rounded-lg border border-gray-200" />
+                        <Image src={u} alt="" width={160} height={160} unoptimized className="w-full h-full object-cover rounded-lg border border-gray-200" />
                         <span className="absolute bottom-0.5 left-0.5 bg-black/60 text-white text-[10px] px-1 rounded">사진{i + 1}</span>
                         <button type="button" onClick={() => setExistingImgs(prev => prev.filter(x => x !== u))}
                           className="absolute -top-1.5 -right-1.5 bg-black/70 text-white w-5 h-5 rounded-full text-xs leading-none">×</button>
@@ -402,7 +403,7 @@ export default function NoticesPage() {
                     ))}
                     {imgFiles.map((f, i) => (
                       <div key={'n' + i} className="relative aspect-square">
-                        <img src={URL.createObjectURL(f)} alt="" className="w-full h-full object-cover rounded-lg border border-green-300" />
+                        <Image src={URL.createObjectURL(f)} alt="" width={160} height={160} unoptimized className="w-full h-full object-cover rounded-lg border border-green-300" />
                         <span className="absolute bottom-0.5 left-0.5 bg-black/60 text-white text-[10px] px-1 rounded">사진{existingImgs.length + i + 1}</span>
                         <button type="button" onClick={() => setImgFiles(prev => prev.filter((_, j) => j !== i))}
                           className="absolute -top-1.5 -right-1.5 bg-black/70 text-white w-5 h-5 rounded-full text-xs leading-none">×</button>
@@ -457,7 +458,7 @@ export default function NoticesPage() {
       {/* 첨부 이미지 크게 보기 */}
       {imgView && (
         <div className="fixed inset-0 bg-black/90 z-[70] flex items-center justify-center p-4" onClick={() => setImgView(null)}>
-          <img src={imgView} alt="" onClick={e => e.stopPropagation()} className="max-w-full max-h-[90vh] object-contain rounded-lg" />
+          <Image src={imgView} alt="" width={1600} height={1200} unoptimized onClick={e => e.stopPropagation()} className="w-auto h-auto max-w-full max-h-[90vh] object-contain rounded-lg" />
           <button onClick={() => setImgView(null)} className="absolute top-4 right-4 text-white text-3xl leading-none">&times;</button>
         </div>
       )}

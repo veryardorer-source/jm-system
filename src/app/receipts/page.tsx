@@ -1,6 +1,7 @@
 ﻿'use client'
 
 import { useEffect, useState, useRef, useCallback } from 'react'
+import Image from 'next/image'
 import Sidebar from '@/components/Sidebar'
 import { supabase } from '@/lib/supabase'
 import { useAuth, canEdit } from '@/lib/auth-context'
@@ -23,7 +24,9 @@ export default function ReceiptsPage() {
   const [showForm, setShowForm] = useState(false)
   const [selectedFiles, setSelectedFiles] = useState<File[]>([])
   const [memo, setMemo] = useState('')
-  const [uploadedBy, setUploadedBy] = useState('')
+  // 올린 사람 기본값은 내 이름 — 입력 전엔 null로 두고 표시할 때 파생 (effect 동기 setState 회피)
+  const [uploadedByEdit, setUploadedByEdit] = useState<string | null>(null)
+  const uploadedBy = uploadedByEdit ?? profile?.name ?? ''
   const [uploading, setUploading] = useState(false)
   const [uploadCurrent, setUploadCurrent] = useState(0)
   const [viewIdx, setViewIdx] = useState<number | null>(null) // 크게 보기
@@ -32,7 +35,6 @@ export default function ReceiptsPage() {
   const [memoSaving, setMemoSaving] = useState(false)
 
   useEffect(() => { fetchPhotos() }, [])
-  useEffect(() => { if (profile?.name) setUploadedBy(profile.name) }, [profile?.name])
 
   async function fetchPhotos() {
     setLoading(true)
@@ -71,7 +73,7 @@ export default function ReceiptsPage() {
     notifyOthers(profile?.id, { type: 'receipt', title: `새 영수증 ${selectedFiles.length}건`, body: `${profile?.name || ''} ${memo || '영수증이 등록되었습니다'}`.trim(), link: '/receipts' })
     setSelectedFiles([])
     setMemo('')
-    setUploadedBy(profile?.name || '')
+    setUploadedByEdit(null)
     setShowForm(false)
     setUploading(false)
     setUploadCurrent(0)
@@ -135,7 +137,7 @@ export default function ReceiptsPage() {
                 <div key={p.id} className="bg-white rounded-xl border border-gray-200 overflow-hidden group">
                   {isImageUrl(p.image_url) ? (
                     <button onClick={() => setViewIdx(i)} className="block w-full" title="크게 보기">
-                      <img src={p.image_url} alt="영수증" loading="lazy" decoding="async" className="w-full aspect-square object-cover" />
+                      <Image src={p.image_url} alt="영수증" width={400} height={400} unoptimized loading="lazy" className="w-full aspect-square object-cover" />
                     </button>
                   ) : (
                     <button onClick={() => viewInBrowser(p.image_url, p.memo || '영수증')} title="바로 보기"
@@ -169,7 +171,7 @@ export default function ReceiptsPage() {
       {viewIdx !== null && photos[viewIdx] && (
         <div className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-4" onClick={() => setViewIdx(null)}>
           {isImageUrl(photos[viewIdx].image_url) ? (
-            <img src={photos[viewIdx].image_url} alt="" onClick={e => e.stopPropagation()} className="max-w-full max-h-[85vh] object-contain rounded-lg" />
+            <Image src={photos[viewIdx].image_url} alt="" width={1600} height={1200} unoptimized onClick={e => e.stopPropagation()} className="w-auto h-auto max-w-full max-h-[85vh] object-contain rounded-lg" />
           ) : (
             <div onClick={e => e.stopPropagation()} className="bg-white rounded-2xl px-8 py-10 flex flex-col items-center gap-3">
               <span className="text-5xl">📄</span>
@@ -212,7 +214,7 @@ export default function ReceiptsPage() {
               </div>
               <div>
                 <label className="text-sm font-medium text-gray-700 block mb-1.5">올린 사람</label>
-                <input value={uploadedBy} onChange={e => setUploadedBy(e.target.value)} placeholder="이름"
+                <input value={uploadedBy} onChange={e => setUploadedByEdit(e.target.value)} placeholder="이름"
                   className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
               </div>
               {uploading && (

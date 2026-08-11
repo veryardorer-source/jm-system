@@ -7,7 +7,7 @@ self.addEventListener('activate', (event) => event.waitUntil(self.clients.claim(
 // 웹 푸시 수신 → OS 알림 표시 (앱이 꺼져 있어도 동작)
 self.addEventListener('push', (event) => {
   let data = {}
-  try { data = event.data ? event.data.json() : {} } catch (e) { data = {} }
+  try { data = event.data ? event.data.json() : {} } catch { data = {} }
   const title = data.title || 'JM 관리 시스템'
   const options = {
     body: data.body || '',
@@ -66,7 +66,7 @@ async function handleShare(request) {
       .join('\n')
       .trim()
     await cache.put('/__shared/text', new Response(sharedText))
-  } catch (e) {
+  } catch {
     // 무시 — 공유 화면에서 "파일 없음" 처리
   }
   return Response.redirect('/share', 303)

@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import Image from 'next/image'
 
 type Preview = { url: string; title?: string; description?: string; image?: string; siteName?: string }
 
@@ -8,19 +9,22 @@ type Preview = { url: string; title?: string; description?: string; image?: stri
 const cache = new Map<string, Preview | null>()
 
 export default function LinkPreview({ url }: { url: string }) {
-  const [p, setP] = useState<Preview | null | undefined>(cache.get(url))
+  // 주소가 바뀌면 렌더 중에 캐시값으로 즉시 보정 (React 권장: 이전 값 비교 패턴)
+  const [state, setState] = useState<{ url: string; p: Preview | null | undefined }>(() => ({ url, p: cache.get(url) }))
+  if (state.url !== url) setState({ url, p: cache.get(url) })
+  const p = state.p
 
   useEffect(() => {
-    if (cache.has(url)) { setP(cache.get(url)); return }
+    if (cache.has(url)) return
     let on = true
     fetch('/api/link-preview?url=' + encodeURIComponent(url))
       .then(r => (r.ok ? r.json() : null))
       .then((d: Preview | null) => {
         const v = d && (d.title || d.image) ? d : null
         cache.set(url, v)
-        if (on) setP(v)
+        if (on) setState(s => (s.url === url ? { url, p: v } : s))
       })
-      .catch(() => { cache.set(url, null); if (on) setP(null) })
+      .catch(() => { cache.set(url, null); if (on) setState(s => (s.url === url ? { url, p: null } : s)) })
     return () => { on = false }
   }, [url])
 
@@ -32,8 +36,9 @@ export default function LinkPreview({ url }: { url: string }) {
     <a href={url} target="_blank" rel="noreferrer"
       className="block w-[240px] max-w-full bg-white border border-gray-200 rounded-xl overflow-hidden hover:shadow-md transition-shadow">
       {p.image && (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img src={p.image} alt="" className="w-full h-32 object-cover bg-gray-100"
+        // 미리보기 이미지는 임의 외부 호스트라 최적화 없이 그대로 표시
+        <Image src={p.image} alt="" width={240} height={128} unoptimized
+          className="w-full h-32 object-cover bg-gray-100"
           onError={e => { (e.target as HTMLImageElement).style.display = 'none' }} />
       )}
       <div className="px-3 py-2">

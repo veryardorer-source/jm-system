@@ -16,16 +16,22 @@ export default function NotifPopup() {
   const [needEnable, setNeedEnable] = useState(false)
 
   // 알림 권한/푸시 구독 상태 확인 (앱 꺼져 있어도 OS 알림 오게)
+  // 상태 갱신은 마이크로태스크로 미뤄 effect 안 동기 상태 변경을 피한다
+  const uid = profile?.id
   useEffect(() => {
-    if (!profile?.id) return
-    if (!pushSupported()) return
-    if (Notification.permission === 'granted') {
-      subscribeToPush(profile.id) // 이미 허용 → 조용히 (재)구독
-      setNeedEnable(false)
-    } else if (Notification.permission === 'default') {
-      setNeedEnable(true) // 아직 결정 안 함 → '알림 켜기' 버튼 노출
-    }
-  }, [profile?.id])
+    if (!uid || !pushSupported()) return
+    let on = true
+    Promise.resolve().then(() => {
+      if (!on) return
+      if (Notification.permission === 'granted') {
+        subscribeToPush(uid) // 이미 허용 → 조용히 (재)구독
+        setNeedEnable(false)
+      } else if (Notification.permission === 'default') {
+        setNeedEnable(true) // 아직 결정 안 함 → '알림 켜기' 버튼 노출
+      }
+    })
+    return () => { on = false }
+  }, [uid])
 
   async function enablePush() {
     if (!profile?.id) return
