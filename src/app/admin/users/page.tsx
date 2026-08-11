@@ -276,7 +276,7 @@ export default function AdminUsersPage() {
               </button>
             </div>
             <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-3">
-              ⚠️ 이 링크는 일정 시간이 지나면 만료돼요. 만료되면 이 회원을 내보내고 다시 초대하면 됩니다.
+              ⏰ 이 링크는 <b>7일간</b> 유효하고 한 번만 쓸 수 있어요. 만료되면 직원 추가에서 다시 초대하면 됩니다.
             </p>
             <button onClick={() => setInviteLink(null)}
               className="w-full py-2.5 rounded-lg bg-gray-100 text-gray-600 text-sm hover:bg-gray-200">닫기</button>

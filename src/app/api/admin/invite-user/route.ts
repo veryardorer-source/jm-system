@@ -38,30 +38,19 @@ export async function POST(req: NextRequest) {
 
   const adminClient = createAdminClient()
 
-  // 초대 "링크" 생성 — 메일 서버 없이도 동작. 관리자가 링크를 카톡 등으로 직접 전달하고,
-  // 직원이 링크를 열면 우리 앱의 비밀번호 설정 화면(/set-password)으로 이동한다.
-  const redirectTo = `${req.nextUrl.origin}/set-password`
-  const { data: linkData, error: linkError } = await adminClient.auth.admin.generateLink({
-    type: 'invite',
-    email,
-    options: { redirectTo },
-  })
-  if (linkError || !linkData?.user) {
-    const msg = /already.*(registered|exists)/i.test(linkError?.message || '')
-      ? '이미 가입된 이메일입니다' : '초대 링크 생성 실패: ' + (linkError?.message || '알 수 없는 오류')
-    return NextResponse.json({ error: msg }, { status: 400 })
-  }
+  // 자체 초대장 방식 (2026-08-11): 무작위 토큰을 DB에 저장하고 7일간 유효한 링크를 만든다.
+  // 계정은 직원이 링크를 열어 비밀번호를 정하는 순간(/api/invite/accept) 생성된다.
+  // → 만료시간을 우리가 정하고, 메일 서버·Supabase 링크 만료 제한과 무관하게 동작.
+  const token = crypto.randomUUID().replace(/-/g, '') + crypto.randomUUID().replace(/-/g, '')
+  const expiresAt = new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString()
 
-  const { error: profileError } = await adminClient.from('profiles').insert([{
-    id: linkData.user.id,
-    name: name.trim(),
-    role,
-    team: null,
+  const { error: tokenError } = await adminClient.from('invite_tokens').insert([{
+    token, email, name: name.trim(), role, expires_at: expiresAt, created_by: user.id,
   }])
-  if (profileError) {
-    await adminClient.auth.admin.deleteUser(linkData.user.id)
-    return NextResponse.json({ error: '프로필 생성 실패: ' + profileError.message }, { status: 500 })
+  if (tokenError) {
+    const hint = /relation|exist|schema/i.test(tokenError.message) ? ' (관리자에게: db/invite_tokens.sql 실행 필요)' : ''
+    return NextResponse.json({ error: '초대장 생성 실패: ' + tokenError.message + hint }, { status: 500 })
   }
 
-  return NextResponse.json({ success: true, userId: linkData.user.id, link: linkData.properties?.action_link || '' })
+  return NextResponse.json({ success: true, link: `${req.nextUrl.origin}/invite?t=${token}` })
 }

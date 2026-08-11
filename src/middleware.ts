@@ -23,7 +23,8 @@ export async function middleware(request: NextRequest) {
 
   // /set-password: 초대 메일 링크 착지 페이지 — 로그인 토큰이 주소 #해시로 와서
   // 서버(쿠키)에는 아직 세션이 없다. 로그인으로 튕기면 해시가 사라져 초대가 깨지므로 통과시킨다.
-  const publicPaths = ['/login', '/signup', '/set-password']
+  // /invite(+수락 API): 카톡으로 받은 초대 링크 — 로그인 전 상태에서 열린다
+  const publicPaths = ['/login', '/signup', '/set-password', '/invite', '/api/invite']
   if (!user && !publicPaths.some(p => request.nextUrl.pathname.startsWith(p))) {
     return NextResponse.redirect(new URL('/login', request.url))
   }
