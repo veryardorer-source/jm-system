@@ -26,6 +26,10 @@ export async function middleware(request: NextRequest) {
   // /invite(+수락 API): 카톡으로 받은 초대 링크 — 로그인 전 상태에서 열린다
   const publicPaths = ['/login', '/signup', '/set-password', '/invite', '/api/invite']
   if (!user && !publicPaths.some(p => request.nextUrl.pathname.startsWith(p))) {
+    // API는 로그인 페이지로 보내는 대신 401 JSON — 호출한 쪽이 상태를 제대로 알 수 있게
+    if (request.nextUrl.pathname.startsWith('/api/')) {
+      return NextResponse.json({ error: '인증 필요' }, { status: 401 })
+    }
     return NextResponse.redirect(new URL('/login', request.url))
   }
 
