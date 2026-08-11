@@ -26,7 +26,9 @@ export default function AdminUsersPage() {
   const [adding, setAdding] = useState(false)
   const [addError, setAddError] = useState('')
   const [storageBytes, setStorageBytes] = useState<number | null>(null) // 전체 Storage 사용량
-  const [inviteMode, setInviteMode] = useState(true) // true=초대 메일(권장) / false=임시 비밀번호 직접 설정
+  const [inviteMode, setInviteMode] = useState(true) // true=초대 링크(권장) / false=임시 비밀번호 직접 설정
+  const [inviteLink, setInviteLink] = useState<{ name: string; link: string } | null>(null) // 생성된 초대 링크 표시
+  const [linkCopied, setLinkCopied] = useState(false)
 
   useEffect(() => {
     if (!authLoading) {
@@ -84,7 +86,11 @@ export default function AdminUsersPage() {
       setAdding(false)
       return
     }
-    if (inviteMode) alert(`${addForm.email} 로 초대 메일을 보냈어요.\n직원이 메일의 링크를 눌러 비밀번호를 정하면 바로 로그인할 수 있어요.`)
+    if (inviteMode && data.link) {
+      // 초대 링크를 바로 복사해 두고, 카톡으로 붙여넣어 보내면 됨
+      try { await navigator.clipboard.writeText(data.link); setLinkCopied(true) } catch { setLinkCopied(false) }
+      setInviteLink({ name: addForm.name, link: data.link })
+    }
     setAddForm(INITIAL_FORM)
     setShowAddForm(false)
     setAdding(false)
@@ -252,6 +258,32 @@ export default function AdminUsersPage() {
       </div>
 
       {/* 직원 추가 모달 */}
+      {/* 초대 링크 완성 — 복사해서 카톡으로 전달 */}
+      {inviteLink && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={() => setInviteLink(null)}>
+          <div className="bg-white rounded-2xl w-full max-w-md shadow-xl p-6" onClick={e => e.stopPropagation()}>
+            <h2 className="text-lg font-bold mb-1">🔗 {inviteLink.name} 님 초대 링크</h2>
+            <p className="text-sm text-gray-500 mb-3">
+              {linkCopied ? '링크가 복사됐어요! 카톡 등으로 붙여넣어 보내세요.' : '아래 링크를 복사해서 카톡 등으로 보내세요.'}<br />
+              직원이 링크를 열면 비밀번호를 직접 정하고 바로 로그인해요.
+            </p>
+            <div className="flex gap-2 mb-3">
+              <input readOnly value={inviteLink.link} onFocus={e => e.currentTarget.select()}
+                className="flex-1 border border-gray-300 rounded-lg px-3 py-2.5 text-xs text-gray-600 bg-gray-50 focus:outline-none" />
+              <button onClick={async () => { try { await navigator.clipboard.writeText(inviteLink.link); setLinkCopied(true) } catch {} }}
+                className="bg-green-600 text-white px-4 py-2.5 rounded-lg text-sm font-medium hover:bg-green-700 whitespace-nowrap">
+                {linkCopied ? '✓ 복사됨' : '복사'}
+              </button>
+            </div>
+            <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-3">
+              ⚠️ 이 링크는 일정 시간이 지나면 만료돼요. 만료되면 이 회원을 내보내고 다시 초대하면 됩니다.
+            </p>
+            <button onClick={() => setInviteLink(null)}
+              className="w-full py-2.5 rounded-lg bg-gray-100 text-gray-600 text-sm hover:bg-gray-200">닫기</button>
+          </div>
+        </div>
+      )}
+
       {showAddForm && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl w-full max-w-md shadow-xl max-h-[90vh] overflow-y-auto">
@@ -275,7 +307,7 @@ export default function AdminUsersPage() {
               </div>
               {inviteMode ? (
                 <p className="text-xs text-green-700 bg-green-50 border border-green-200 rounded-lg px-3 py-2">
-                  📧 이 이메일로 <b>초대 메일</b>이 가고, 직원이 메일의 링크에서 <b>비밀번호를 직접 정해요</b>. (관리자는 비밀번호를 모름 — 권장)
+                  🔗 <b>초대 링크</b>가 만들어져요. 링크를 카톡 등으로 직원에게 보내면, 직원이 <b>비밀번호를 직접 정하고</b> 바로 로그인해요. (관리자는 비밀번호를 모름 — 권장)
                 </p>
               ) : (
                 <div>
@@ -287,7 +319,7 @@ export default function AdminUsersPage() {
               )}
               <label className="flex items-center gap-2 text-xs text-gray-500 cursor-pointer">
                 <input type="checkbox" checked={!inviteMode} onChange={e => setInviteMode(!e.target.checked)} className="rounded" />
-                초대 메일 대신 임시 비밀번호로 바로 만들기 (메일이 안 갈 때만)
+                초대 링크 대신 임시 비밀번호로 바로 만들기
               </label>
               <div>
                 <label className="text-sm font-medium text-gray-700 block mb-1.5">권한 *</label>
@@ -311,7 +343,7 @@ export default function AdminUsersPage() {
                   className="flex-1 border border-gray-300 text-gray-700 py-2.5 rounded-lg text-sm font-medium">취소</button>
                 <button type="submit" disabled={adding}
                   className="flex-1 bg-green-600 text-white py-2.5 rounded-lg text-sm font-medium disabled:opacity-50">
-                  {adding ? (inviteMode ? '초대 중...' : '생성 중...') : (inviteMode ? '📧 초대 메일 보내기' : '계정 생성')}
+                  {adding ? (inviteMode ? '링크 만드는 중...' : '생성 중...') : (inviteMode ? '🔗 초대 링크 만들기' : '계정 생성')}
                 </button>
               </div>
             </form>

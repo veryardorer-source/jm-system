@@ -38,25 +38,30 @@ export async function POST(req: NextRequest) {
 
   const adminClient = createAdminClient()
 
-  // 초대 메일 발송 — 링크를 누르면 우리 앱의 비밀번호 설정 화면으로 이동
+  // 초대 "링크" 생성 — 메일 서버 없이도 동작. 관리자가 링크를 카톡 등으로 직접 전달하고,
+  // 직원이 링크를 열면 우리 앱의 비밀번호 설정 화면(/set-password)으로 이동한다.
   const redirectTo = `${req.nextUrl.origin}/set-password`
-  const { data: invited, error: inviteError } = await adminClient.auth.admin.inviteUserByEmail(email, { redirectTo })
-  if (inviteError) {
-    const msg = /already.*(registered|exists)/i.test(inviteError.message)
-      ? '이미 가입된 이메일입니다' : '초대 메일 발송 실패: ' + inviteError.message
+  const { data: linkData, error: linkError } = await adminClient.auth.admin.generateLink({
+    type: 'invite',
+    email,
+    options: { redirectTo },
+  })
+  if (linkError || !linkData?.user) {
+    const msg = /already.*(registered|exists)/i.test(linkError?.message || '')
+      ? '이미 가입된 이메일입니다' : '초대 링크 생성 실패: ' + (linkError?.message || '알 수 없는 오류')
     return NextResponse.json({ error: msg }, { status: 400 })
   }
 
   const { error: profileError } = await adminClient.from('profiles').insert([{
-    id: invited.user.id,
+    id: linkData.user.id,
     name: name.trim(),
     role,
     team: null,
   }])
   if (profileError) {
-    await adminClient.auth.admin.deleteUser(invited.user.id)
+    await adminClient.auth.admin.deleteUser(linkData.user.id)
     return NextResponse.json({ error: '프로필 생성 실패: ' + profileError.message }, { status: 500 })
   }
 
-  return NextResponse.json({ success: true, userId: invited.user.id })
+  return NextResponse.json({ success: true, userId: linkData.user.id, link: linkData.properties?.action_link || '' })
 }
