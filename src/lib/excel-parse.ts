@@ -132,7 +132,13 @@ export async function parsePayrollLedger(file: File): Promise<PayrollLedger | nu
     if (!row) continue
     const name = String(row[nameCol] ?? '').trim()
     if (!name || name.includes('합계') || name.includes('총계') || /^[0-9]+$/.test(name)) continue
-    const gross = grossCol >= 0 ? numOf(row[grossCol]) : 0
+    let gross = grossCol >= 0 ? numOf(row[grossCol]) : 0
+    // 급여합계 칸이 비어 있으면(신규 입사자 행에 합계 수식이 복사 안 된 경우) 기본급~상여금을 직접 합산
+    if (!gross && baseCol >= 0 && grossCol > baseCol) {
+      let s = 0
+      for (let c = baseCol; c < grossCol; c++) s += numOf(row[c])
+      gross = Math.round(s)
+    }
     if (!gross) continue
     result.push({
       name,
@@ -206,7 +212,14 @@ export async function parsePayrollLedgerFull(file: File): Promise<PayrollLedgerF
     if (!first || first === '0' || /^[0-9]+$/.test(first)) continue
     const grossIdx = headers.findIndex(h => h.replace(/\s/g, '').includes('급여합계'))
     const vals = cols.map(c => clean(row[c]))
-    if (grossIdx >= 0 && !numOf(vals[grossIdx])) continue
+    if (grossIdx >= 0 && !numOf(vals[grossIdx])) {
+      // 급여합계 칸이 빈 행(신규 입사자 등): 기본급~급여합계 사이 항목을 직접 합산해 채움. 그래도 0이면 빈 행으로 간주
+      const baseIdx = headers.findIndex(h => h.replace(/\s/g, '').includes('기본급'))
+      let s = 0
+      if (baseIdx >= 0) for (let i = baseIdx; i < grossIdx; i++) s += numOf(vals[i])
+      if (!s) continue
+      vals[grossIdx] = Math.round(s).toLocaleString()
+    }
     body.push(vals)
   }
   return body.length ? { month, headers, rows: body, total } : null
