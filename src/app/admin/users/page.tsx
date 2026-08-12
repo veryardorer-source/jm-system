@@ -28,7 +28,7 @@ export default function AdminUsersPage() {
   const [addError, setAddError] = useState('')
   const [storageBytes, setStorageBytes] = useState<number | null>(null) // 전체 Storage 사용량
   const [inviteMode, setInviteMode] = useState(true) // true=초대 링크(권장) / false=임시 비밀번호 직접 설정
-  const [inviteLink, setInviteLink] = useState<{ name: string; link: string } | null>(null) // 생성된 초대 링크 표시
+  const [inviteLink, setInviteLink] = useState<{ name: string; link: string; kind?: 'invite' | 'reset' } | null>(null) // 생성된 초대/재설정 링크 표시
   const [linkCopied, setLinkCopied] = useState(false)
 
   useEffect(() => {
@@ -101,9 +101,29 @@ export default function AdminUsersPage() {
   async function updateRole(userId: string, role: UserRole) {
     setSaving(userId)
     const supabase = createClient()
-    await supabase.from('profiles').update({ role }).eq('id', userId)
-    setUsers(prev => prev.map(u => u.id === userId ? { ...u, role } : u))
+    const { error } = await supabase.from('profiles').update({ role }).eq('id', userId)
     setSaving(null)
+    if (error) {
+      // 마지막 관리자 강등 차단(DB 트리거) 등 — 이유를 알려줌
+      toast('권한 변경 실패: ' + (error.message.includes('마지막 관리자') ? '마지막 관리자는 권한을 낮출 수 없어요' : error.message))
+      return
+    }
+    setUsers(prev => prev.map(u => u.id === userId ? { ...u, role } : u))
+  }
+
+  // 비밀번호 재설정 링크 발급 — 카톡으로 전달하면 직원이 새 비밀번호를 직접 정함
+  async function resetLink(u: Profile) {
+    setSaving(u.id)
+    const res = await fetch('/api/admin/reset-link', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId: u.id }),
+    })
+    const data = await res.json()
+    setSaving(null)
+    if (!res.ok) { toast('재설정 링크 실패: ' + (data.error || '오류')); return }
+    try { await navigator.clipboard.writeText(data.link); setLinkCopied(true) } catch { setLinkCopied(false) }
+    setInviteLink({ name: u.name, link: data.link, kind: 'reset' })
   }
 
   async function updateName(userId: string, name: string) {
@@ -200,12 +220,16 @@ export default function AdminUsersPage() {
                                 {r.label}
                               </button>
                             ))}
-                            {u.id !== myProfile?.id && (
+                            {u.id !== myProfile?.id && (<>
+                              <button disabled={saving === u.id} onClick={() => resetLink(u)} title="비밀번호 재설정 링크 만들기"
+                                className="text-xs px-2.5 py-1 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 disabled:opacity-40 ml-2">
+                                🔑 비번 재설정
+                              </button>
                               <button disabled={saving === u.id} onClick={() => removeUser(u)}
-                                className="text-xs px-2.5 py-1 rounded-lg border border-red-200 text-red-500 hover:bg-red-50 disabled:opacity-40 ml-2">
+                                className="text-xs px-2.5 py-1 rounded-lg border border-red-200 text-red-500 hover:bg-red-50 disabled:opacity-40">
                                 내보내기
                               </button>
-                            )}
+                            </>)}
                           </div>
                         </td>
                       </tr>
@@ -263,10 +287,10 @@ export default function AdminUsersPage() {
       {inviteLink && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={() => setInviteLink(null)}>
           <div className="bg-white rounded-2xl w-full max-w-md shadow-xl p-6" onClick={e => e.stopPropagation()}>
-            <h2 className="text-lg font-bold mb-1">🔗 {inviteLink.name} 님 초대 링크</h2>
+            <h2 className="text-lg font-bold mb-1">{inviteLink.kind === 'reset' ? '🔑' : '🔗'} {inviteLink.name} 님 {inviteLink.kind === 'reset' ? '비밀번호 재설정' : '초대'} 링크</h2>
             <p className="text-sm text-gray-500 mb-3">
               {linkCopied ? '링크가 복사됐어요! 카톡 등으로 붙여넣어 보내세요.' : '아래 링크를 복사해서 카톡 등으로 보내세요.'}<br />
-              직원이 링크를 열면 비밀번호를 직접 정하고 바로 로그인해요.
+              직원이 링크를 열면 {inviteLink.kind === 'reset' ? '새 비밀번호를 정해요.' : '비밀번호를 직접 정하고 바로 로그인해요.'}
             </p>
             <div className="flex gap-2 mb-3">
               <input readOnly value={inviteLink.link} onFocus={e => e.currentTarget.select()}

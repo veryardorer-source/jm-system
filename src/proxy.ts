@@ -2,7 +2,7 @@ import { createServerClient } from '@supabase/ssr'
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const supabaseResponse = NextResponse.next({ request })
 
   const supabase = createServerClient(
@@ -23,8 +23,8 @@ export async function middleware(request: NextRequest) {
 
   // /set-password: 초대 메일 링크 착지 페이지 — 로그인 토큰이 주소 #해시로 와서
   // 서버(쿠키)에는 아직 세션이 없다. 로그인으로 튕기면 해시가 사라져 초대가 깨지므로 통과시킨다.
-  // /invite(+수락 API): 카톡으로 받은 초대 링크 — 로그인 전 상태에서 열린다
-  const publicPaths = ['/login', '/signup', '/set-password', '/invite', '/api/invite']
+  // /invite·/reset(+수락 API): 카톡으로 받은 초대·재설정 링크 — 로그인 전 상태에서 열린다
+  const publicPaths = ['/login', '/signup', '/set-password', '/invite', '/api/invite', '/reset', '/api/reset']
   if (!user && !publicPaths.some(p => request.nextUrl.pathname.startsWith(p))) {
     // API는 로그인 페이지로 보내는 대신 401 JSON — 호출한 쪽이 상태를 제대로 알 수 있게
     if (request.nextUrl.pathname.startsWith('/api/')) {

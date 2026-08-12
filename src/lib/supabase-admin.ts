@@ -6,9 +6,10 @@ import { createClient } from '@supabase/supabase-js'
 export const cleanEnv = (v?: string) => (v || '').replace(/^﻿+/, '').trim()
 
 export function createAdminClient() {
-  return createClient(
-    cleanEnv(process.env.NEXT_PUBLIC_SUPABASE_URL),
-    cleanEnv(process.env.SUPABASE_SERVICE_ROLE_KEY),
-    { auth: { autoRefreshToken: false, persistSession: false } }
-  )
+  const url = cleanEnv(process.env.NEXT_PUBLIC_SUPABASE_URL)
+  const key = cleanEnv(process.env.SUPABASE_SERVICE_ROLE_KEY)
+  // 환경변수 누락 시 알 수 없는 오류 대신 원인이 보이는 오류로 (배포 설정 실수 조기 발견)
+  if (!url) throw new Error('환경변수 NEXT_PUBLIC_SUPABASE_URL 이 비어 있습니다 — Vercel 환경변수를 확인하세요')
+  if (!key) throw new Error('환경변수 SUPABASE_SERVICE_ROLE_KEY 가 비어 있습니다 — Vercel 환경변수를 확인하세요')
+  return createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } })
 }

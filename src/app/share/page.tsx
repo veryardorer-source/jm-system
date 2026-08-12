@@ -95,6 +95,8 @@ export default function SharePage() {
 
   async function handleUpload() {
     if (readOnly) { toast('외부협력업체 계정은 저장할 수 없습니다.'); return }
+    const tooBig = files.filter(f => f.size > 500 * 1024 * 1024)
+    if (tooBig.length) { toast(`500MB가 넘는 파일 ${tooBig.length}개는 올릴 수 없어요: ${tooBig[0].name}`, 'error'); return }
     if (files.length === 0 && !sharedText.trim()) return
     if (dest === 'project' && !projectId) return
     // 사진 없이 텍스트만 공유한 경우 — 영수증/출금요청에 글만 기록

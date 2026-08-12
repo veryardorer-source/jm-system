@@ -33,6 +33,15 @@ export async function POST(req: NextRequest) {
 
   const adminClient = createAdminClient()
 
+  // 마지막 관리자 보호 — 대상이 admin이면 남은 admin 수 확인 (DB 트리거와 이중 방어)
+  const { data: target } = await adminClient.from('profiles').select('role').eq('id', userId).single()
+  if (target?.role === 'admin') {
+    const { count } = await adminClient.from('profiles').select('id', { count: 'exact', head: true }).eq('role', 'admin')
+    if ((count ?? 0) <= 1) {
+      return NextResponse.json({ error: '마지막 관리자 계정은 내보낼 수 없어요' }, { status: 400 })
+    }
+  }
+
   // 개인 설정·멤버십 정리 (없는 테이블이어도 계속 진행)
   const cleanupTables: { table: string; col: string }[] = [
     { table: 'push_subscriptions', col: 'user_id' },

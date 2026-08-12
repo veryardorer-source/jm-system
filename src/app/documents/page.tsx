@@ -77,6 +77,7 @@ export default function DocumentsPage() {
   async function handleSave(e: React.FormEvent) {
     e.preventDefault()
     if (!form.title || (!editing && !file)) return
+    if (file && file.size > 500 * 1024 * 1024) { toast(`"${file.name}"은 500MB가 넘어 올릴 수 없어요`, 'error'); return }
     setSaving(true)
     let file_url = editing?.file_url || ''
     let file_name = editing?.file_name || ''

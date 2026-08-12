@@ -25,6 +25,7 @@ const ADMIN_ITEMS = [
   { href: '/admin/users', label: '회원 관리', icon: '👥' },
   { href: '/admin/employees', label: '직원정보내역', icon: '🔒' },
   { href: '/admin/finance', label: '경영관리', icon: '📊' },
+  { href: '/admin/audit', label: '감사 기록', icon: '📋' },
 ]
 
 // 외부협력업체(partner)에게 숨길 메뉴 (금전·내부 자료) — 현장 관련만 보이게

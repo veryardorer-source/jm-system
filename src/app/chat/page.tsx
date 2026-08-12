@@ -549,6 +549,7 @@ export default function ChatPage() {
 
   async function sendFile(file: File) {
     if (!file || !active) return
+    if (file.size > 500 * 1024 * 1024) { toast(`"${file.name}"은 500MB가 넘어 보낼 수 없어요`, 'error'); return }
     // 이미지는 미리보기되도록 기존 이미지 전송으로
     if ((file.type || '').startsWith('image/')) { sendImage(file); return }
     setSending(true)
