@@ -142,7 +142,8 @@ export default function ProjectDetail() {
   const [accessBusy, setAccessBusy] = useState(false)
   const [showMove, setShowMove] = useState(false)         // 분류/현장 이동 모달
   const [showChatShare, setShowChatShare] = useState(false) // 채팅으로 공유 모달
-  const [moveProjects, setMoveProjects] = useState<{ id: string; name: string }[]>([])
+  const [moveProjects, setMoveProjects] = useState<{ id: string; name: string; status?: string | null }[]>([])
+  const [showClosedMove, setShowClosedMove] = useState(false) // 이동 목록에서 완료·중단 현장 펼치기
   const [moveProj, setMoveProj] = useState('')  // 이동할 현장 (기본=현재 현장)
   const [moveCat, setMoveCat] = useState('')    // 이동할 분류 (선택 필수)
   const [chatPeople, setChatPeople] = useState<{ id: string; name: string }[]>([])
@@ -623,7 +624,7 @@ export default function ProjectDetail() {
   // ── 선택 자료 이동/공유 ──
   useEffect(() => {
     if (!showMove) return
-    supabase.from('projects').select('id, name').neq('id', id).order('name').then(({ data }) => setMoveProjects(data || []))
+    supabase.from('projects').select('id, name, status').neq('id', id).order('name').then(({ data }) => setMoveProjects(data || []))
   }, [showMove, id])
 
   useEffect(() => {
@@ -1697,10 +1698,22 @@ export default function ProjectDetail() {
                     className={`w-full text-left px-3 py-2.5 text-sm border-b border-gray-100 flex items-center gap-2 ${moveProj === id ? 'bg-green-50 text-green-700 font-medium' : 'text-gray-700 hover:bg-gray-50'}`}>
                     <span>{moveProj === id ? '✅' : '📍'}</span> 이 현장 (현재)
                   </button>
-                  {moveProjects.map(p => (
+                  {moveProjects.filter(p => !['완료','중단'].includes(p.status || '')).map(p => (
                     <button key={p.id} onClick={() => setMoveProj(p.id)}
                       className={`w-full text-left px-3 py-2.5 text-sm border-b border-gray-100 last:border-0 flex items-center gap-2 ${moveProj === p.id ? 'bg-green-50 text-green-700 font-medium' : 'text-gray-700 hover:bg-gray-50'}`}>
                       <span>{moveProj === p.id ? '✅' : '🏗️'}</span> {p.name}
+                    </button>
+                  ))}
+                  {moveProjects.some(p => ['완료','중단'].includes(p.status || '')) && (
+                    <button onClick={() => setShowClosedMove(v => !v)}
+                      className="w-full text-left px-3 py-2 text-xs text-gray-400 border-b border-gray-100 last:border-0 hover:bg-gray-50">
+                      {showClosedMove ? '▲ 완료·중단 현장 접기' : `▼ 완료·중단 현장 ${moveProjects.filter(p => ['완료','중단'].includes(p.status || '')).length}개 보기`}
+                    </button>
+                  )}
+                  {showClosedMove && moveProjects.filter(p => ['완료','중단'].includes(p.status || '')).map(p => (
+                    <button key={p.id} onClick={() => setMoveProj(p.id)}
+                      className={`w-full text-left px-3 py-2.5 text-sm border-b border-gray-100 last:border-0 flex items-center gap-2 ${moveProj === p.id ? 'bg-green-50 text-green-700 font-medium' : 'text-gray-500 hover:bg-gray-50'}`}>
+                      <span>{moveProj === p.id ? '✅' : '🏁'}</span> {p.name}
                     </button>
                   ))}
                 </div>

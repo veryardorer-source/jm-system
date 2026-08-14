@@ -5,14 +5,14 @@ import { toast } from '@/components/Toaster'
 import Image from 'next/image'
 import { useRouter } from 'next/navigation'
 import Sidebar from '@/components/Sidebar'
-import { supabase } from '@/lib/supabase'
+import { supabase, HIDDEN_STATUSES } from '@/lib/supabase'
 import { useAuth, canEdit } from '@/lib/auth-context'
 import { notifyOthers } from '@/lib/notify'
 import { compressImage, makeThumbnail, hashFile, isCompressibleImage, dateStampedName } from '@/lib/image'
 
 const CATEGORY_LIST = ['공사전사진', '시공사진', '마감사진', '도면', '3D', '미팅내용', '고객요청', '기타']
 
-type Proj = { id: string; name: string }
+type Proj = { id: string; name: string; status?: string | null }
 type Dest = 'project' | 'receipt' | 'withdrawal'
 
 async function readSharedFiles(): Promise<File[]> {
@@ -66,7 +66,7 @@ export default function SharePage() {
       const [f, t, p] = await Promise.all([
         readSharedFiles(),
         readSharedText(),
-        supabase.from('projects').select('id, name').order('created_at', { ascending: false }),
+        supabase.from('projects').select('id, name, status').order('created_at', { ascending: false }),
       ])
       if (!active) return
       setFiles(f)
@@ -76,7 +76,11 @@ export default function SharePage() {
       // 사진 없이 글만 공유된 경우엔 기본 저장처를 출금요청으로
       if (t && f.length === 0) setDest('withdrawal')
       setProjects(p.data || [])
-      if (p.data && p.data.length) setProjectId(p.data[0].id)
+      // 기본 선택은 진행 중인 현장 중 최신 (완료·중단은 목록 아래 묶음으로)
+      if (p.data && p.data.length) {
+        const firstActive = p.data.find(x => !(HIDDEN_STATUSES as readonly string[]).includes(x.status || ''))
+        setProjectId((firstActive || p.data[0]).id)
+      }
       setLoading(false)
     }
     init()
@@ -267,7 +271,14 @@ export default function SharePage() {
                     <select value={projectId} onChange={e => setProjectId(e.target.value)}
                       className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500">
                       {projects.length === 0 && <option value="">현장이 없습니다</option>}
-                      {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                      <optgroup label="🏗️ 진행 중인 현장">
+                        {projects.filter(p => !(HIDDEN_STATUSES as readonly string[]).includes(p.status || '')).map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                      </optgroup>
+                      {projects.some(p => (HIDDEN_STATUSES as readonly string[]).includes(p.status || '')) && (
+                        <optgroup label="✅ 완료·중단된 현장">
+                          {projects.filter(p => (HIDDEN_STATUSES as readonly string[]).includes(p.status || '')).map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                        </optgroup>
+                      )}
                     </select>
                   </div>
                   <div>
