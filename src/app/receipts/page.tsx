@@ -151,7 +151,7 @@ export default function ReceiptsPage() {
                   <div className="px-3 py-2">
                     {p.memo && <p className="text-xs text-gray-700 truncate">{p.memo}</p>}
                     <div className="flex items-center justify-between mt-1 gap-1">
-                      <span className="text-xs text-gray-400 truncate">{p.uploaded_by || ''} {new Date(p.created_at).toLocaleDateString('ko-KR', { month: 'numeric', day: 'numeric' })}</span>
+                      <span className="text-xs text-gray-400 truncate">{p.uploaded_by || ''} {new Date(p.created_at).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
                       <div className="flex items-center gap-1.5 flex-shrink-0">
                         <button onClick={() => shareUrl(p.image_url, `영수증_${p.memo || i + 1}.jpg`)} className="text-xs text-blue-400 hover:text-blue-600">내보내기</button>
                         {!readOnly && (<>

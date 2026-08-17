@@ -1307,7 +1307,7 @@ export default function ProjectDetail() {
                                       <p className="text-sm font-medium text-gray-800 hover:text-green-600 truncate">{f.file_name}</p>
                                       {f.memo && <p className={`text-xs text-gray-400 ${f.file_type === 'text' ? 'whitespace-pre-wrap' : ''}`}>{f.memo}</p>}
                                     </button>
-                                    <span className="text-xs text-gray-400 flex-shrink-0 hidden sm:block">{f.uploaded_by ? `${f.uploaded_by} · ` : ''}{new Date(f.created_at).toLocaleDateString('ko-KR')}{f.file_size ? ` · ${formatBytes(f.file_size)}` : ''}</span>
+                                    <span className="text-xs text-gray-400 flex-shrink-0 hidden sm:block">{f.uploaded_by ? `${f.uploaded_by} · ` : ''}{new Date(f.created_at).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}{f.file_size ? ` · ${formatBytes(f.file_size)}` : ''}</span>
                                     {f.file_type !== 'link' && f.file_type !== 'text' && f.file_url && (<>
                                       <button onClick={() => chatShareOne(f)} title="시스템 채팅방으로 전달"
                                         className="text-xs text-green-500 hover:text-green-700 flex-shrink-0">💬 전달</button>

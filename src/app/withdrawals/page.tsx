@@ -262,7 +262,7 @@ export default function WithdrawalsPage() {
                   <div className="px-3 py-2">
                     {p.reason && <p className="text-xs text-gray-700 line-clamp-2 whitespace-pre-wrap">{p.reason}</p>}
                     <div className="flex items-center justify-between mt-1">
-                      <span className="text-xs text-gray-400">{p.requested_by || ''} {new Date(p.created_at).toLocaleDateString('ko-KR', { month: 'numeric', day: 'numeric' })}</span>
+                      <span className="text-xs text-gray-400">{p.requested_by || ''} {new Date(p.created_at).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
                       {!readOnly && (
                         <button onClick={() => deletePhoto(p)}
                           className="text-xs text-red-500 hover:text-red-700 opacity-100 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 transition-opacity px-2 py-0.5">삭제</button>

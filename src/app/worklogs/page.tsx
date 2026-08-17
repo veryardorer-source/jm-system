@@ -166,6 +166,7 @@ export default function WorkLogsPage() {
                     <div className="flex items-center gap-2">
                       <span className="text-sm font-bold text-gray-800">{fmtDate(l.log_date)}</span>
                       {l.author && <span className="text-xs text-gray-400">· {l.author}</span>}
+                      <span className="text-[11px] text-gray-300">올린 시각 {new Date(l.created_at).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
                       {isDraft(l) && <span className="text-[11px] px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 font-medium">작성중 — 나만 보임</span>}
                     </div>
                     {!readOnly && (

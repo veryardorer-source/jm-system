@@ -253,7 +253,7 @@ export default function NoticesPage() {
                       <p className="text-sm text-gray-500 mt-1 line-clamp-2">{n.content}</p>
                     </div>
                     <span className="text-xs text-gray-400 flex-shrink-0 mt-1">
-                      {new Date(n.created_at).toLocaleDateString('ko-KR')}
+                      {new Date(n.created_at).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
                     </span>
                   </div>
                 </div>
