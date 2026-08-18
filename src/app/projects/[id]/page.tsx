@@ -8,7 +8,7 @@ import { supabase, Project, ProjectFile, Schedule, ProjectCost, ProjectAssignmen
 import { useAuth, canEdit } from '@/lib/auth-context'
 import { notifyOthers, notifyDM, notifyRoom } from '@/lib/notify'
 import { compressImage, makeThumbnail, hashFile, formatBytes, isCompressibleImage, dateStampedName } from '@/lib/image'
-import { openPdfTitled } from '@/lib/media'
+import { openPdfTitled, printUrl } from '@/lib/media'
 import Image from 'next/image'
 import FileDropInput from '@/components/FileDropInput'
 import SnsTab from '@/components/SnsTab'
@@ -1820,10 +1820,22 @@ export default function ProjectDetail() {
             {gallery.length > 1 && (
               <div className="absolute bottom-5 left-1/2 -translate-x-1/2 bg-black/50 text-white text-xs px-3 py-1 rounded-full">{idx + 1} / {gallery.length}</div>
             )}
-            {!readOnly && (
-              <button onClick={e => { e.stopPropagation(); const cur = files.find(f => f.file_url === lightbox); if (cur) openEditFile(cur) }}
-                className="absolute bottom-5 right-4 bg-white/20 hover:bg-white/30 text-white text-xs px-3 py-1.5 rounded-full">✏ 수정</button>
-            )}
+            <div className="absolute bottom-5 right-4 flex items-center gap-1.5" onClick={e => e.stopPropagation()}>
+              {!isVideoUrl(lightbox) && (
+                <button onClick={() => printUrl(lightbox)}
+                  className="bg-white/20 hover:bg-white/30 text-white text-xs px-3 py-1.5 rounded-full">🖨 인쇄</button>
+              )}
+              {cur && (<>
+                <button onClick={() => shareFile(cur)}
+                  className="bg-white/20 hover:bg-white/30 text-white text-xs px-3 py-1.5 rounded-full">내보내기</button>
+                <button onClick={() => downloadFile(cur)}
+                  className="bg-white/20 hover:bg-white/30 text-white text-xs px-3 py-1.5 rounded-full">저장</button>
+              </>)}
+              {!readOnly && cur && (
+                <button onClick={() => openEditFile(cur)}
+                  className="bg-white/20 hover:bg-white/30 text-white text-xs px-3 py-1.5 rounded-full">✏ 수정</button>
+              )}
+            </div>
             <button onClick={e => { e.stopPropagation(); setLightbox(null) }} className="absolute top-4 right-4 text-white text-3xl leading-none">&times;</button>
           </div>
         )
