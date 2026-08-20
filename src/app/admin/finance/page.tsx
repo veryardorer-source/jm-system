@@ -9,7 +9,7 @@ import { createClient } from '@/lib/supabase-browser'
 import { FixedCost, Payroll, ProjectProfit, SalesRecord, Project, supabase } from '@/lib/supabase'
 import { parseExcelRows, parseExcelTotal, ParsedRow, parsePayrollLedger, PayrollLedger, parsePayrollLedgerFull, PayrollLedgerFull } from '@/lib/excel-parse'
 import FileDropInput from '@/components/FileDropInput'
-import { openPdfTitled } from '@/lib/media'
+import { openPdfTitled, resolveFileUrl, removeStoredFile, SECURE_PREFIX } from '@/lib/media'
 import SortSelect from '@/components/SortSelect'
 
 const TAB_LIST = ['고정지출', '급여내역', '현장별 이익', '매출매입', '견적서'] as const
@@ -587,9 +587,10 @@ function ProfitTab({ list, projects, onRefresh }: { list: ProjectProfit[]; proje
     if (profitFile) {
       const ext = profitFile.name.split('.').pop() || 'bin'
       const path = `finance/profit/${Date.now()}.${ext}`
-      const { error: upErr } = await sb.storage.from('uploads').upload(path, profitFile, { contentType: profitFile.type || 'application/octet-stream', upsert: true })
-      if (upErr) { toast('파일 업로드 실패: ' + upErr.message); setSaving(false); return }
-      file_url = sb.storage.from('uploads').getPublicUrl(path).data.publicUrl
+      // 민감 파일은 잠금 보관함(secure)에 — 열 때마다 1시간 서명 주소 발급
+      const { error: upErr } = await sb.storage.from('secure').upload(path, profitFile, { contentType: profitFile.type || 'application/octet-stream', upsert: true })
+      if (upErr) { toast('파일 업로드 실패: ' + upErr.message + (/bucket/i.test(upErr.message) ? ' (관리자에게: db/secure_bucket.sql 실행 필요)' : '')); setSaving(false); return }
+      file_url = SECURE_PREFIX + path
       file_name = profitFile.name
     }
     const payload = { project_id: form.project_id, month: form.month + '-01', revenue: Number(form.revenue) || 0, cost: Number(form.cost) || 0, memo: form.memo, file_url, file_name }
@@ -603,17 +604,21 @@ function ProfitTab({ list, projects, onRefresh }: { list: ProjectProfit[]; proje
     onRefresh()
   }
 
-  function openFile(p: ProjectProfit) {
+  async function openFile(p: ProjectProfit) {
     if (!p.file_url) return
+    // 잠금 보관함 파일이면 1시간짜리 서명 주소로 바꿔서 연다
+    let url: string
+    try { url = await resolveFileUrl(p.file_url) } catch (e) { toast((e as Error).message, 'error'); return }
     const name = (p.file_name || p.file_url).toLowerCase()
-    if (/\.(xlsx|xls|xlsb|xlsm|doc|docx|ppt|pptx)$/.test(name)) window.open(`https://view.officeapps.live.com/op/view.aspx?src=${encodeURIComponent(p.file_url)}`, '_blank')
-    else if (name.endsWith('.pdf')) openPdfTitled(p.file_url, p.file_name || '')
-    else window.open(p.file_url, '_blank')
+    if (/\.(xlsx|xls|xlsb|xlsm|doc|docx|ppt|pptx)$/.test(name)) window.open(`https://view.officeapps.live.com/op/view.aspx?src=${encodeURIComponent(url)}`, '_blank')
+    else if (name.endsWith('.pdf')) openPdfTitled(url, p.file_name || '')
+    else window.open(url, '_blank')
   }
 
   async function del(p: ProjectProfit) {
     if (!confirm('이 항목을 삭제할까요?')) return
     const sb = createClient()
+    if (p.file_url) await removeStoredFile(p.file_url) // 첨부 파일도 함께 정리
     await sb.from('finance_project_profit').delete().eq('id', p.id)
     onRefresh()
   }
@@ -704,10 +709,9 @@ function SalesTab({ list, onRefresh }: { list: SalesRecord[]; onRefresh: () => v
     if (file) {
       const ext = file.name.split('.').pop() || 'bin'
       const path = `finance/sales/${Date.now()}.${ext}`
-      const { error: upErr } = await sb.storage.from('uploads').upload(path, file, { contentType: file.type, upsert: true })
-      if (upErr) { toast('파일 업로드 실패: ' + upErr.message); setSaving(false); return }
-      const { data } = sb.storage.from('uploads').getPublicUrl(path)
-      file_url = data.publicUrl
+      const { error: upErr } = await sb.storage.from('secure').upload(path, file, { contentType: file.type, upsert: true })
+      if (upErr) { toast('파일 업로드 실패: ' + upErr.message + (/bucket/i.test(upErr.message) ? ' (관리자에게: db/secure_bucket.sql 실행 필요)' : '')); setSaving(false); return }
+      file_url = SECURE_PREFIX + path
       file_name = file.name
     }
     const payload = { month: form.month + '-01', type: form.type, amount: Number(form.amount) || 0, memo: form.memo, file_url, file_name }
@@ -723,7 +727,7 @@ function SalesTab({ list, onRefresh }: { list: SalesRecord[]; onRefresh: () => v
   async function del(s: SalesRecord) {
     if (!confirm('이 항목을 삭제할까요?')) return
     const sb = createClient()
-    if (s.file_url) { const path = s.file_url.split('/uploads/')[1]; if (path) await sb.storage.from('uploads').remove([path]) }
+    if (s.file_url) await removeStoredFile(s.file_url)
     await sb.from('finance_sales').delete().eq('id', s.id)
     onRefresh()
   }
@@ -784,11 +788,13 @@ function SalesTab({ list, onRefresh }: { list: SalesRecord[]; onRefresh: () => v
                     <td className="px-4 py-3 text-sm text-right font-semibold text-gray-800">{s.amount.toLocaleString()}원</td>
                     <td className="px-4 py-3">
                       {s.file_url ? (
-                        <button onClick={() => {
+                        <button onClick={async () => {
+                          let url: string
+                          try { url = await resolveFileUrl(s.file_url) } catch (e) { toast((e as Error).message, 'error'); return }
                           const name = s.file_name?.toLowerCase() || ''
-                          if (/\.(xlsx|xls|doc|docx|ppt|pptx)$/.test(name)) window.open(`https://view.officeapps.live.com/op/view.aspx?src=${encodeURIComponent(s.file_url)}`, '_blank')
-                          else if (name.endsWith('.pdf')) openPdfTitled(s.file_url, s.file_name || '')
-                          else window.open(s.file_url, '_blank')
+                          if (/\.(xlsx|xls|doc|docx|ppt|pptx)$/.test(name)) window.open(`https://view.officeapps.live.com/op/view.aspx?src=${encodeURIComponent(url)}`, '_blank')
+                          else if (name.endsWith('.pdf')) openPdfTitled(url, s.file_name || '')
+                          else window.open(url, '_blank')
                         }} className="text-xs text-green-600 hover:underline truncate max-w-[140px] inline-block">📎 {s.file_name}</button>
                       ) : <span className="text-xs text-gray-300">-</span>}
                     </td>
@@ -855,9 +861,9 @@ function QuoteTab({ list, onRefresh }: { list: Quote[]; onRefresh: () => void })
     if (file) {
       const ext = file.name.split('.').pop() || 'bin'
       const path = `finance/quotes/${Date.now()}.${ext}`
-      const { error: upErr } = await sb.storage.from('uploads').upload(path, file, { contentType: file.type || 'application/octet-stream', upsert: true })
-      if (upErr) { toast('파일 업로드 실패: ' + upErr.message); setSaving(false); return }
-      file_url = sb.storage.from('uploads').getPublicUrl(path).data.publicUrl
+      const { error: upErr } = await sb.storage.from('secure').upload(path, file, { contentType: file.type || 'application/octet-stream', upsert: true })
+      if (upErr) { toast('파일 업로드 실패: ' + upErr.message + (/bucket/i.test(upErr.message) ? ' (관리자에게: db/secure_bucket.sql 실행 필요)' : '')); setSaving(false); return }
+      file_url = SECURE_PREFIX + path
       file_name = file.name
     }
     const payload = { title: form.title.trim(), amount: Number(form.amount) || 0, file_url, file_name }
@@ -873,20 +879,24 @@ function QuoteTab({ list, onRefresh }: { list: Quote[]; onRefresh: () => void })
   async function del(q: Quote) {
     if (!confirm(`"${q.title}" 견적서를 삭제할까요?`)) return
     const sb = createClient()
-    if (q.file_url) { const path = q.file_url.split('/uploads/')[1]; if (path) await sb.storage.from('uploads').remove([path]) }
+    if (q.file_url) await removeStoredFile(q.file_url)
     await sb.from('finance_quotes').delete().eq('id', q.id)
     onRefresh()
   }
 
-  function openFile(q: Quote) {
+  async function openFile(q: Quote) {
     if (!q.file_url) return
+    // 잠금 보관함 파일이면 1시간짜리 서명 주소로 바꿔서 연다
+    let url: string
+    try { url = await resolveFileUrl(q.file_url) } catch (e) { toast((e as Error).message, 'error'); return }
     const name = q.file_name?.toLowerCase() || ''
     if (/\.(xlsx|xls|doc|docx|ppt|pptx)$/.test(name)) {
       // 엑셀·워드·PPT → 마이크로소프트 오피스 온라인 뷰어(다운로드 없이 미리보기)
-      window.open(`https://view.officeapps.live.com/op/view.aspx?src=${encodeURIComponent(q.file_url)}`, '_blank')
+      window.open(`https://view.officeapps.live.com/op/view.aspx?src=${encodeURIComponent(url)}`, '_blank')
+    } else if (name.endsWith('.pdf')) {
+      openPdfTitled(url, q.file_name || '')
     } else {
-      // PDF·사진 등은 브라우저에서 바로 열림
-      window.open(q.file_url, '_blank')
+      window.open(url, '_blank')
     }
   }
 

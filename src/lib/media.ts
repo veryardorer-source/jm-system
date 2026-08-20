@@ -7,6 +7,33 @@ export function isVideoUrl(u: string) {
   return /\.(mp4|mov|webm|m4v|ogg|avi|mkv)$/i.test((u || '').split('?')[0])
 }
 
+import { supabase } from './supabase'
+
+// ── 잠금 보관함(비공개 버킷 'secure') — 민감 파일용 ──
+// DB에는 'secure://finance/....pdf' 형태로 저장하고, 열 때마다 1시간짜리 서명 주소를 발급받는다.
+// 주소가 유출돼도 1시간 뒤 죽고, 발급 자체가 권한(RLS) 검사를 거친다.
+export const SECURE_PREFIX = 'secure://'
+export const isSecureUrl = (u?: string | null) => !!u && u.startsWith(SECURE_PREFIX)
+
+export async function resolveFileUrl(url: string): Promise<string> {
+  if (!isSecureUrl(url)) return url
+  const path = url.slice(SECURE_PREFIX.length)
+  const { data, error } = await supabase.storage.from('secure').createSignedUrl(path, 3600)
+  if (error || !data?.signedUrl) throw new Error('파일을 열 권한이 없거나 잠금 보관함 설정(db/secure_bucket.sql)이 안 돼 있어요')
+  return data.signedUrl
+}
+
+// 저장소 파일 삭제 — 공개(uploads)·잠금(secure) 양쪽 다 처리
+export async function removeStoredFile(url?: string | null) {
+  if (!url) return
+  if (isSecureUrl(url)) {
+    await supabase.storage.from('secure').remove([url.slice(SECURE_PREFIX.length)])
+  } else {
+    const p = url.split('/uploads/')[1]
+    if (p) await supabase.storage.from('uploads').remove([p])
+  }
+}
+
 // PDF를 새 탭에서 열되, 탭 제목이 앱에 보이는 파일명으로 나오게.
 // 저장 주소가 숫자 이름(1785…pdf)이라 그냥 열면 탭 제목이 숫자로 나와서, 제목을 붙인 래퍼 페이지로 연다.
 // 모바일은 내장 PDF 표시가 기기마다 달라 기존처럼 바로 연다.
