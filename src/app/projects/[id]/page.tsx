@@ -795,10 +795,12 @@ export default function ProjectDetail() {
     return (f.created_at || '').slice(0, 10)
   }
 
-  // PC·NAS로 저장할 때의 파일명 — 정렬은 이름 맨 앞 글자로 되므로, 날짜로 시작하지 않으면 앞에 날짜를 붙인다
-  // (KakaoTalk_20260615_… 처럼 날짜가 속에 있어도 fileDate가 그 날짜를 찾아 앞에 붙임)
+  // PC·NAS로 저장할 때의 파일명.
+  // 사진·동영상: 날짜순 정렬을 위해 날짜로 시작하지 않으면 앞에 날짜를 붙임 (카톡 저장본 등).
+  // PDF·문서: 사용자가 지은 제목이 중요하므로 저장한 이름 그대로 (날짜 안 붙임).
   const nasName = (f: ProjectFile): string => {
     const n = f.file_name || 'file'
+    if (!isImageFile(f) && !isVideoFile(f)) return n
     return /^20\d{2}[._-]?(0[1-9]|1[0-2])[._-]?(0[1-9]|[12]\d|3[01])/.test(n) ? n : `${fileDate(f).replace(/-/g, '')}_${n}`
   }
 
