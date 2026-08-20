@@ -9,7 +9,10 @@ export async function normalizePdfTitle(file: File, title?: string): Promise<Fil
     const doc = await PDFDocument.load(buf, { ignoreEncryption: true })
     doc.setTitle((title || file.name).replace(/\.pdf$/i, ''))
     const out = await doc.save()
-    return new File([out], file.name, { type: 'application/pdf' })
+    // Uint8Array를 정확한 길이의 ArrayBuffer로 복사 (File 생성자 타입 요구)
+    const bytes = new Uint8Array(out.length)
+    bytes.set(out)
+    return new File([bytes.buffer], file.name, { type: 'application/pdf' })
   } catch {
     return file // 암호화·손상 등으로 실패하면 원본 그대로 (업로드는 계속)
   }
