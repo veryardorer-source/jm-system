@@ -4,9 +4,12 @@
 export async function normalizePdfTitle(file: File, title?: string): Promise<File> {
   try {
     if (!/\.pdf$/i.test(file.name)) return file
-    const { PDFDocument } = await import('pdf-lib')
+    const { PDFDocument, PDFName } = await import('pdf-lib')
     const buf = await file.arrayBuffer()
     const doc = await PDFDocument.load(buf, { ignoreEncryption: true })
+    // 파워포인트가 심는 XMP 메타데이터 제거 — 뷰어가 Info 제목보다 이걸 우선 표시해서,
+    // 지우지 않으면 아래 setTitle이 무시된다 (2026-08-27 실측으로 확인)
+    doc.catalog.delete(PDFName.of('Metadata'))
     doc.setTitle((title || file.name).replace(/\.pdf$/i, ''))
     const out = await doc.save()
     // Uint8Array를 정확한 길이의 ArrayBuffer로 복사 (File 생성자 타입 요구)
