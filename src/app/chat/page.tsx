@@ -84,6 +84,7 @@ export default function ChatPage() {
   // 메시지 전달 (카톡식 — 사진·파일·글을 다른 대화방으로)
   const [forwardMsg, setForwardMsg] = useState<Message | null>(null)
   const [forwarding, setForwarding] = useState(false)
+  const [unreadTick, setUnreadTick] = useState(0) // 다른 기기에서 읽으면 안읽음 표시 다시 계산
   // 메시지 페이지네이션·오류 상태
   const [hasOlder, setHasOlder] = useState(false)     // 위로 더 불러올 이전 대화가 있는지
   const [loadingOlder, setLoadingOlder] = useState(false)
@@ -159,10 +160,10 @@ export default function ChatPage() {
     }
   }, [me])
 
-  // 내가 이 대화를 읽었음을 기록
+  // 내가 이 대화를 읽었음을 서버에 기록 — 모든 기기의 안읽음 표시가 함께 지워지게 ('전체 채팅' 포함)
   const markMyRead = useCallback(async (a: Active) => {
     const key = convKey(a)
-    if (!key || !me || !a || a.kind === 'all') return
+    if (!key || !me || !a) return
     await supabase.from('chat_reads').upsert({ user_id: me, conv_key: key, last_read_at: new Date().toISOString() }, { onConflict: 'user_id,conv_key' })
   }, [me])
 
@@ -227,11 +228,19 @@ export default function ChatPage() {
     let on = true
     const roomIds = new Set(rooms.map(r => r.id))
     ;(async () => {
-      const { data } = await supabase.from('messages').select('*')
-        .or(`recipient_id.is.null,recipient_id.eq.${me},sender_id.eq.${me}`)
-        .order('created_at', { ascending: false }).limit(300)
+      // 안읽음 기준 = 서버(chat_reads)의 내 읽은 시각 — 어느 기기에서 읽어도 전부 지워지게.
+      // 기기 저장값(localStorage)은 서버 반영 전 잠깐의 공백을 메우는 보조로만 병합.
+      const [{ data }, { data: myReads }] = await Promise.all([
+        supabase.from('messages').select('*')
+          .or(`recipient_id.is.null,recipient_id.eq.${me},sender_id.eq.${me}`)
+          .order('created_at', { ascending: false }).limit(300),
+        supabase.from('chat_reads').select('conv_key, last_read_at').eq('user_id', me),
+      ])
       if (!on) return
       const lr = getLastRead()
+      for (const r of (myReads || [])) {
+        if (r.last_read_at && (!lr[r.conv_key] || r.last_read_at > lr[r.conv_key])) lr[r.conv_key] = r.last_read_at
+      }
       const counts: Record<string, number> = {}
       for (const m of (data || [])) {
         const key = msgKey(m as Message, me, roomIds)
@@ -241,7 +250,7 @@ export default function ChatPage() {
       setUnread(counts)
     })()
     return () => { on = false }
-  }, [me, rooms])
+  }, [me, rooms, unreadTick])
 
   // ── 대화 전환을 '렌더 중'에 감지해 즉시 상태 정리 (React 권장: 이전 값 비교 패턴) ──
   // 이전 대화의 메시지·답장·검색 상태가 화면에 잠깐 남는 깜빡임을 원천 차단한다.
@@ -336,8 +345,11 @@ export default function ChatPage() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'message_reactions' }, () => {
         reloadReactions()
       })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'chat_reads' }, () => {
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'chat_reads' }, payload => {
         loadReads(activeRef.current)
+        // 내 읽음 기록이 다른 기기에서 갱신됨 → 이 기기의 안읽음 표시도 다시 계산
+        const row = (payload.new || payload.old) as { user_id?: string } | null
+        if (row?.user_id === me) setUnreadTick(t => t + 1)
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'chat_notices' }, () => {
         loadNotice(activeRef.current)
