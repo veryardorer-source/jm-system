@@ -10,6 +10,7 @@ import { FixedCost, Payroll, ProjectProfit, SalesRecord, Project, supabase } fro
 import { parseExcelRows, parseExcelTotal, ParsedRow, parsePayrollLedger, PayrollLedger, parsePayrollLedgerFull, PayrollLedgerFull } from '@/lib/excel-parse'
 import FileDropInput from '@/components/FileDropInput'
 import { openPdfTitled, resolveFileUrl, removeStoredFile, SECURE_PREFIX } from '@/lib/media'
+import { normalizePdfTitle } from '@/lib/pdf'
 import SortSelect from '@/components/SortSelect'
 
 const TAB_LIST = ['고정지출', '급여내역', '현장별 이익', '매출매입', '견적서'] as const
@@ -859,9 +860,10 @@ function QuoteTab({ list, onRefresh }: { list: Quote[]; onRefresh: () => void })
     const sb = createClient()
     let file_url = editing?.file_url || '', file_name = editing?.file_name || ''
     if (file) {
+      const upFile = /\.pdf$/i.test(file.name) ? await normalizePdfTitle(file, form.title.trim() || file.name) : file // PDF 속성 제목 교정
       const ext = file.name.split('.').pop() || 'bin'
       const path = `finance/quotes/${Date.now()}.${ext}`
-      const { error: upErr } = await sb.storage.from('secure').upload(path, file, { contentType: file.type || 'application/octet-stream', upsert: true })
+      const { error: upErr } = await sb.storage.from('secure').upload(path, upFile, { contentType: upFile.type || 'application/octet-stream', upsert: true })
       if (upErr) { toast('파일 업로드 실패: ' + upErr.message + (/bucket/i.test(upErr.message) ? ' (관리자에게: db/secure_bucket.sql 실행 필요)' : '')); setSaving(false); return }
       file_url = SECURE_PREFIX + path
       file_name = file.name

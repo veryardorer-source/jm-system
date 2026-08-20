@@ -9,6 +9,7 @@ import { notifyOthers } from '@/lib/notify'
 import FileDropInput from '@/components/FileDropInput'
 import { supabase, CompanyDocument, DOC_CATEGORY_LIST, DocVisibility } from '@/lib/supabase'
 import { openPdfTitled } from '@/lib/media'
+import { normalizePdfTitle } from '@/lib/pdf'
 
 const EMPTY_FORM = { title: '', category: DOC_CATEGORY_LIST[0] as string, visibility: '전체공개' as DocVisibility, memo: '' }
 
@@ -82,10 +83,12 @@ export default function DocumentsPage() {
     let file_url = editing?.file_url || ''
     let file_name = editing?.file_name || ''
     if (file) {
+      // PDF는 문서 속성 제목을 서류 제목으로 교정 (복사해 만든 파일의 옛 제목 제거)
+      const upFile = /\.pdf$/i.test(file.name) ? await normalizePdfTitle(file, form.title) : file
       const ext = file.name.split('.').pop() || 'bin'
       const path = `documents/${Date.now()}.${ext}`
-      const { error: upErr } = await supabase.storage.from('uploads').upload(path, file, {
-        contentType: file.type || 'application/octet-stream', upsert: true,
+      const { error: upErr } = await supabase.storage.from('uploads').upload(path, upFile, {
+        contentType: upFile.type || 'application/octet-stream', upsert: true,
       })
       if (upErr) { toast('업로드 실패: ' + upErr.message); setSaving(false); return }
       const { data } = supabase.storage.from('uploads').getPublicUrl(path)

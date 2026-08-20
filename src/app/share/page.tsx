@@ -9,6 +9,7 @@ import { supabase, HIDDEN_STATUSES } from '@/lib/supabase'
 import { useAuth, canEdit } from '@/lib/auth-context'
 import { notifyOthers } from '@/lib/notify'
 import { compressImage, makeThumbnail, hashFile, isCompressibleImage, dateStampedName } from '@/lib/image'
+import { normalizePdfTitle } from '@/lib/pdf'
 
 const CATEGORY_LIST = ['공사전사진', '시공사진', '마감사진', '도면', '3D', '미팅내용', '고객요청', '기타']
 
@@ -135,6 +136,7 @@ export default function SharePage() {
           // 현장 자료는 현장 상세와 같은 최적화 적용: 사진 자동 압축(2400px WebP) + 500px 썸네일 + 용량·지문 기록
           let up = file
           if (isCompressibleImage(file)) { const c = await compressImage(file); if (c !== file) up = c }
+          if (/\.pdf$/i.test(up.name)) up = await normalizePdfTitle(up) // PDF 속성 제목 교정
           const ext = up.name.split('.').pop() || 'bin'
           const stamp = `${Date.now()}_${idx}`
           const path = `files/${projectId}/${stamp}.${ext}`

@@ -9,6 +9,7 @@ import { useAuth, canEdit } from '@/lib/auth-context'
 import { notifyOthers, notifyDM, notifyRoom } from '@/lib/notify'
 import { compressImage, makeThumbnail, hashFile, formatBytes, isCompressibleImage, dateStampedName } from '@/lib/image'
 import { openPdfTitled, printUrl } from '@/lib/media'
+import { normalizePdfTitle } from '@/lib/pdf'
 import Image from 'next/image'
 import FileDropInput from '@/components/FileDropInput'
 import SnsTab from '@/components/SnsTab'
@@ -326,6 +327,8 @@ export default function ProjectDetail() {
           const c2 = await compressImage(file)
           if (c2 !== file) file = c2
         }
+        // PDF는 문서 속성 제목을 파일명으로 교정 (복사해 만든 제안서에 남은 옛 현장 제목 제거)
+        if (/\.pdf$/i.test(file.name)) file = await normalizePdfTitle(file)
         const ext = file.name.split('.').pop() || 'bin'
         // 사진·동영상은 날짜 이름 유지(폰 공유로 이름이 image.jpg 등으로 바뀐 경우 촬영시각으로 복원) — NAS 날짜순 정렬용
         const isMedia = (orig.type || '').startsWith('image/') || (orig.type || '').startsWith('video/') || isCompressibleImage(orig)
@@ -515,6 +518,7 @@ export default function ProjectDetail() {
     if (replaceFile && editFile.file_type !== 'link' && editFile.file_type !== 'text') {
       let up = replaceFile
       if ((up.type || '').startsWith('image/')) up = await compressImage(up)
+      if (/\.pdf$/i.test(up.name)) up = await normalizePdfTitle(up, editFileForm.title.trim())
       const ext = up.name.split('.').pop() || 'bin'
       const stamp = `${Date.now()}`
       const path = `files/${id}/${stamp}.${ext}`
