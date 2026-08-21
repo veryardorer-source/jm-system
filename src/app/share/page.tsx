@@ -7,14 +7,14 @@ import { useRouter } from 'next/navigation'
 import Sidebar from '@/components/Sidebar'
 import { supabase, HIDDEN_STATUSES } from '@/lib/supabase'
 import { useAuth, canEdit } from '@/lib/auth-context'
-import { notifyOthers } from '@/lib/notify'
+import { notifyOthers, notifyDM, notifyRoom } from '@/lib/notify'
 import { compressImage, makeThumbnail, hashFile, isCompressibleImage, dateStampedName } from '@/lib/image'
 import { normalizePdfTitle } from '@/lib/pdf'
 
 const CATEGORY_LIST = ['공사전사진', '시공사진', '마감사진', '도면', '3D', '미팅내용', '고객요청', '기타']
 
 type Proj = { id: string; name: string; status?: string | null }
-type Dest = 'project' | 'receipt' | 'withdrawal'
+type Dest = 'project' | 'receipt' | 'withdrawal' | 'chat'
 
 async function readSharedFiles(): Promise<File[]> {
   if (typeof caches === 'undefined') return []
@@ -60,6 +60,10 @@ export default function SharePage() {
   const [loading, setLoading] = useState(true)
   const [uploading, setUploading] = useState(false)
   const [progress, setProgress] = useState(0)
+  // 채팅으로 보내기 — 'all' | 'room:<방id>' | 'dm:<상대id>'
+  const [rooms, setRooms] = useState<{ id: string; name: string }[]>([])
+  const [people, setPeople] = useState<{ id: string; name: string }[]>([])
+  const [chatTarget, setChatTarget] = useState('all')
 
   useEffect(() => {
     let active = true
@@ -88,6 +92,24 @@ export default function SharePage() {
     return () => { active = false }
   }, [])
 
+  // 채팅 대상 목록 (내 단체방 + 직원들) — 프로필이 준비되면 로드
+  useEffect(() => {
+    const me = profile?.id
+    if (!me) return
+    let on = true
+    ;(async () => {
+      const { data: mem } = await supabase.from('chat_room_members').select('room_id').eq('user_id', me)
+      const ids = (mem || []).map(m => m.room_id)
+      if (ids.length) {
+        const { data: rs } = await supabase.from('chat_rooms').select('id, name').in('id', ids).order('created_at')
+        if (on) setRooms(rs || [])
+      }
+      const { data: ps } = await supabase.from('profiles').select('id, name').neq('id', me).order('name')
+      if (on) setPeople(ps || [])
+    })()
+    return () => { on = false }
+  }, [profile?.id])
+
   async function uploadOne(file: File, i: number, folder: string) {
     const ext = file.name.split('.').pop() || 'bin'
     const path = `${folder}/${Date.now()}_${i}.${ext}`
@@ -103,6 +125,7 @@ export default function SharePage() {
     const tooBig = files.filter(f => f.size > 500 * 1024 * 1024)
     if (tooBig.length) { toast(`500MB가 넘는 파일 ${tooBig.length}개는 올릴 수 없어요: ${tooBig[0].name}`, 'error'); return }
     if (files.length === 0 && !sharedText.trim()) return
+    if (dest === 'chat') { await shareToChat(); return }
     if (dest === 'project' && !projectId) return
     // 사진 없이 텍스트만 공유한 경우 — 영수증/출금요청에 글만 기록
     if (files.length === 0) {
@@ -199,6 +222,56 @@ export default function SharePage() {
     router.push(dest === 'project' ? `/projects/${projectId}` : dest === 'receipt' ? '/receipts' : '/withdrawals')
   }
 
+  // 채팅으로 보내기 — 문자 캡처 등 공유받은 사진·글을 대화방에 바로 전송
+  async function shareToChat() {
+    const me = profile?.id
+    if (!me) return
+    setUploading(true)
+    const [kind, tid] = chatTarget === 'all' ? (['all', ''] as const) : (chatTarget.split(':') as ['room' | 'dm', string])
+    const recipient_id = kind === 'dm' ? tid : null
+    const room_id = kind === 'room' ? tid : null
+    const base = { sender_id: me, sender_name: profile?.name || '직원', recipient_id, room_id }
+    if (sharedText.trim()) {
+      await supabase.from('messages').insert([{ ...base, content: sharedText.trim() }])
+    }
+    const imgs = files.filter(f => (f.type || '').startsWith('image/'))
+    const others = files.filter(f => !(f.type || '').startsWith('image/'))
+    const urls: string[] = []
+    let done = 0
+    for (const f of imgs) {
+      const c = await compressImage(f)
+      const ext = c.name.split('.').pop() || 'jpg'
+      const path = `chat/${Date.now()}_${done}.${ext}`
+      const { error } = await supabase.storage.from('uploads').upload(path, c, { contentType: c.type || 'image/jpeg', upsert: true })
+      if (!error) urls.push(supabase.storage.from('uploads').getPublicUrl(path).data.publicUrl)
+      done++; setProgress(Math.round((done / Math.max(files.length, 1)) * 100))
+    }
+    if (urls.length) {
+      await supabase.from('messages').insert([{ ...base, content: '', image_url: urls[0], images: urls.length > 1 ? urls : null }])
+    }
+    for (const f of others) {
+      let up = f
+      if (/\.pdf$/i.test(up.name)) up = await normalizePdfTitle(up)
+      const ext = up.name.split('.').pop() || 'bin'
+      const path = `chat/${Date.now()}_${done}.${ext}`
+      const { error } = await supabase.storage.from('uploads').upload(path, up, { contentType: up.type || 'application/octet-stream', upsert: true })
+      if (!error) await supabase.from('messages').insert([{
+        ...base, content: '', file_url: supabase.storage.from('uploads').getPublicUrl(path).data.publicUrl, file_name: up.name,
+      }])
+      done++; setProgress(Math.round((done / Math.max(files.length, 1)) * 100))
+    }
+    // 알림 (전체 채팅은 알림 없음 — 채팅 화면과 동일 정책)
+    const body = sharedText.trim().slice(0, 40) || (urls.length ? `📷 사진 ${urls.length}장` : others.length ? '📎 ' + others[0].name : '공유')
+    if (kind === 'dm' && tid !== me) notifyDM(tid, `${profile?.name || '직원'} 님의 메시지`, body, `/chat?dm=${me}`)
+    else if (kind === 'room') {
+      const r = rooms.find(x => x.id === tid)
+      notifyRoom(tid, `${r?.name || '채팅방'} · ${profile?.name || '직원'}`, body, `/chat?room=${tid}`)
+    }
+    await clearShared()
+    setUploading(false)
+    router.push(kind === 'dm' ? `/chat?dm=${tid}` : kind === 'room' ? `/chat?room=${tid}` : '/chat')
+  }
+
   const destBtn = (d: Dest, label: string) => (
     <button type="button" onClick={() => setDest(d)}
       className={`flex-1 py-2.5 rounded-lg text-sm font-medium border ${dest === d ? 'bg-green-600 text-white border-green-600' : 'bg-white text-gray-600 border-gray-300'}`}>
@@ -261,6 +334,7 @@ export default function SharePage() {
                 <label className="text-sm font-medium text-gray-700 block mb-1.5">어디에 저장할까요?</label>
                 <div className="flex gap-2">
                   {files.length > 0 && destBtn('project', '현장 자료')}
+                  {destBtn('chat', '💬 채팅')}
                   {destBtn('receipt', '영수증')}
                   {destBtn('withdrawal', '출금요청')}
                 </div>
@@ -299,6 +373,26 @@ export default function SharePage() {
                       className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
                   </div>
                 </>
+              ) : dest === 'chat' ? (
+                <div>
+                  <label className="text-sm font-medium text-gray-700 block mb-1.5">보낼 대화방 *</label>
+                  <select value={chatTarget} onChange={e => setChatTarget(e.target.value)}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500">
+                    <option value="all">💬 전체 채팅방</option>
+                    {rooms.length > 0 && (
+                      <optgroup label="단체방">
+                        {rooms.map(r => <option key={r.id} value={'room:' + r.id}># {r.name}</option>)}
+                      </optgroup>
+                    )}
+                    {profile?.id && <option value={'dm:' + profile.id}>🔒 나와의 채팅 (보관)</option>}
+                    {people.length > 0 && (
+                      <optgroup label="직원 1:1">
+                        {people.map(p => <option key={p.id} value={'dm:' + p.id}>👤 {p.name}</option>)}
+                      </optgroup>
+                    )}
+                  </select>
+                  <p className="text-[11px] text-gray-400 mt-1.5">사진은 한 묶음으로, 함께 공유된 글은 메시지로 같이 전송돼요.</p>
+                </div>
               ) : (
                 <div>
                   <label className="text-sm font-medium text-gray-700 block mb-1.5">
@@ -321,7 +415,7 @@ export default function SharePage() {
               ) : (
                 <button onClick={handleUpload} disabled={uploading || (dest === 'project' && !projectId)}
                   className="bg-green-600 text-white py-3 rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-50">
-                  {uploading ? `업로드 중... ${progress}%` : files.length > 0 ? `${files.length}개 저장하기` : '글 저장하기'}
+                  {uploading ? `업로드 중... ${progress}%` : dest === 'chat' ? '💬 채팅으로 보내기' : files.length > 0 ? `${files.length}개 저장하기` : '글 저장하기'}
                 </button>
               )}
             </div>
