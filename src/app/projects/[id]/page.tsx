@@ -813,7 +813,7 @@ export default function ProjectDetail() {
     const name = (f.file_name || f.file_url).toLowerCase()
     if (/\.(xlsx|xls|xlsb|xlsm|doc|docx|ppt|pptx)$/.test(name)) window.open(`https://view.officeapps.live.com/op/view.aspx?src=${encodeURIComponent(f.file_url)}`, '_blank')
     else if (name.endsWith('.pdf')) openPdfTitled(f.file_url, f.file_name)
-    else window.open(f.file_url, '_blank')
+    else downloadFile(f) // DWG·HWP 등 표시 불가 형식은 제 이름으로 다운로드
   }
 
   function renderPhotoTile(f: ProjectFile) {

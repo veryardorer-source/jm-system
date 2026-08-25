@@ -51,12 +51,15 @@ export function openPdfTitled(url: string, title?: string) {
 // 다운로드 없이 브라우저에서 열어 보기 — PDF는 브라우저 내장 뷰어(탭 제목=파일명), 오피스는 MS 온라인 뷰어
 export function viewInBrowser(url: string, name?: string) {
   const n = (name || url || '').toLowerCase().split('?')[0]
-  if (/\.(xlsx|xls|doc|docx|ppt|pptx)$/.test(n)) {
+  if (/\.(xlsx|xls|xlsb|xlsm|doc|docx|ppt|pptx)$/.test(n)) {
     window.open(`https://view.officeapps.live.com/op/view.aspx?src=${encodeURIComponent(url)}`, '_blank')
   } else if (n.endsWith('.pdf')) {
     openPdfTitled(url, name)
+  } else if (isImageUrl(n) || isVideoUrl(n) || /\.(txt|svg)$/.test(n)) {
+    window.open(url, '_blank') // 브라우저가 화면에 표시할 수 있는 형식
   } else {
-    window.open(url, '_blank')
+    // DWG·HWP·ZIP 등 표시 불가 형식은 어차피 다운로드되므로, 저장소 숫자 이름 대신 제 이름으로 받게
+    downloadUrl(url, name)
   }
 }
 

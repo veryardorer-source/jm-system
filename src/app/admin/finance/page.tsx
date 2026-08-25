@@ -9,7 +9,7 @@ import { createClient } from '@/lib/supabase-browser'
 import { FixedCost, Payroll, ProjectProfit, SalesRecord, Project, supabase } from '@/lib/supabase'
 import { parseExcelRows, parseExcelTotal, ParsedRow, parsePayrollLedger, PayrollLedger, parsePayrollLedgerFull, PayrollLedgerFull } from '@/lib/excel-parse'
 import FileDropInput from '@/components/FileDropInput'
-import { openPdfTitled, resolveFileUrl, removeStoredFile, SECURE_PREFIX } from '@/lib/media'
+import { openPdfTitled, resolveFileUrl, removeStoredFile, downloadUrl, SECURE_PREFIX } from '@/lib/media'
 import { normalizePdfTitle } from '@/lib/pdf'
 import SortSelect from '@/components/SortSelect'
 
@@ -613,7 +613,7 @@ function ProfitTab({ list, projects, onRefresh }: { list: ProjectProfit[]; proje
     const name = (p.file_name || p.file_url).toLowerCase()
     if (/\.(xlsx|xls|xlsb|xlsm|doc|docx|ppt|pptx)$/.test(name)) window.open(`https://view.officeapps.live.com/op/view.aspx?src=${encodeURIComponent(url)}`, '_blank')
     else if (name.endsWith('.pdf')) openPdfTitled(url, p.file_name || '')
-    else window.open(url, '_blank')
+    else downloadUrl(url, p.file_name || '') // 표시 불가 형식은 제 이름으로 다운로드
   }
 
   async function del(p: ProjectProfit) {
@@ -795,7 +795,7 @@ function SalesTab({ list, onRefresh }: { list: SalesRecord[]; onRefresh: () => v
                           const name = s.file_name?.toLowerCase() || ''
                           if (/\.(xlsx|xls|doc|docx|ppt|pptx)$/.test(name)) window.open(`https://view.officeapps.live.com/op/view.aspx?src=${encodeURIComponent(url)}`, '_blank')
                           else if (name.endsWith('.pdf')) openPdfTitled(url, s.file_name || '')
-                          else window.open(url, '_blank')
+                          else downloadUrl(url, s.file_name || '')
                         }} className="text-xs text-green-600 hover:underline truncate max-w-[140px] inline-block">📎 {s.file_name}</button>
                       ) : <span className="text-xs text-gray-300">-</span>}
                     </td>

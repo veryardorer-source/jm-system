@@ -72,7 +72,7 @@ export default function DocumentsPage() {
     if (name.endsWith('.pdf')) openPdfTitled(doc.file_url, doc.file_name)
     else if (/\.(xlsx|xls|xlsb|xlsm|doc|docx|ppt|pptx)$/.test(name)) window.open(`https://view.officeapps.live.com/op/view.aspx?src=${encodeURIComponent(doc.file_url)}`, '_blank')
     else if (/\.(jpg|jpeg|png|gif|webp|heic)$/.test(name)) setLightbox(doc.file_url)
-    else window.open(doc.file_url, '_blank')
+    else downloadFile(doc) // DWG·HWP 등 표시 불가 형식은 제 이름으로 다운로드
   }
 
   async function handleSave(e: React.FormEvent) {
