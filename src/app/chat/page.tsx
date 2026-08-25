@@ -9,6 +9,7 @@ import { useAuth, canEdit } from '@/lib/auth-context'
 import { notifyDM, notifyRoom, notifyMention } from '@/lib/notify'
 import { shareUrl, downloadUrl, viewInBrowser } from '@/lib/media'
 import { toast } from '@/components/Toaster'
+import { playNotifySound } from '@/lib/sound'
 import LinkPreview from '@/components/LinkPreview'
 
 type Message = {
@@ -333,6 +334,8 @@ export default function ChatPage() {
           const key = msgKey(m, me!, roomIds)
           if (key) setUnread(u => ({ ...u, [key]: (u[key] || 0) + 1 }))
         }
+        // 전체 채팅방 메시지는 알림(팝업·소리)이 따로 없어서 여기서 소리만 (DM·방은 알림 팝업이 소리 담당 — 중복 방지)
+        if (m.sender_id !== me && m.room_id == null && m.recipient_id == null) playNotifySound()
       })
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'messages' }, payload => {
         const m = payload.new as Message

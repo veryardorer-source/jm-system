@@ -7,6 +7,7 @@ import Sidebar from '@/components/Sidebar'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/lib/auth-context'
 import { subscribeToPush, unsubscribeFromPush, isPushSubscribed, pushSupported } from '@/lib/push'
+import { soundEnabled, setSoundEnabled, playNotifySound } from '@/lib/sound'
 
 type AppNotification = {
   id: string
@@ -34,6 +35,16 @@ export default function NotificationsPage() {
   }
   // 로더는 마이크로태스크로 미뤄 effect 안 동기 상태 변경을 피한다
   useEffect(() => { Promise.resolve().then(refreshPushState) }, [])
+
+  // 소리 알림 켜기/끄기 (기기별 저장)
+  const [soundOn, setSoundOn] = useState(true)
+  useEffect(() => { Promise.resolve().then(() => setSoundOn(soundEnabled())) }, [])
+  function toggleSound() {
+    const next = !soundOn
+    setSoundOn(next)
+    setSoundEnabled(next)
+    if (next) playNotifySound() // 켤 때 미리듣기
+  }
 
   async function enablePush() {
     setEnabling(true)
@@ -133,6 +144,15 @@ export default function NotificationsPage() {
                 </button>
               </div>
             )}
+            {/* 앱이 켜져 있을 때 새 알림·채팅 소리 */}
+            <div className="mt-2 bg-white border border-gray-200 rounded-xl px-4 py-3 flex items-center gap-3">
+              <span className="text-lg">{soundOn ? '🔊' : '🔇'}</span>
+              <div className="flex-1 text-sm text-gray-700">앱을 보고 있을 때 새 알림·채팅 소리 <span className="text-xs text-gray-400">(이 기기에만 적용)</span></div>
+              <button onClick={toggleSound}
+                className={`text-xs px-3 py-1.5 rounded-lg border flex-shrink-0 ${soundOn ? 'bg-green-600 text-white border-green-600' : 'border-gray-300 text-gray-500 hover:bg-gray-50'}`}>
+                {soundOn ? '켜짐' : '꺼짐'}
+              </button>
+            </div>
           </div>
           {loading ? (
             <div className="text-center text-gray-400 py-16">불러오는 중...</div>

@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { useAuth } from '@/lib/auth-context'
 import { supabase } from '@/lib/supabase'
 import { subscribeToPush, pushSupported } from '@/lib/push'
+import { playNotifySound } from '@/lib/sound'
 
 type Toast = { id: string; title: string; body: string; link?: string }
 type NewNotif = { id?: string; title?: string; body?: string | null; link?: string | null }
@@ -45,6 +46,7 @@ export default function NotifPopup() {
       .on('postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${profile.id}` },
         (payload) => {
+          playNotifySound() // 새 알림 도착 소리 (알림 페이지에서 끌 수 있음)
           const n = payload.new as NewNotif
           const title = n.title || '새 알림'
           const body = n.body || ''
