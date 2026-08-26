@@ -21,11 +21,11 @@ test.describe('역할별 메뉴', () => {
 
   test('partner: 내부 메뉴 대부분 숨김 + 금전 화면 접근 차단', async ({ page }) => {
     await login(page, 'e2e-partner@jmtest.local')
-    for (const label of ['영수증', '출금 요청', '수금 관리', '작업일지', '거래처', '채팅']) {
+    for (const label of ['출금 요청', '수금 관리', '작업일지', '거래처', '채팅']) {
       await expect(page.getByText(label, { exact: true })).toHaveCount(0)
     }
-    // 주소 직접 입력해도 차단 화면
-    for (const path of ['/receipts', '/withdrawals', '/payments', '/worklogs', '/contacts', '/chat']) {
+    // 주소 직접 입력해도 차단 화면 (영수증 메뉴는 2026-08-27 제거됨 — 페이지 자체가 없음)
+    for (const path of ['/withdrawals', '/payments', '/worklogs', '/contacts', '/chat']) {
       await page.goto(path)
       await expect(page.getByText('접근 권한이 없습니다')).toBeVisible()
     }
