@@ -69,9 +69,6 @@ export default function SearchPage() {
 
     // 금전 자료 (금액 볼 수 있는 사람만)
     if (canMoney) {
-      const { data: receipts } = await supabase.from('receipts').select('*').or(`memo.ilike.${like},uploaded_by.ilike.${like}`).limit(15)
-      ;(receipts || []).forEach(r => results.push({ kind: '영수증', icon: '🧾', title: r.memo || '영수증', sub: r.uploaded_by, href: '/receipts' }))
-
       const { data: wd } = await supabase.from('withdrawal_requests').select('*').or(`reason.ilike.${like},requested_by.ilike.${like}`).limit(15)
       ;(wd || []).forEach(w => results.push({ kind: '출금요청', icon: '💸', title: (w.reason || '출금요청').slice(0, 40), sub: w.requested_by, href: '/withdrawals' }))
 
@@ -102,7 +99,7 @@ export default function SearchPage() {
       <div className="flex-1 flex flex-col">
         <header className="bg-white border-b border-gray-200 px-4 md:px-8 py-4 md:py-5 flex-shrink-0">
           <h1 className="text-xl font-bold text-gray-900">통합 검색</h1>
-          <p className="text-sm text-gray-500 mt-0.5">현장·자료·공지·작업일지{canMoney ? '·영수증·출금·수금' : ''}을 한 번에 찾기</p>
+          <p className="text-sm text-gray-500 mt-0.5">현장·자료·공지·작업일지{canMoney ? '·출금·수금' : ''}을 한 번에 찾기</p>
         </header>
 
         <div className="flex-1 overflow-auto px-4 md:px-8 py-4 md:py-6 pb-20 md:pb-24">

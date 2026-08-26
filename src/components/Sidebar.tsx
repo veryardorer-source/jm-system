@@ -12,7 +12,6 @@ const NAV_ITEMS = [
   { href: '/notices', label: '공지사항', icon: '📢' },
   { href: '/projects', label: '현장 관리', icon: '🏗️' },
   { href: '/worklogs', label: '작업일지', icon: '📒' },
-  { href: '/receipts', label: '영수증', icon: '🧾' },
   { href: '/withdrawals', label: '출금 요청', icon: '💸' },
   { href: '/payments', label: '수금 관리', icon: '💰' },
   { href: '/documents', label: '회사 서류', icon: '🗂️' },

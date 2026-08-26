@@ -335,7 +335,6 @@ export default function SharePage() {
                 <div className="flex gap-2">
                   {files.length > 0 && destBtn('project', '현장 자료')}
                   {destBtn('chat', '💬 채팅')}
-                  {destBtn('receipt', '영수증')}
                   {destBtn('withdrawal', '출금요청')}
                 </div>
               </div>
