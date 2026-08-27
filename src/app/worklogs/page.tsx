@@ -41,6 +41,8 @@ export default function WorkLogsPage() {
   const [form, setForm] = useState<typeof EMPTY>(EMPTY)
   // 새 양식: 맡은 업무(예상/실제 마감시간) 목록
   const [tasks, setTasks] = useState<Task[]>([EMPTY_TASK(), EMPTY_TASK(), EMPTY_TASK()])
+  // 양식 선택 — 업무 목록형(디자인팀 기본) / 서술형(현장팀 기본)
+  const [formType, setFormType] = useState<'tasks' | 'text'>('tasks')
   const [editingStatus, setEditingStatus] = useState<string | null>(null) // 수정 중인 일지의 원래 상태
   const [saving, setSaving] = useState(false)
   const [filterMine, setFilterMine] = useState(false)
@@ -64,6 +66,7 @@ export default function WorkLogsPage() {
     setEditingStatus(null)
     setForm({ ...EMPTY, log_date: today() })
     setTasks([EMPTY_TASK(), EMPTY_TASK(), EMPTY_TASK()])
+    setFormType(profile?.role === 'field' ? 'text' : 'tasks') // 현장팀은 서술형이 기본
     setShowForm(true)
   }
   function openEdit(l: WorkLog) {
@@ -72,6 +75,7 @@ export default function WorkLogsPage() {
     setForm({ log_date: l.log_date, today_work: l.today_work || '', tomorrow_work: l.tomorrow_work || '', special_notes: l.special_notes || '', memo: l.memo || '' })
     const ts = (l.tasks || []).map(t => ({ text: t.text || '', eta: t.eta || '', actual: t.actual || '' }))
     setTasks(ts.length ? ts : [EMPTY_TASK(), EMPTY_TASK(), EMPTY_TASK()])
+    setFormType(ts.length ? 'tasks' : (l.today_work || profile?.role === 'field') ? 'text' : 'tasks')
     setShowForm(true)
   }
 
@@ -84,9 +88,12 @@ export default function WorkLogsPage() {
     if (!form.log_date || saving) return
     setSaving(true)
     const status = action === 'draft' ? '작성중' : '제출'
-    const cleanTasks = tasks.filter(t => t.text.trim())
+    // 선택한 양식만 저장 — 목록형이면 tasks, 서술형이면 today_work
+    const cleanTasks = formType === 'tasks' ? tasks.filter(t => t.text.trim()) : []
     const fields = {
-      log_date: form.log_date, today_work: form.today_work, tomorrow_work: form.tomorrow_work, special_notes: form.special_notes, memo: form.memo,
+      log_date: form.log_date,
+      today_work: formType === 'text' ? form.today_work : '',
+      tomorrow_work: form.tomorrow_work, special_notes: form.special_notes, memo: form.memo,
       tasks: cleanTasks.length ? cleanTasks : null,
     }
     // tasks 컬럼 SQL을 아직 안 돌린 상태 대비: 목록을 글로 바꿔 기존 칸에 저장 (데이터 유실 방지)
@@ -254,6 +261,26 @@ export default function WorkLogsPage() {
                 <input type="date" required value={form.log_date} onChange={e => setForm(f => ({ ...f, log_date: e.target.value }))}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
               </div>
+              {/* 양식 선택 — 팀에 맞는 게 기본으로 열리고, 언제든 바꿀 수 있음 */}
+              <div className="flex rounded-lg border border-gray-200 overflow-hidden text-sm">
+                <button type="button" onClick={() => setFormType('tasks')}
+                  className={`flex-1 py-2 font-medium ${formType === 'tasks' ? 'bg-green-600 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}>
+                  📋 업무 목록형 <span className="font-normal text-xs opacity-80">(디자인팀)</span>
+                </button>
+                <button type="button" onClick={() => setFormType('text')}
+                  className={`flex-1 py-2 font-medium border-l border-gray-200 ${formType === 'text' ? 'bg-green-600 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}>
+                  📝 서술형 <span className="font-normal text-xs opacity-80">(현장팀)</span>
+                </button>
+              </div>
+
+              {formType === 'text' ? (
+              <div>
+                <label className="text-sm font-medium text-gray-700 block mb-1.5">오늘 한 업무</label>
+                <textarea value={form.today_work} onChange={e => setForm(f => ({ ...f, today_work: e.target.value }))} rows={5}
+                  placeholder="오늘 진행한 작업을 적어주세요 (현장·공정·내용)"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 resize-y leading-relaxed" />
+              </div>
+              ) : (
               <div>
                 <label className="text-sm font-medium text-gray-700 block mb-1.5">맡은 업무</label>
                 <div className="flex items-center gap-2 text-[11px] text-gray-400 mb-1 pl-1">
@@ -281,6 +308,7 @@ export default function WorkLogsPage() {
                   className="mt-1.5 text-xs text-green-600 hover:text-green-800">＋ 업무 추가</button>
                 <p className="text-[11px] text-gray-400 mt-1">실제 마감시간을 입력하면 완료(✅)로 표시돼요. 임시저장해두고 끝날 때마다 채우세요.</p>
               </div>
+              )}
               <div>
                 <label className="text-sm font-medium text-gray-700 block mb-1.5">내일 업무</label>
                 <textarea value={form.tomorrow_work} onChange={e => setForm(f => ({ ...f, tomorrow_work: e.target.value }))} rows={3}
