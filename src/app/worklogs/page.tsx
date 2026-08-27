@@ -7,18 +7,24 @@ import { supabase } from '@/lib/supabase'
 import { useAuth, canEdit } from '@/lib/auth-context'
 import { notifyOthers } from '@/lib/notify'
 
+// 맡은 업무 한 줄 — 예상 마감시간(eta)과 실제 마감시간(actual)을 함께 기록
+type Task = { text: string; eta: string; actual: string }
+
 type WorkLog = {
   id: string
   log_date: string
-  today_work: string
+  today_work: string      // 옛 양식(글) — 기존 일지 표시용
   tomorrow_work: string
-  special_notes: string
+  special_notes: string   // '잘 안되는 부분'
   memo: string
+  tasks?: Task[] | null   // 새 양식: 맡은 업무 목록
   author: string
   author_id: string | null
   status?: string | null   // '작성중'(임시저장 — 본인만 보임) | '제출'
   created_at: string
 }
+
+const EMPTY_TASK = (): Task => ({ text: '', eta: '', actual: '' })
 
 const isDraft = (l: WorkLog) => l.status === '작성중'
 
@@ -33,6 +39,8 @@ export default function WorkLogsPage() {
   const [showForm, setShowForm] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [form, setForm] = useState<typeof EMPTY>(EMPTY)
+  // 새 양식: 맡은 업무(예상/실제 마감시간) 목록
+  const [tasks, setTasks] = useState<Task[]>([EMPTY_TASK(), EMPTY_TASK(), EMPTY_TASK()])
   const [editingStatus, setEditingStatus] = useState<string | null>(null) // 수정 중인 일지의 원래 상태
   const [saving, setSaving] = useState(false)
   const [filterMine, setFilterMine] = useState(false)
@@ -55,13 +63,20 @@ export default function WorkLogsPage() {
     setEditingId(null)
     setEditingStatus(null)
     setForm({ ...EMPTY, log_date: today() })
+    setTasks([EMPTY_TASK(), EMPTY_TASK(), EMPTY_TASK()])
     setShowForm(true)
   }
   function openEdit(l: WorkLog) {
     setEditingId(l.id)
     setEditingStatus(l.status || '제출')
     setForm({ log_date: l.log_date, today_work: l.today_work || '', tomorrow_work: l.tomorrow_work || '', special_notes: l.special_notes || '', memo: l.memo || '' })
+    const ts = (l.tasks || []).map(t => ({ text: t.text || '', eta: t.eta || '', actual: t.actual || '' }))
+    setTasks(ts.length ? ts : [EMPTY_TASK(), EMPTY_TASK(), EMPTY_TASK()])
     setShowForm(true)
+  }
+
+  function setTask(i: number, patch: Partial<Task>) {
+    setTasks(ts => ts.map((t, idx) => idx === i ? { ...t, ...patch } : t))
   }
 
   // action: 'draft' = 임시저장(알림 없음, 나만 보임) / 'submit' = 제출(모두 공개+알림)
@@ -69,20 +84,27 @@ export default function WorkLogsPage() {
     if (!form.log_date || saving) return
     setSaving(true)
     const status = action === 'draft' ? '작성중' : '제출'
+    const cleanTasks = tasks.filter(t => t.text.trim())
     const fields = {
       log_date: form.log_date, today_work: form.today_work, tomorrow_work: form.tomorrow_work, special_notes: form.special_notes, memo: form.memo,
+      tasks: cleanTasks.length ? cleanTasks : null,
+    }
+    // tasks 컬럼 SQL을 아직 안 돌린 상태 대비: 목록을 글로 바꿔 기존 칸에 저장 (데이터 유실 방지)
+    const legacyFields = {
+      ...fields, tasks: undefined,
+      today_work: form.today_work || cleanTasks.map(t => `· ${t.text} (예상 ${t.eta || '-'} / 실제 ${t.actual || '-'})`).join('\n'),
     }
     let error = null as { message: string } | null
     if (editingId) {
       ;({ error } = await supabase.from('work_logs').update({ ...fields, status }).eq('id', editingId))
-      if (error && /column|status/i.test(error.message)) {
-        ;({ error } = await supabase.from('work_logs').update(fields).eq('id', editingId))
+      if (error && /column|status|tasks/i.test(error.message)) {
+        ;({ error } = await supabase.from('work_logs').update(legacyFields).eq('id', editingId))
       }
     } else {
-      const row = { ...fields, author: profile?.name || '', author_id: profile?.id || null }
-      ;({ error } = await supabase.from('work_logs').insert([{ ...row, status }]))
-      if (error && /column|status/i.test(error.message)) {
-        ;({ error } = await supabase.from('work_logs').insert([row]))
+      const row = { author: profile?.name || '', author_id: profile?.id || null }
+      ;({ error } = await supabase.from('work_logs').insert([{ ...fields, ...row, status }]))
+      if (error && /column|status|tasks/i.test(error.message)) {
+        ;({ error } = await supabase.from('work_logs').insert([{ ...legacyFields, ...row }]))
       }
     }
     setSaving(false)
@@ -180,9 +202,31 @@ export default function WorkLogsPage() {
                     )}
                   </div>
                   <div className="px-5 py-4 flex flex-col gap-3">
-                    <Field label="오늘 한 업무" value={l.today_work} accent="text-green-600" />
-                    <Field label="내일 해야할 업무" value={l.tomorrow_work} accent="text-blue-600" />
-                    {l.special_notes && <Field label="특이사항" value={l.special_notes} accent="text-orange-600" />}
+                    {(l.tasks && l.tasks.length > 0) ? (
+                      <div>
+                        <p className="text-xs font-semibold mb-1.5 text-green-600">맡은 업무</p>
+                        <div className="flex flex-col gap-1">
+                          {l.tasks.map((t, i) => {
+                            const done = !!t.actual
+                            const late = !!(t.eta && t.actual && t.actual > t.eta)
+                            return (
+                              <div key={i} className="flex items-center gap-2 text-sm">
+                                <span className="flex-shrink-0">{done ? '✅' : '⬜'}</span>
+                                <span className={`flex-1 min-w-0 ${done ? 'text-gray-500' : 'text-gray-800'}`}>{t.text}</span>
+                                <span className="text-xs text-gray-400 flex-shrink-0">
+                                  {t.eta && `예상 ${t.eta}`}
+                                  {t.actual && <> → <span className={late ? 'text-red-500 font-medium' : 'text-green-600 font-medium'}>실제 {t.actual}</span></>}
+                                </span>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    ) : (
+                      <Field label="오늘 한 업무" value={l.today_work} accent="text-green-600" />
+                    )}
+                    <Field label="내일 업무" value={l.tomorrow_work} accent="text-blue-600" />
+                    {l.special_notes && <Field label="잘 안되는 부분" value={l.special_notes} accent="text-orange-600" />}
                     {l.memo && <Field label="메모" value={l.memo} accent="text-gray-500" />}
                   </div>
                 </div>
@@ -211,21 +255,42 @@ export default function WorkLogsPage() {
                   className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
               </div>
               <div>
-                <label className="text-sm font-medium text-gray-700 block mb-1.5">오늘 한 업무</label>
-                <textarea value={form.today_work} onChange={e => setForm(f => ({ ...f, today_work: e.target.value }))} rows={4}
-                  placeholder="오늘 진행한 업무를 적어주세요"
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 resize-y leading-relaxed" />
+                <label className="text-sm font-medium text-gray-700 block mb-1.5">맡은 업무</label>
+                <div className="flex items-center gap-2 text-[11px] text-gray-400 mb-1 pl-1">
+                  <span className="flex-1">업무 내용</span>
+                  <span className="w-[88px] text-center">예상 마감</span>
+                  <span className="w-[88px] text-center">실제 마감</span>
+                  <span className="w-5" />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  {tasks.map((t, i) => (
+                    <div key={i} className="flex items-center gap-2">
+                      <input value={t.text} onChange={e => setTask(i, { text: e.target.value })}
+                        placeholder={`업무 ${i + 1}`}
+                        className="flex-1 min-w-0 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
+                      <input type="time" value={t.eta} onChange={e => setTask(i, { eta: e.target.value })}
+                        className="w-[88px] border border-gray-300 rounded-lg px-1.5 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-green-500" />
+                      <input type="time" value={t.actual} onChange={e => setTask(i, { actual: e.target.value })}
+                        className="w-[88px] border border-gray-300 rounded-lg px-1.5 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-green-500" />
+                      <button type="button" onClick={() => setTasks(ts => ts.length > 1 ? ts.filter((_, idx) => idx !== i) : ts)}
+                        className="w-5 text-gray-300 hover:text-red-500 flex-shrink-0">×</button>
+                    </div>
+                  ))}
+                </div>
+                <button type="button" onClick={() => setTasks(ts => [...ts, EMPTY_TASK()])}
+                  className="mt-1.5 text-xs text-green-600 hover:text-green-800">＋ 업무 추가</button>
+                <p className="text-[11px] text-gray-400 mt-1">실제 마감시간을 입력하면 완료(✅)로 표시돼요. 임시저장해두고 끝날 때마다 채우세요.</p>
               </div>
               <div>
-                <label className="text-sm font-medium text-gray-700 block mb-1.5">내일 해야할 업무</label>
-                <textarea value={form.tomorrow_work} onChange={e => setForm(f => ({ ...f, tomorrow_work: e.target.value }))} rows={4}
+                <label className="text-sm font-medium text-gray-700 block mb-1.5">내일 업무</label>
+                <textarea value={form.tomorrow_work} onChange={e => setForm(f => ({ ...f, tomorrow_work: e.target.value }))} rows={3}
                   placeholder="내일 할 업무를 적어주세요"
                   className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 resize-y leading-relaxed" />
               </div>
               <div>
-                <label className="text-sm font-medium text-gray-700 block mb-1.5">특이사항</label>
+                <label className="text-sm font-medium text-gray-700 block mb-1.5">잘 안되는 부분</label>
                 <textarea value={form.special_notes} onChange={e => setForm(f => ({ ...f, special_notes: e.target.value }))} rows={3}
-                  placeholder="현장 특이사항, 문제/이슈, 전달사항 등"
+                  placeholder="막히는 일, 도움이 필요한 부분"
                   className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 resize-y leading-relaxed" />
               </div>
               <div>
