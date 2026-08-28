@@ -14,6 +14,7 @@ function InviteInner() {
   const [pw2, setPw2] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [doneAlready, setDoneAlready] = useState(false) // 이미 가입 완료된 초대 링크를 다시 연 경우
 
   async function submit(e: React.FormEvent) {
     e.preventDefault()
@@ -27,7 +28,11 @@ function InviteInner() {
       body: JSON.stringify({ token, password: pw }),
     })
     const data = await res.json()
-    if (!res.ok) { setError(data.error || '오류가 발생했습니다'); setSaving(false); return }
+    if (!res.ok) {
+      // 이미 가입이 끝난 초대(링크를 다시 연 경우) → 오류 대신 로그인으로 안내
+      if (/이미 사용|이미 가입/.test(data.error || '')) { setDoneAlready(true); setSaving(false); return }
+      setError(data.error || '오류가 발생했습니다'); setSaving(false); return
+    }
     // 만든 계정으로 바로 로그인
     const supabase = createClient()
     const { error: loginErr } = await supabase.auth.signInWithPassword({ email: data.email, password: pw })
@@ -35,6 +40,26 @@ function InviteInner() {
     if (loginErr) { router.push('/login'); return } // 계정은 만들어졌으니 로그인 화면에서 다시
     alert(`환영합니다, ${data.name}님! 비밀번호 설정이 완료됐어요.`)
     router.push('/')
+  }
+
+  if (doneAlready) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+        <div className="w-full max-w-sm text-center">
+          <div className="w-14 h-14 bg-green-500 rounded-2xl flex items-center justify-center text-white text-2xl mx-auto mb-4">✓</div>
+          <h1 className="text-xl font-bold text-gray-900 mb-2">이미 가입이 끝났어요</h1>
+          <p className="text-sm text-gray-500 mb-2">이 초대 링크는 가입할 때 한 번만 쓰는 거예요.</p>
+          <p className="text-sm text-gray-500 mb-6">
+            앞으로는 <b>jm-interior.vercel.app</b> 주소로 접속해서<br />
+            가입할 때 정한 <b>이메일·비밀번호로 로그인</b>하면 됩니다.<br />
+            <span className="text-xs text-gray-400">(홈 화면 바로가기도 로그인 화면에서 다시 만들어 주세요)</span>
+          </p>
+          <Link href="/login" className="inline-block bg-green-600 text-white px-6 py-2.5 rounded-lg text-sm font-medium hover:bg-green-700">
+            로그인 하러 가기
+          </Link>
+        </div>
+      </div>
+    )
   }
 
   if (!token) {

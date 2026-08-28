@@ -33,8 +33,9 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(new URL('/login', request.url))
   }
 
-  // 로그인된 사용자는 로그인/가입 화면 대신 홈으로 (set-password는 로그인 상태로 쓰는 화면이라 제외)
-  if (user && ['/login', '/signup'].includes(request.nextUrl.pathname)) {
+  // 로그인된 사용자는 로그인/가입/초대 화면 대신 홈으로
+  // (초대 링크를 즐겨찾기처럼 다시 여는 직원이 '이미 사용된 초대' 오류를 보지 않게)
+  if (user && (['/login', '/signup'].includes(request.nextUrl.pathname) || request.nextUrl.pathname.startsWith('/invite'))) {
     return NextResponse.redirect(new URL('/', request.url))
   }
 
