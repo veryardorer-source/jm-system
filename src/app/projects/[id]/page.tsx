@@ -130,6 +130,7 @@ export default function ProjectDetail() {
   const [uploadCurrent, setUploadCurrent] = useState(0)
   const [lightbox, setLightbox] = useState<string | null>(null)
   const touchStartX = useRef(0)
+  const pinchingRef = useRef(false) // 두 손가락 확대 중에는 스와이프(다음 장 넘기기) 금지
 
   const [collapsedCats, setCollapsedCats] = useState<Record<string, boolean>>({})
   const [collapsedZones, setCollapsedZones] = useState<Record<string, boolean>>({})
@@ -1806,8 +1807,21 @@ export default function ProjectDetail() {
         return (
           <div className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-4"
             onClick={() => setLightbox(null)}
-            onTouchStart={e => { touchStartX.current = e.touches[0].clientX }}
-            onTouchEnd={e => { const dx = e.changedTouches[0].clientX - touchStartX.current; if (Math.abs(dx) > 50) go(dx < 0 ? 1 : -1) }}>
+            onTouchStart={e => {
+              // 손가락이 2개 이상이면 확대 동작 — 스와이프로 취급하지 않음
+              if (e.touches.length > 1) { pinchingRef.current = true; return }
+              pinchingRef.current = false
+              touchStartX.current = e.touches[0].clientX
+            }}
+            onTouchMove={e => { if (e.touches.length > 1) pinchingRef.current = true }}
+            onTouchEnd={e => {
+              // 확대 중이었거나 아직 손가락이 남아 있으면(핀치 해제 중) 넘기지 않음
+              if (pinchingRef.current || e.touches.length > 0) return
+              // 이미 확대된 상태에서는 한 손가락 이동 = 화면 이동이지 넘기기가 아님
+              if (typeof window !== 'undefined' && window.visualViewport && window.visualViewport.scale > 1.05) return
+              const dx = e.changedTouches[0].clientX - touchStartX.current
+              if (Math.abs(dx) > 50) go(dx < 0 ? 1 : -1)
+            }}>
             {isVideoUrl(lightbox) ? (
               <video src={lightbox} controls autoPlay playsInline
                 onClick={e => e.stopPropagation()}
