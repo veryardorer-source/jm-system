@@ -16,6 +16,9 @@ import SnsTab from '@/components/SnsTab'
 
 const TAB_LIST = ['현황', '자료', '공정', '비용', 'SNS']
 const PHOTO_CATS = ['공사전사진', '시공전사진', '시공사진', '마감사진'] // 시공전사진=옛 이름 호환
+// 글이 길어지는 분류 — 수정창을 넓고 크게 연다 (미팅 기록·요청사항 등)
+const LONG_TEXT_CATS = ['미팅내용', '고객요청']
+const isLongTextCat = (c: string) => LONG_TEXT_CATS.includes(c)
 const isVideoUrl = (url: string) => /\.(mp4|mov|webm|m4v|ogg|avi|mkv)$/i.test((url || '').split('?')[0])
 const isVideoFile = (f: ProjectFile) => (f.file_type || '').startsWith('video') || isVideoUrl(f.file_url)
 // 사진 분류에 섞인 PDF·문서를 구분 (이미지가 아니면 문서 카드로 표시)
@@ -1522,7 +1525,8 @@ export default function ProjectDetail() {
       {/* 자료 추가 모달 */}
       {showFileForm && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl w-full max-w-md shadow-xl max-h-[90vh] overflow-y-auto">
+          {/* 미팅내용처럼 글이 긴 분류는 넓은 창으로 */}
+          <div className={`bg-white rounded-2xl w-full shadow-xl max-h-[92vh] overflow-y-auto ${isLongTextCat(fileForm.category) ? 'max-w-2xl' : 'max-w-md'}`}>
             <div className="flex items-center justify-between px-6 py-5 border-b border-gray-100 sticky top-0 bg-white">
               <h2 className="text-lg font-bold">자료 업로드</h2>
               <button onClick={() => { setShowFileForm(false); setSelectedFiles([]) }} className="text-gray-400 text-2xl">&times;</button>
@@ -1593,10 +1597,10 @@ export default function ProjectDetail() {
                   {PHOTO_CATS.includes(fileForm.category) ? '구역/공간' : fileForm.category === '미팅내용' ? '미팅 내용' : '메모'}
                   {PHOTO_CATS.includes(fileForm.category) && <span className="text-gray-400 font-normal ml-1">(같은 이름끼리 묶여요)</span>}
                 </label>
-                {fileForm.category === '미팅내용' ? (
-                  <textarea value={fileForm.memo} onChange={e => setFileForm({...fileForm, memo: e.target.value})} rows={5}
+                {isLongTextCat(fileForm.category) ? (
+                  <textarea value={fileForm.memo} onChange={e => setFileForm({...fileForm, memo: e.target.value})}
                     placeholder="미팅에서 나온 내용을 입력하세요 (파일 없이 글만 저장해도 돼요)"
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 resize-y leading-relaxed" />
+                    className="w-full h-[45vh] border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 resize-y leading-relaxed" />
                 ) : (
                   <input value={fileForm.memo} onChange={e => setFileForm({...fileForm, memo: e.target.value})}
                     placeholder={PHOTO_CATS.includes(fileForm.category) ? '예) 거실, 주방, 화장실, 1층' : fileForm.category === '구매링크' ? '예) 3개 주문 · 색상 화이트' : '예) 평면도 v2'}
@@ -1864,7 +1868,8 @@ export default function ProjectDetail() {
       {/* 자료 수정 모달 (모든 분류 공통) */}
       {editFile && (
         <div className="fixed inset-0 bg-black/40 z-[70] flex items-center justify-center p-4" onClick={() => setEditFile(null)}>
-          <div className="bg-white rounded-2xl w-full max-w-sm shadow-xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+          {/* 미팅내용처럼 글이 긴 자료는 넓은 창으로 (내용을 보면서 고칠 수 있게) */}
+          <div className={`bg-white rounded-2xl w-full shadow-xl max-h-[92vh] overflow-y-auto ${isLongTextCat(editFileForm.category) ? 'max-w-2xl' : 'max-w-sm'}`} onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between px-6 py-5 border-b border-gray-100 sticky top-0 bg-white">
               <h2 className="text-lg font-bold">자료 수정</h2>
               <button onClick={() => setEditFile(null)} className="text-gray-400 text-2xl">&times;</button>
@@ -1907,11 +1912,14 @@ export default function ProjectDetail() {
               </div>
               <div>
                 <label className="text-sm font-medium text-gray-700 block mb-1.5">
-                  {PHOTO_CATS.includes(editFileForm.category) ? '구역/공간 (같은 이름끼리 묶여요)' : '메모'}
+                  {PHOTO_CATS.includes(editFileForm.category) ? '구역/공간 (같은 이름끼리 묶여요)'
+                    : isLongTextCat(editFileForm.category) ? '내용' : '메모'}
                 </label>
-                <textarea value={editFileForm.memo} onChange={e => setEditFileForm({ ...editFileForm, memo: e.target.value })} rows={3}
+                <textarea value={editFileForm.memo} onChange={e => setEditFileForm({ ...editFileForm, memo: e.target.value })}
                   placeholder={PHOTO_CATS.includes(editFileForm.category) ? '예) 거실, 주방, 1층' : '예) 3개 주문 · 색상 화이트'}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 resize-y" />
+                  className={`w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm leading-relaxed focus:outline-none focus:ring-2 focus:ring-green-500 resize-y ${
+                    isLongTextCat(editFileForm.category) ? 'h-[55vh]' : 'h-24'
+                  }`} />
               </div>
               <button type="submit" disabled={savingFileEdit || !editFileForm.title.trim()}
                 className="bg-green-600 text-white py-2.5 rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-50">
