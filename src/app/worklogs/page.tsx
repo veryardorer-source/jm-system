@@ -6,6 +6,9 @@ import Sidebar from '@/components/Sidebar'
 import { supabase } from '@/lib/supabase'
 import { useAuth, canEdit } from '@/lib/auth-context'
 import { notifyOthers } from '@/lib/notify'
+import Image from 'next/image'
+import { compressImage } from '@/lib/image'
+import { shareUrl, downloadUrl, printUrl } from '@/lib/media'
 
 // 맡은 업무 한 줄 — 예상 마감시간(eta)과 실제 마감시간(actual)을 함께 기록
 type Task = { text: string; eta: string; actual: string }
@@ -18,6 +21,7 @@ type WorkLog = {
   special_notes: string   // '잘 안되는 부분'
   memo: string
   tasks?: Task[] | null   // 새 양식: 맡은 업무 목록
+  images?: string[] | null // 첨부 사진 (현장 사진·참고 이미지)
   author: string
   author_id: string | null
   status?: string | null   // '작성중'(임시저장 — 본인만 보임) | '제출'
@@ -43,6 +47,10 @@ export default function WorkLogsPage() {
   const [tasks, setTasks] = useState<Task[]>([EMPTY_TASK(), EMPTY_TASK(), EMPTY_TASK()])
   // 양식 선택 — 업무 목록형(디자인팀 기본) / 서술형(현장팀 기본)
   const [formType, setFormType] = useState<'tasks' | 'text'>('tasks')
+  // 첨부 사진 — 이미 저장된 것(existingImgs) + 이번에 고른 것(imgFiles)
+  const [imgFiles, setImgFiles] = useState<File[]>([])
+  const [existingImgs, setExistingImgs] = useState<string[]>([])
+  const [imgView, setImgView] = useState<string | null>(null) // 크게 보기
   const [editingStatus, setEditingStatus] = useState<string | null>(null) // 수정 중인 일지의 원래 상태
   const [saving, setSaving] = useState(false)
   const [filterMine, setFilterMine] = useState(false)
@@ -67,6 +75,7 @@ export default function WorkLogsPage() {
     setForm({ ...EMPTY, log_date: today() })
     setTasks([EMPTY_TASK(), EMPTY_TASK(), EMPTY_TASK()])
     setFormType(profile?.role === 'field' ? 'text' : 'tasks') // 현장팀은 서술형이 기본
+    setImgFiles([]); setExistingImgs([])
     setShowForm(true)
   }
   function openEdit(l: WorkLog) {
@@ -76,6 +85,7 @@ export default function WorkLogsPage() {
     const ts = (l.tasks || []).map(t => ({ text: t.text || '', eta: t.eta || '', actual: t.actual || '' }))
     setTasks(ts.length ? ts : [EMPTY_TASK(), EMPTY_TASK(), EMPTY_TASK()])
     setFormType(ts.length ? 'tasks' : (l.today_work || profile?.role === 'field') ? 'text' : 'tasks')
+    setImgFiles([]); setExistingImgs(l.images || [])
     setShowForm(true)
   }
 
@@ -88,6 +98,17 @@ export default function WorkLogsPage() {
     if (!form.log_date || saving) return
     setSaving(true)
     const status = action === 'draft' ? '작성중' : '제출'
+    // 첨부 사진 업로드 (크기 줄여서 빠르게)
+    const uploaded: string[] = []
+    for (let i = 0; i < imgFiles.length; i++) {
+      const f = await compressImage(imgFiles[i])
+      const ext = f.name.split('.').pop() || 'jpg'
+      const path = `worklogs/${Date.now()}_${i}.${ext}`
+      const { error: upErr } = await supabase.storage.from('uploads').upload(path, f, { contentType: f.type || 'image/jpeg', upsert: true })
+      if (upErr) { toast('사진 업로드 실패: ' + upErr.message, 'error'); setSaving(false); return }
+      uploaded.push(supabase.storage.from('uploads').getPublicUrl(path).data.publicUrl)
+    }
+    const images = [...existingImgs, ...uploaded]
     // 선택한 양식만 저장 — 목록형이면 tasks, 서술형이면 today_work
     const cleanTasks = formType === 'tasks' ? tasks.filter(t => t.text.trim()) : []
     const fields = {
@@ -95,22 +116,23 @@ export default function WorkLogsPage() {
       today_work: formType === 'text' ? form.today_work : '',
       tomorrow_work: form.tomorrow_work, special_notes: form.special_notes, memo: form.memo,
       tasks: cleanTasks.length ? cleanTasks : null,
+      images: images.length ? images : null,
     }
     // tasks 컬럼 SQL을 아직 안 돌린 상태 대비: 목록을 글로 바꿔 기존 칸에 저장 (데이터 유실 방지)
     const legacyFields = {
-      ...fields, tasks: undefined,
+      ...fields, tasks: undefined, images: undefined,
       today_work: form.today_work || cleanTasks.map(t => `· ${t.text} (예상 ${t.eta || '-'} / 실제 ${t.actual || '-'})`).join('\n'),
     }
     let error = null as { message: string } | null
     if (editingId) {
       ;({ error } = await supabase.from('work_logs').update({ ...fields, status }).eq('id', editingId))
-      if (error && /column|status|tasks/i.test(error.message)) {
+      if (error && /column|status|tasks|images/i.test(error.message)) {
         ;({ error } = await supabase.from('work_logs').update(legacyFields).eq('id', editingId))
       }
     } else {
       const row = { author: profile?.name || '', author_id: profile?.id || null }
       ;({ error } = await supabase.from('work_logs').insert([{ ...fields, ...row, status }]))
-      if (error && /column|status|tasks/i.test(error.message)) {
+      if (error && /column|status|tasks|images/i.test(error.message)) {
         ;({ error } = await supabase.from('work_logs').insert([{ ...legacyFields, ...row }]))
       }
     }
@@ -123,6 +145,7 @@ export default function WorkLogsPage() {
     setShowForm(false)
     setEditingId(null)
     setEditingStatus(null)
+    setImgFiles([]); setExistingImgs([])
     fetchLogs()
   }
 
@@ -235,6 +258,19 @@ export default function WorkLogsPage() {
                     <Field label="내일 업무" value={l.tomorrow_work} accent="text-blue-600" />
                     {l.special_notes && <Field label="잘 안되는 부분" value={l.special_notes} accent="text-orange-600" />}
                     {l.memo && <Field label="메모" value={l.memo} accent="text-gray-500" />}
+                    {l.images && l.images.length > 0 && (
+                      <div>
+                        <p className="text-xs font-semibold mb-1.5 text-gray-500">사진 {l.images.length}장</p>
+                        <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+                          {l.images.map((u, i) => (
+                            <button key={i} type="button" onClick={() => setImgView(u)} className="relative aspect-square">
+                              <Image src={u} alt="" width={200} height={200} unoptimized loading="lazy"
+                                className="w-full h-full object-cover rounded-lg border border-gray-200 hover:brightness-95" />
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               ))
@@ -327,6 +363,36 @@ export default function WorkLogsPage() {
                   placeholder="기타 메모"
                   className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 resize-y leading-relaxed" />
               </div>
+              {/* 사진 첨부 — 현장 사진·참고 이미지 */}
+              <div>
+                <label className="text-sm font-medium text-gray-700 block mb-1.5">
+                  사진 <span className="text-gray-400 font-normal">(선택 · 여러 장 가능)</span>
+                </label>
+                {(existingImgs.length > 0 || imgFiles.length > 0) && (
+                  <div className="grid grid-cols-4 gap-2 mb-2">
+                    {existingImgs.map((u, i) => (
+                      <div key={'e' + i} className="relative aspect-square">
+                        <Image src={u} alt="" width={160} height={160} unoptimized className="w-full h-full object-cover rounded-lg border border-gray-200" />
+                        <button type="button" onClick={() => setExistingImgs(prev => prev.filter((_, idx) => idx !== i))}
+                          className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-gray-700 text-white text-xs">×</button>
+                      </div>
+                    ))}
+                    {imgFiles.map((f, i) => (
+                      <div key={'n' + i} className="relative aspect-square">
+                        <Image src={URL.createObjectURL(f)} alt="" width={160} height={160} unoptimized className="w-full h-full object-cover rounded-lg border border-green-300" />
+                        <button type="button" onClick={() => setImgFiles(prev => prev.filter((_, idx) => idx !== i))}
+                          className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-gray-700 text-white text-xs">×</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <label className="block border-2 border-dashed border-gray-300 rounded-lg px-3 py-4 text-center text-sm text-gray-500 cursor-pointer hover:border-green-400 hover:bg-green-50/40">
+                  <input type="file" accept="image/*" multiple className="hidden"
+                    onChange={e => { const fs = Array.from(e.target.files || []); if (fs.length) setImgFiles(prev => [...prev, ...fs]); e.currentTarget.value = '' }} />
+                  📷 사진 선택 <span className="text-xs text-gray-400">(캡처·현장 사진)</span>
+                </label>
+              </div>
+
               <div className="flex gap-2 pt-1">
                 <button type="button" onClick={() => setShowForm(false)} className="border border-gray-300 text-gray-700 px-4 py-2.5 rounded-lg text-sm">취소</button>
                 {editingStatus === '제출' ? (
@@ -348,6 +414,20 @@ export default function WorkLogsPage() {
               </div>
             </form>
           </div>
+        </div>
+      )}
+
+      {/* 사진 크게 보기 */}
+      {imgView && (
+        <div className="fixed inset-0 bg-black/90 z-[60] flex items-center justify-center p-4" onClick={() => setImgView(null)}>
+          <Image src={imgView} alt="" width={1600} height={1200} unoptimized onClick={e => e.stopPropagation()}
+            className="w-auto h-auto max-w-full max-h-[85vh] object-contain rounded-lg" />
+          <div className="absolute bottom-5 left-1/2 -translate-x-1/2 flex items-center gap-2" onClick={e => e.stopPropagation()}>
+            <button onClick={() => printUrl(imgView)} className="bg-white/20 hover:bg-white/30 text-white text-xs px-3 py-1.5 rounded-full">🖨 인쇄</button>
+            <button onClick={() => shareUrl(imgView, '작업일지_사진.jpg')} className="bg-white/20 hover:bg-white/30 text-white text-xs px-3 py-1.5 rounded-full">내보내기</button>
+            <button onClick={() => downloadUrl(imgView, '작업일지_사진.jpg')} className="bg-white/20 hover:bg-white/30 text-white text-xs px-3 py-1.5 rounded-full">저장</button>
+          </div>
+          <button onClick={() => setImgView(null)} className="absolute top-4 right-4 text-white text-3xl leading-none">&times;</button>
         </div>
       )}
     </div>
