@@ -46,7 +46,7 @@ export default function WorkLogsPage() {
   // 새 양식: 맡은 업무(예상/실제 마감시간) 목록
   const [tasks, setTasks] = useState<Task[]>([EMPTY_TASK(), EMPTY_TASK(), EMPTY_TASK()])
   // 양식 선택 — 업무 목록형(디자인팀 기본) / 서술형(현장팀 기본)
-  const [formType, setFormType] = useState<'tasks' | 'text'>('tasks')
+  const [formType, setFormType] = useState<'tasks' | 'text' | 'photo'>('tasks')
   // 첨부 사진 — 이미 저장된 것(existingImgs) + 이번에 고른 것(imgFiles)
   const [imgFiles, setImgFiles] = useState<File[]>([])
   const [existingImgs, setExistingImgs] = useState<string[]>([])
@@ -84,7 +84,8 @@ export default function WorkLogsPage() {
     setForm({ log_date: l.log_date, today_work: l.today_work || '', tomorrow_work: l.tomorrow_work || '', special_notes: l.special_notes || '', memo: l.memo || '' })
     const ts = (l.tasks || []).map(t => ({ text: t.text || '', eta: t.eta || '', actual: t.actual || '' }))
     setTasks(ts.length ? ts : [EMPTY_TASK(), EMPTY_TASK(), EMPTY_TASK()])
-    setFormType(ts.length ? 'tasks' : (l.today_work || profile?.role === 'field') ? 'text' : 'tasks')
+    const onlyPhoto = !ts.length && !l.today_work && (l.images || []).length > 0
+    setFormType(onlyPhoto ? 'photo' : ts.length ? 'tasks' : (l.today_work || profile?.role === 'field') ? 'text' : 'tasks')
     setImgFiles([]); setExistingImgs(l.images || [])
     setShowForm(true)
   }
@@ -110,7 +111,7 @@ export default function WorkLogsPage() {
     }
     const images = [...existingImgs, ...uploaded]
     // 선택한 양식만 저장 — 목록형이면 tasks, 서술형이면 today_work
-    const cleanTasks = formType === 'tasks' ? tasks.filter(t => t.text.trim()) : []
+    const cleanTasks = formType === 'tasks' ? tasks.filter(t => t.text.trim()) : [] // 사진 일지는 업무 칸 없음
     const fields = {
       log_date: form.log_date,
       today_work: formType === 'text' ? form.today_work : '',
@@ -307,9 +308,17 @@ export default function WorkLogsPage() {
                   className={`flex-1 py-2 font-medium border-l border-gray-200 ${formType === 'text' ? 'bg-green-600 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}>
                   📝 서술형 <span className="font-normal text-xs opacity-80">(현장팀)</span>
                 </button>
+                <button type="button" onClick={() => setFormType('photo')}
+                  className={`flex-1 py-2 font-medium border-l border-gray-200 ${formType === 'photo' ? 'bg-green-600 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}>
+                  📷 사진 일지 <span className="font-normal text-xs opacity-80">(손글씨)</span>
+                </button>
               </div>
 
-              {formType === 'text' ? (
+              {formType === 'photo' ? (
+                <p className="text-xs text-green-700 bg-green-50 border border-green-200 rounded-lg px-3 py-2.5">
+                  📷 종이 양식에 손으로 쓴 일지를 <b>사진으로 찍어 아래에 올려주세요.</b> 글은 안 써도 돼요.
+                </p>
+              ) : formType === 'text' ? (
               <div>
                 <label className="text-sm font-medium text-gray-700 block mb-1.5">오늘 한 업무</label>
                 <textarea value={form.today_work} onChange={e => setForm(f => ({ ...f, today_work: e.target.value }))} rows={5}
@@ -345,6 +354,7 @@ export default function WorkLogsPage() {
                 <p className="text-[11px] text-gray-400 mt-1">실제 마감시간을 입력하면 완료(✅)로 표시돼요. 임시저장해두고 끝날 때마다 채우세요.</p>
               </div>
               )}
+              {formType !== 'photo' && (<>
               <div>
                 <label className="text-sm font-medium text-gray-700 block mb-1.5">내일 업무</label>
                 <textarea value={form.tomorrow_work} onChange={e => setForm(f => ({ ...f, tomorrow_work: e.target.value }))} rows={3}
@@ -363,6 +373,8 @@ export default function WorkLogsPage() {
                   placeholder="기타 메모"
                   className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 resize-y leading-relaxed" />
               </div>
+              </>)}
+
               {/* 사진 첨부 — 현장 사진·참고 이미지 */}
               <div>
                 <label className="text-sm font-medium text-gray-700 block mb-1.5">
