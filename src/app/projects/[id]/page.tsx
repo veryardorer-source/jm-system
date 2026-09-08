@@ -7,7 +7,7 @@ import Sidebar from '@/components/Sidebar'
 import { supabase, Project, ProjectFile, Schedule, ProjectCost, ProjectAssignment, STATUS_LIST, STATUS_COLOR } from '@/lib/supabase'
 import { useAuth, canEdit } from '@/lib/auth-context'
 import { notifyOthers, notifyDM, notifyRoom } from '@/lib/notify'
-import { compressImage, makeThumbnail, hashFile, formatBytes, isCompressibleImage, dateStampedName } from '@/lib/image'
+import { compressImage, makeThumbnail, hashFile, formatBytes, isCompressibleImage, dateStampedName, toShareableBlob } from '@/lib/image'
 import { openPdfTitled, printUrl } from '@/lib/media'
 import { normalizePdfTitle } from '@/lib/pdf'
 import Image from 'next/image'
@@ -393,11 +393,12 @@ export default function ProjectDetail() {
     try {
       const res = await fetch(file.file_url, { mode: 'cors', credentials: 'omit' })
       if (!res.ok) throw new Error('fetch failed')
-      const blob = await res.blob()
-      const url = URL.createObjectURL(blob)
+      // 카톡·윈도우 뷰어 호환을 위해 WebP는 JPEG로 바꿔 저장
+      const conv = await toShareableBlob(await res.blob(), nasName(file))
+      const url = URL.createObjectURL(conv.blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = nasName(file)
+      a.download = conv.name
       document.body.appendChild(a)
       a.click()
       document.body.removeChild(a)
@@ -416,8 +417,8 @@ export default function ProjectDetail() {
     if (isMobile() && navigator.share) {
       try {
         const res = await fetch(file.file_url, { mode: 'cors', credentials: 'omit' })
-        const blob = await res.blob()
-        const fileObj = new File([blob], nasName(file), { type: blob.type })
+        const conv = await toShareableBlob(await res.blob(), nasName(file))
+        const fileObj = new File([conv.blob], conv.name, { type: conv.blob.type })
         if (canShareFiles([fileObj])) {
           await navigator.share({ files: [fileObj], title: file.file_name })
           return
@@ -435,8 +436,8 @@ export default function ProjectDetail() {
       try {
         const fileObjects = await Promise.all(fileList.map(async f => {
           const res = await fetch(f.file_url, { mode: 'cors', credentials: 'omit' })
-          const blob = await res.blob()
-          return new File([blob], nasName(f), { type: blob.type })
+          const conv = await toShareableBlob(await res.blob(), nasName(f))
+          return new File([conv.blob], conv.name, { type: conv.blob.type })
         }))
         // 1) 한 번에 전부 공유
         if (canShareFiles(fileObjects)) {
@@ -475,8 +476,9 @@ export default function ProjectDetail() {
         try {
           const res = await fetch(f.file_url, { mode: 'cors', credentials: 'omit' })
           if (!res.ok) continue
-          const blob = await res.blob()
-          let name = nasName(f) || `file_${i}`
+          const conv = await toShareableBlob(await res.blob(), nasName(f) || `file_${i}`)
+          const blob = conv.blob
+          let name = conv.name
           if (used.has(name)) {
             const dot = name.lastIndexOf('.')
             name = dot > 0 ? `${name.slice(0, dot)}_${i}${name.slice(dot)}` : `${name}_${i}`

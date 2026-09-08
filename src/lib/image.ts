@@ -100,3 +100,24 @@ export function formatBytes(n?: number | null): string {
   if (n >= 1024 * 1024) return (n / 1024 / 1024).toFixed(1) + 'MB'
   return Math.max(1, Math.round(n / 1024)) + 'KB'
 }
+
+// 공유·다운로드용 변환 — 카톡·윈도우 기본 뷰어는 WebP 호환이 떨어져 작게 보이거나 안 열린다.
+// 화면 표시는 WebP 그대로 두고(용량 이점), 밖으로 내보낼 때만 JPEG로 바꿔 준다.
+export async function toShareableBlob(blob: Blob, fileName: string): Promise<{ blob: Blob; name: string }> {
+  const isWebp = (blob.type || '').includes('webp') || /\.webp$/i.test(fileName)
+  if (!isWebp) return { blob, name: fileName }
+  try {
+    const bmp = await createImageBitmap(blob)
+    const canvas = document.createElement('canvas')
+    canvas.width = bmp.width; canvas.height = bmp.height
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return { blob, name: fileName }
+    ctx.drawImage(bmp, 0, 0)
+    bmp.close()
+    const out: Blob | null = await new Promise(res => canvas.toBlob(res, 'image/jpeg', 0.92))
+    if (!out) return { blob, name: fileName }
+    return { blob: out, name: fileName.replace(/\.webp$/i, '.jpg') }
+  } catch {
+    return { blob, name: fileName }
+  }
+}
