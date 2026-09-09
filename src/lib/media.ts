@@ -105,6 +105,12 @@ export async function downloadUrl(url: string, name?: string) {
   const filename = name || url.split('/').pop()?.split('?')[0] || 'file'
   try {
     const res = await fetch(url, { mode: 'cors', credentials: 'omit' })
+    // 교체·삭제된 옛 주소 — 원시 오류(JSON) 대신 안내
+    if (res.status === 404 || res.status === 400) {
+      const { toast } = await import('@/components/Toaster')
+      toast('이 파일은 교체되었거나 삭제된 자료예요. 화면을 새로고침해 주세요.', 'error')
+      return
+    }
     if (!res.ok) throw new Error('fetch failed')
     const blob = await res.blob()
     const u = URL.createObjectURL(blob)

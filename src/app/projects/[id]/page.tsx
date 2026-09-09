@@ -191,6 +191,17 @@ export default function ProjectDetail() {
     return () => { on = false }
   }, [fetchAll])
 
+  // 자료 실시간 동기화 — 다른 사람이 파일을 교체·삭제하면 내 화면 목록도 자동으로 최신화
+  // (화면에 남은 옛 주소를 눌러 '파일 없음' 오류가 나던 문제 예방)
+  useEffect(() => {
+    if (!id) return
+    const ch = supabase.channel('project-files-' + id)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'project_files', filter: `project_id=eq.${id}` },
+        () => { fetchAll() })
+      .subscribe()
+    return () => { supabase.removeChannel(ch) }
+  }, [id, fetchAll])
+
   function openEditProject() {
     if (!project) return
     setEditForm({
@@ -392,6 +403,12 @@ export default function ProjectDetail() {
   async function downloadFile(file: ProjectFile) {
     try {
       const res = await fetch(file.file_url, { mode: 'cors', credentials: 'omit' })
+      // 다른 사람이 교체·삭제한 옛 주소 — 원시 오류 화면 대신 안내하고 목록을 새로 불러온다
+      if (res.status === 404 || res.status === 400) {
+        toast('이 파일은 교체되었거나 삭제됐어요. 최신 목록을 다시 불러올게요.', 'error')
+        fetchAll()
+        return
+      }
       if (!res.ok) throw new Error('fetch failed')
       // 카톡·윈도우 뷰어 호환을 위해 WebP는 JPEG로 바꿔 저장
       const conv = await toShareableBlob(await res.blob(), nasName(file))
@@ -516,6 +533,7 @@ export default function ProjectDetail() {
       category: editFileForm.category.trim() || '기타',
       memo: editFileForm.memo,
     }
+    let oldPathsToRemove: string[] = [] // 교체 성공 후 정리할 옛 파일
     if (editFile.file_type === 'link') {
       if (!editFileForm.url.trim()) { toast('링크 URL을 입력하세요'); setSavingFileEdit(false); return }
       payload.file_url = editFileForm.url.trim()
@@ -543,8 +561,8 @@ export default function ProjectDetail() {
           if (!thErr) payload.thumb_url = supabase.storage.from('uploads').getPublicUrl(tPath).data.publicUrl
         }
       }
-      const oldPaths = [editFile.file_url, editFile.thumb_url].map(u => (u || '').split('/uploads/')[1]).filter(Boolean) as string[]
-      if (oldPaths.length) await supabase.storage.from('uploads').remove(oldPaths)
+      // 옛 파일 삭제는 DB 업데이트가 성공한 뒤에 (업데이트가 실패하면 옛 파일이 사라져 링크가 깨지므로)
+      oldPathsToRemove = [editFile.file_url, editFile.thumb_url].map(u => (u || '').split('/uploads/')[1]).filter(Boolean) as string[]
     }
     let { error } = await supabase.from('project_files').update(payload).eq('id', editFile.id)
     // 새 컬럼 SQL을 아직 안 돌린 상태 대비: 컬럼 없음 오류면 기존 필드만으로 재시도
@@ -554,6 +572,7 @@ export default function ProjectDetail() {
     }
     setSavingFileEdit(false)
     if (error) { toast('수정 실패: ' + error.message); return }
+    if (oldPathsToRemove.length) await supabase.storage.from('uploads').remove(oldPathsToRemove)
     // 파일을 실제로 교체한 경우엔 알림 (제목·메모만 고친 건 조용히 — 소음 방지)
     if (replaceFile && editFile.file_type !== 'link' && editFile.file_type !== 'text') {
       notifyOthers(profile?.id, {
