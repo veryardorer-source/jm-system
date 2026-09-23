@@ -1,5 +1,14 @@
 // JM관리 서비스워커 — Web Share Target(공유) + Web Push(알림) 처리.
-// v5 (2026-09-23): 공유 파일이 size 0으로 와도 끝까지 읽어보고, 실패 시 이유를 남긴다.
+// v6 (2026-09-23): 공유 진단(버전 응답) 추가. size 0 파일도 끝까지 읽고 실패 이유를 남긴다.
+
+const SW_VERSION = 'v6-2026-09-23'
+
+// 페이지가 '지금 동작 중인 서비스워커 버전'을 물어볼 수 있게 (진단용)
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'version' && event.ports && event.ports[0]) {
+    event.ports[0].postMessage({ version: SW_VERSION })
+  }
+})
 
 self.addEventListener('install', () => self.skipWaiting())
 self.addEventListener('activate', (event) => event.waitUntil(self.clients.claim()))

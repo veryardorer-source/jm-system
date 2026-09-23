@@ -33,7 +33,7 @@ async function readSharedFiles(): Promise<File[]> {
 }
 
 // 서비스워커가 남긴 공유 결과 — 받았지만 못 읽은 경우를 안내하기 위함
-type ShareMeta = { received: number; saved: number; error?: string }
+type ShareMeta = { received: number; saved: number; error?: string; detail?: { name?: string; type?: string; size?: number }[] }
 async function readSharedMeta(): Promise<ShareMeta | null> {
   if (typeof caches === 'undefined') return null
   try {
@@ -41,6 +41,22 @@ async function readSharedMeta(): Promise<ShareMeta | null> {
     const res = await cache.match('/__shared/meta')
     return res ? await res.json() : null
   } catch { return null }
+}
+
+// 지금 동작 중인 서비스워커 버전 (공유를 처리하는 부품 — 옛 버전이면 공유가 안 될 수 있음)
+async function getSwVersion(): Promise<string> {
+  try {
+    if (typeof navigator === 'undefined' || !navigator.serviceWorker) return '미지원'
+    const reg = await navigator.serviceWorker.getRegistration()
+    const sw = reg?.active
+    if (!sw) return '설치 안 됨'
+    return await new Promise<string>(resolve => {
+      const ch = new MessageChannel()
+      const t = setTimeout(() => resolve('옛 버전'), 1500) // 옛 SW는 버전 질문에 답하지 못함
+      ch.port1.onmessage = e => { clearTimeout(t); resolve((e.data && e.data.version) || '?') }
+      sw.postMessage({ type: 'version' }, [ch.port2])
+    })
+  } catch { return '확인 실패' }
 }
 
 async function readSharedText(): Promise<string> {
@@ -72,6 +88,8 @@ export default function SharePage() {
   const [uploading, setUploading] = useState(false)
   const [progress, setProgress] = useState(0)
   const [shareMeta, setShareMeta] = useState<ShareMeta | null>(null)
+  const [swVersion, setSwVersion] = useState('확인 중')
+  const [swBusy, setSwBusy] = useState(false)
   // 채팅으로 보내기 — 'all' | 'room:<방id>' | 'dm:<상대id>'
   const [rooms, setRooms] = useState<{ id: string; name: string }[]>([])
   const [people, setPeople] = useState<{ id: string; name: string }[]>([])
@@ -90,6 +108,7 @@ export default function SharePage() {
       setFiles(f)
       setSharedText(t)
       setShareMeta(meta)
+      getSwVersion().then(v => { if (active) setSwVersion(v) })
       // 카톡 등에서 함께 넘어온 텍스트를 사유/메모 칸에 자동 입력
       if (t) { setReason(t); setMemo(t) }
       // 사진 없이 글만 공유된 경우엔 기본 저장처를 출금요청으로
@@ -236,6 +255,26 @@ export default function SharePage() {
     router.push(dest === 'project' ? `/projects/${projectId}` : dest === 'receipt' ? '/receipts' : '/withdrawals')
   }
 
+  // 공유 기능(서비스워커) 새로 설치 — 옛 버전이 남아 공유가 안 될 때 사용
+  async function refreshShareEngine() {
+    if (swBusy) return
+    setSwBusy(true)
+    try {
+      const regs = await navigator.serviceWorker.getRegistrations()
+      for (const r of regs) { try { await r.update() } catch { /* 무시 */ } }
+      // 그래도 옛 버전이면 완전히 지우고 다시 설치 (알림 구독은 앱 재실행 시 자동 복구)
+      const v = await getSwVersion()
+      if (v !== 'v6-2026-09-23') {
+        for (const r of regs) { try { await r.unregister() } catch { /* 무시 */ } }
+        await navigator.serviceWorker.register('/sw.js')
+      }
+      toast('공유 기능을 새로 설치했어요. 앱을 완전히 닫았다가 다시 열어주세요.', 'ok')
+      setTimeout(() => location.reload(), 1200)
+    } catch (e) {
+      toast('새로 설치 실패: ' + (e as Error).message, 'error')
+    } finally { setSwBusy(false) }
+  }
+
   // 채팅으로 보내기 — 문자 캡처 등 공유받은 사진·글을 대화방에 바로 전송
   async function shareToChat() {
     const me = profile?.id
@@ -327,6 +366,27 @@ export default function SharePage() {
                   <p className="text-xs mt-1">카톡 등에서 사진이나 글을 공유 → 더보기 → JM관리 를 선택해 주세요.</p>
                 </>
               )}
+
+              {/* 진단 — 공유가 계속 안 될 때 원인을 찾기 위한 정보 */}
+              <div className="mt-6 text-left max-w-md mx-auto border-t border-gray-100 pt-4">
+                <p className="text-[11px] font-semibold text-gray-500 mb-1">🔎 공유 진단</p>
+                <div className="text-[11px] text-gray-500 leading-relaxed bg-gray-50 rounded-lg px-3 py-2">
+                  <div>공유 처리 부품(SW): <b className={swVersion === 'v6-2026-09-23' ? 'text-green-600' : 'text-red-500'}>{swVersion}</b></div>
+                  <div>받은 파일: <b>{shareMeta ? shareMeta.received : '기록 없음'}</b>{shareMeta ? <> · 저장됨 <b>{shareMeta.saved}</b></> : null}</div>
+                  {shareMeta?.detail?.length ? (
+                    <div className="mt-1 break-all">
+                      {shareMeta.detail.map((d, i) => (
+                        <div key={i}>· {d.name || '(이름없음)'} / {d.type || '형식없음'} / {d.size === -1 ? '읽기실패' : (d.size ?? 0) + 'B'}</div>
+                      ))}
+                    </div>
+                  ) : null}
+                  {shareMeta?.error ? <div className="text-red-500 mt-1 break-all">오류: {shareMeta.error}</div> : null}
+                </div>
+                <button onClick={refreshShareEngine} disabled={swBusy}
+                  className="mt-2 w-full border border-gray-300 text-gray-600 py-2 rounded-lg text-xs hover:bg-gray-50 disabled:opacity-50">
+                  {swBusy ? '설치 중...' : '🔄 공유 기능 새로고침 (안 될 때 눌러보세요)'}
+                </button>
+              </div>
             </div>
           ) : (
             <div className="max-w-lg flex flex-col gap-4">
