@@ -1,5 +1,5 @@
 // JM관리 서비스워커 — Web Share Target(공유) + Web Push(알림) 처리.
-// v4 (2026-06-30): 웹 푸시(앱 꺼져 있어도 OS 알림) 추가.
+// v5 (2026-09-23): 공유 파일이 size 0으로 와도 끝까지 읽어보고, 실패 시 이유를 남긴다.
 
 self.addEventListener('install', () => self.skipWaiting())
 self.addEventListener('activate', (event) => event.waitUntil(self.clients.claim()))
@@ -41,33 +41,57 @@ self.addEventListener('fetch', (event) => {
 })
 
 async function handleShare(request) {
+  let received = 0
+  let saved = 0
+  const detail = []
   try {
     const formData = await request.formData()
-    const files = formData.getAll('files').filter((f) => f && f.size > 0)
     const cache = await caches.open('shared-media')
     for (const key of await cache.keys()) await cache.delete(key)
-    let i = 0
-    for (const file of files) {
-      await cache.put(
-        '/__shared/' + i,
-        new Response(file, {
-          headers: {
-            'content-type': file.type || 'application/octet-stream',
-            'x-filename': encodeURIComponent(file.name || 'file' + i),
-          },
-        })
-      )
-      i++
+
+    // 파일 필드는 'files'가 표준이지만 기기·앱마다 이름이 다를 수 있어 전부 훑는다
+    const entries = []
+    for (const [, value] of formData.entries()) {
+      if (value && typeof value === 'object' && typeof value.arrayBuffer === 'function') entries.push(value)
     }
-    await cache.put('/__shared/count', new Response(String(i)))
+    received = entries.length
+
+    for (const file of entries) {
+      try {
+        // size가 0으로 보고돼도 실제로는 읽히는 기기가 있어(문자 수신 사진 등) 끝까지 시도한다
+        const buf = await file.arrayBuffer()
+        detail.push({ name: file.name || '', type: file.type || '', size: buf.byteLength })
+        if (!buf.byteLength) continue
+        await cache.put(
+          '/__shared/' + saved,
+          new Response(buf, {
+            headers: {
+              'content-type': file.type || 'application/octet-stream',
+              'x-filename': encodeURIComponent(file.name || 'file' + saved),
+            },
+          })
+        )
+        saved++
+      } catch (e) {
+        detail.push({ name: file.name || '', type: file.type || '', size: -1, err: String((e && e.message) || e) })
+      }
+    }
+    await cache.put('/__shared/count', new Response(String(saved)))
+
     // 공유로 함께 넘어온 텍스트(카톡 메시지 내용 등)도 저장 — 공유 페이지에서 메모로 사용
     const sharedText = [formData.get('title'), formData.get('text'), formData.get('url')]
       .filter((v) => typeof v === 'string' && v.trim())
-      .join('\n')
+      .join('
+')
       .trim()
     await cache.put('/__shared/text', new Response(sharedText))
-  } catch {
-    // 무시 — 공유 화면에서 "파일 없음" 처리
+    // 받았지만 못 읽은 경우를 화면에서 안내할 수 있게 결과를 남긴다
+    await cache.put('/__shared/meta', new Response(JSON.stringify({ received, saved, detail })))
+  } catch (e) {
+    try {
+      const cache = await caches.open('shared-media')
+      await cache.put('/__shared/meta', new Response(JSON.stringify({ received, saved, error: String((e && e.message) || e) })))
+    } catch { /* 무시 */ }
   }
   return Response.redirect('/share', 303)
 }

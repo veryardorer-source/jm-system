@@ -32,6 +32,17 @@ async function readSharedFiles(): Promise<File[]> {
   return files
 }
 
+// 서비스워커가 남긴 공유 결과 — 받았지만 못 읽은 경우를 안내하기 위함
+type ShareMeta = { received: number; saved: number; error?: string }
+async function readSharedMeta(): Promise<ShareMeta | null> {
+  if (typeof caches === 'undefined') return null
+  try {
+    const cache = await caches.open('shared-media')
+    const res = await cache.match('/__shared/meta')
+    return res ? await res.json() : null
+  } catch { return null }
+}
+
 async function readSharedText(): Promise<string> {
   if (typeof caches === 'undefined') return ''
   const cache = await caches.open('shared-media')
@@ -60,6 +71,7 @@ export default function SharePage() {
   const [loading, setLoading] = useState(true)
   const [uploading, setUploading] = useState(false)
   const [progress, setProgress] = useState(0)
+  const [shareMeta, setShareMeta] = useState<ShareMeta | null>(null)
   // 채팅으로 보내기 — 'all' | 'room:<방id>' | 'dm:<상대id>'
   const [rooms, setRooms] = useState<{ id: string; name: string }[]>([])
   const [people, setPeople] = useState<{ id: string; name: string }[]>([])
@@ -68,14 +80,16 @@ export default function SharePage() {
   useEffect(() => {
     let active = true
     async function init() {
-      const [f, t, p] = await Promise.all([
+      const [f, t, p, meta] = await Promise.all([
         readSharedFiles(),
         readSharedText(),
         supabase.from('projects').select('id, name, status').order('created_at', { ascending: false }),
+        readSharedMeta(),
       ])
       if (!active) return
       setFiles(f)
       setSharedText(t)
+      setShareMeta(meta)
       // 카톡 등에서 함께 넘어온 텍스트를 사유/메모 칸에 자동 입력
       if (t) { setReason(t); setMemo(t) }
       // 사진 없이 글만 공유된 경우엔 기본 저장처를 출금요청으로
@@ -292,10 +306,27 @@ export default function SharePage() {
           {loading ? (
             <div className="text-center text-gray-400 py-16">불러오는 중...</div>
           ) : files.length === 0 && !sharedText ? (
-            <div className="bg-white rounded-xl border border-gray-200 text-center py-16 text-gray-400">
-              <p className="text-3xl mb-2">📤</p>
-              <p>공유된 내용이 없어요.</p>
-              <p className="text-xs mt-1">카톡 등에서 사진이나 글을 공유 → 더보기 → JM관리 를 선택해 주세요.</p>
+            <div className="bg-white rounded-xl border border-gray-200 text-center py-14 px-5 text-gray-400">
+              {shareMeta && shareMeta.received > 0 ? (
+                <>
+                  <p className="text-3xl mb-2">⚠️</p>
+                  <p className="text-gray-700 font-medium">사진 {shareMeta.received}장을 받았지만 열지 못했어요.</p>
+                  <p className="text-xs mt-2 leading-relaxed text-gray-500">
+                    문자로 받은 사진처럼 <b>아직 기기에 저장되지 않은 사진</b>은 바로 공유가 안 될 수 있어요.<br />
+                    사진을 눌러 <b>저장(다운로드)</b> 한 뒤 갤러리에서 다시 공유해 주세요.
+                  </p>
+                  <button onClick={() => location.reload()}
+                    className="mt-4 bg-green-600 text-white px-5 py-2 rounded-lg text-sm font-medium hover:bg-green-700">
+                    다시 확인
+                  </button>
+                </>
+              ) : (
+                <>
+                  <p className="text-3xl mb-2">📤</p>
+                  <p>공유된 내용이 없어요.</p>
+                  <p className="text-xs mt-1">카톡 등에서 사진이나 글을 공유 → 더보기 → JM관리 를 선택해 주세요.</p>
+                </>
+              )}
             </div>
           ) : (
             <div className="max-w-lg flex flex-col gap-4">
