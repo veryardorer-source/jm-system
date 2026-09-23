@@ -81,8 +81,7 @@ async function handleShare(request) {
     // 공유로 함께 넘어온 텍스트(카톡 메시지 내용 등)도 저장 — 공유 페이지에서 메모로 사용
     const sharedText = [formData.get('title'), formData.get('text'), formData.get('url')]
       .filter((v) => typeof v === 'string' && v.trim())
-      .join('
-')
+      .join('\n')
       .trim()
     await cache.put('/__shared/text', new Response(sharedText))
     // 받았지만 못 읽은 경우를 화면에서 안내할 수 있게 결과를 남긴다
