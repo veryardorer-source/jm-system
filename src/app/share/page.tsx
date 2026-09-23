@@ -364,8 +364,21 @@ export default function SharePage() {
                   <p className="text-3xl mb-2">📤</p>
                   <p>공유된 내용이 없어요.</p>
                   <p className="text-xs mt-1">카톡 등에서 사진이나 글을 공유 → 더보기 → JM관리 를 선택해 주세요.</p>
+                  {shareMeta && shareMeta.received === 0 && (
+                    <p className="text-xs mt-3 leading-relaxed text-gray-500 max-w-sm mx-auto">
+                      문자·일부 앱에서는 안드로이드 제한으로 사진이 전달되지 않을 수 있어요.<br />
+                      그럴 땐 아래에서 <b>사진을 직접 골라</b> 올리시면 됩니다.
+                    </p>
+                  )}
                 </>
               )}
+
+              {/* 공유로 못 받았을 때 — 여기서 바로 사진을 고르면 아래 저장 화면으로 이어진다 */}
+              <label className="mt-4 inline-block bg-green-600 text-white px-5 py-2.5 rounded-lg text-sm font-medium cursor-pointer hover:bg-green-700">
+                <input type="file" accept="image/*,video/*" multiple className="hidden"
+                  onChange={e => { const fs = Array.from(e.target.files || []); if (fs.length) setFiles(fs) }} />
+                📷 사진 직접 선택해서 올리기
+              </label>
 
               {/* 진단 — 공유가 계속 안 될 때 원인을 찾기 위한 정보 */}
               <div className="mt-6 text-left max-w-md mx-auto border-t border-gray-100 pt-4">
