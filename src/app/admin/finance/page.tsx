@@ -7,7 +7,7 @@ import Sidebar from '@/components/Sidebar'
 import { useAuth } from '@/lib/auth-context'
 import { createClient } from '@/lib/supabase-browser'
 import { FixedCost, Payroll, ProjectProfit, SalesRecord, Project, supabase } from '@/lib/supabase'
-import { parseExcelRows, parseExcelTotal, ParsedRow, parsePayrollLedger, PayrollLedger, parsePayrollLedgerFull, PayrollLedgerFull } from '@/lib/excel-parse'
+import { parseExcelRows, parseExcelTotal, ParsedRow, parsePayrollLedger, PayrollLedger, parsePayrollLedgerFull, PayrollLedgerFull, parseBonusLedger, BonusLedger } from '@/lib/excel-parse'
 import FileDropInput from '@/components/FileDropInput'
 import { openPdfTitled, resolveFileUrl, removeStoredFile, downloadUrl, SECURE_PREFIX } from '@/lib/media'
 import { normalizePdfTitle } from '@/lib/pdf'
@@ -132,6 +132,7 @@ function FixedCostTab({ list, onRefresh }: { list: FixedCost[]; onRefresh: () =>
     onRefresh()
   }
 
+
   async function save(e: React.FormEvent) {
     e.preventDefault()
     if (!form.month || !form.title) return
@@ -237,11 +238,36 @@ function PayrollTab({ list, onRefresh }: { list: Payroll[]; onRefresh: () => voi
     if (error) { toast('저장 실패: ' + error.message); return }
     // 전체 시트(수당·공제 항목 포함) 저장 — '급여대장' 보기에서 사용
     if (full) {
-      const { error: le } = await sb.from('finance_payroll_ledger').upsert({
-        month: data.month, headers: full.headers, rows: full.rows, total: full.total, updated_at: new Date().toISOString(),
-      }, { onConflict: 'month' })
+      let { error: le } = await sb.from('finance_payroll_ledger').upsert({
+        month: data.month, kind: '급여', headers: full.headers, rows: full.rows, total: full.total, updated_at: new Date().toISOString(),
+      }, { onConflict: 'month,kind' })
+      // 종류 컴럼 SQL(db/bonus_ledger.sql)을 아직 안 돌린 경우 기존 방식으로 재시도
+      if (le && /kind|column|constraint|conflict/i.test(le.message)) {
+        ;({ error: le } = await sb.from('finance_payroll_ledger').upsert({
+          month: data.month, headers: full.headers, rows: full.rows, total: full.total, updated_at: new Date().toISOString(),
+        }, { onConflict: 'month' }))
+      }
       if (le) toast('요약은 저장됐지만 전체 시트 저장에 실패했어요.\n(관리자에게: db/payroll_ledger.sql 실행 필요)\n' + le.message)
     }
+    setShowLedger(false)
+    setLedgerRefresh(n => n + 1)
+    onRefresh()
+  }
+
+  // 상여금 대장 저장 — 월 급여와 성격이 달라 '급여내역'에는 넣지 않고 대장으로만 보관
+  async function bonusSave(b: BonusLedger, month: string) {
+    const sb = createClient()
+    const { error } = await sb.from('finance_payroll_ledger').upsert({
+      month, kind: '상여금', title: b.title, headers: b.headers, rows: b.rows, total: b.total,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'month,kind' })
+    if (error) {
+      const hint = /kind|title|column|constraint|conflict/i.test(error.message)
+        ? ' (관리자에게: db/bonus_ledger.sql 실행 필요)' : ''
+      toast('상여금 대장 저장 실패: ' + error.message + hint, 'error')
+      return
+    }
+    toast(`${month} 상여금 대장을 저장했어요 (${b.rows.length}명)`, 'ok')
     setShowLedger(false)
     setLedgerRefresh(n => n + 1)
     onRefresh()
@@ -310,7 +336,7 @@ function PayrollTab({ list, onRefresh }: { list: Payroll[]; onRefresh: () => voi
       ) : (
         <PayrollPivot list={list} />
       )}
-      {showLedger && <LedgerUploadModal onClose={() => setShowLedger(false)} onSave={ledgerSave} />}
+      {showLedger && <LedgerUploadModal onClose={() => setShowLedger(false)} onSave={ledgerSave} onSaveBonus={bonusSave} />}
       {showForm && (
         <FormModal title={editing ? '급여 수정' : '급여 추가'} onClose={() => setShowForm(false)} onSubmit={save} saving={saving}>
           <MonthInput value={form.month} onChange={v => setForm({ ...form, month: v })} />
@@ -389,7 +415,11 @@ function PayrollPivot({ list }: { list: Payroll[] }) {
 }
 
 // ── 급여대장 전체 보기 (수당·공제 모든 항목) ──
-type LedgerRec = { month: string; headers: string[]; rows: string[][]; total: string[] | null }
+type LedgerRec = { month: string; kind?: string | null; title?: string | null; headers: string[]; rows: string[][]; total: string[] | null }
+// 같은 달에 급여대장과 상여금대장이 함께 있을 수 있어 '월+종류'로 구분
+const ledgerKey = (l: LedgerRec) => `${l.month}|${l.kind || '급여'}`
+const ledgerLabel = (l: LedgerRec) =>
+  (l.kind === '상여금') ? `${l.month} 상여금${l.title ? ` · ${l.title}` : ''}` : `${l.month} 급여대장`
 const DEDUCT_KEYS = ['건강보험', '장기요양', '국민연금', '고용보험', '소득세', '주민세', '공제', '두리누리', '정산']
 function LedgerView({ refresh }: { refresh: number }) {
   const [ledgers, setLedgers] = useState<LedgerRec[]>([])
@@ -406,7 +436,7 @@ function LedgerView({ refresh }: { refresh: number }) {
       if (error) { setLoadError(error.message); return }
       const list = (data || []) as LedgerRec[]
       setLedgers(list)
-      setSel(s => s && list.some(l => l.month === s) ? s : (list[0]?.month || ''))
+      setSel(s => s && list.some(l => ledgerKey(l) === s) ? s : (list[0] ? ledgerKey(list[0]) : ''))
     })
     return () => { on = false }
   }, [refresh])
@@ -415,7 +445,7 @@ function LedgerView({ refresh }: { refresh: number }) {
   if (loadError) return <EmptyState icon="⚠️" text={`급여대장 테이블을 읽지 못했어요 — db/payroll_ledger.sql 실행이 필요할 수 있어요. (${loadError})`} />
   if (ledgers.length === 0) return <EmptyState icon="📋" text="저장된 급여대장이 없어요. '📋 급여대장 업로드'로 엑셀을 올리면 전체 시트(수당·공제 포함)가 여기 보관돼요." />
 
-  const cur = ledgers.find(l => l.month === sel) || ledgers[0]
+  const cur = ledgers.find(l => ledgerKey(l) === sel) || ledgers[0]
   const isNum = (v: string) => /^-?[\d,.\s]+$/.test(v || '') || v === '-'
   const colClass = (h: string) => {
     const k = h.replace(/\s/g, '')
@@ -429,15 +459,17 @@ function LedgerView({ refresh }: { refresh: number }) {
     <div>
       <div className="flex gap-1.5 mb-3 flex-wrap">
         {ledgers.map(l => (
-          <button key={l.month} onClick={() => setSel(l.month)}
-            className={`text-xs px-3 py-1.5 rounded-full border font-medium ${sel === l.month ? 'bg-green-600 text-white border-green-600' : 'bg-white text-gray-500 border-gray-300 hover:border-green-400'}`}>
-            {l.month}
+          <button key={ledgerKey(l)} onClick={() => setSel(ledgerKey(l))}
+            className={`text-xs px-3 py-1.5 rounded-full border font-medium ${sel === ledgerKey(l) ? 'bg-green-600 text-white border-green-600' : 'bg-white text-gray-500 border-gray-300 hover:border-green-400'} ${l.kind === '상여금' && sel !== ledgerKey(l) ? 'text-amber-600 border-amber-300' : ''}`}>
+            {ledgerLabel(l)}
           </button>
         ))}
       </div>
       <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto">
         <p className="text-xs text-gray-400 px-4 pt-3">
-          {cur.month} 급여대장 원본 · <span className="text-red-500">빨강=공제 항목</span> · <span className="text-green-700 font-medium">초록=차감지급액(실지급)</span>
+          {cur.kind === '상여금'
+            ? <>{cur.month} 상여금 대장{cur.title ? ` · ${cur.title}` : ''} · 총 {cur.rows.length}명</>
+            : <>{cur.month} 급여대장 원본 · <span className="text-red-500">빨강=공제 항목</span> · <span className="text-green-700 font-medium">초록=차감지급액(실지급)</span></>}
         </p>
         <table className="w-full whitespace-nowrap text-sm mt-2">
           <thead>
@@ -474,8 +506,9 @@ function LedgerView({ refresh }: { refresh: number }) {
 }
 
 // 급여대장 엑셀 업로드 (해당 시트 자동 인식 → 미리보기 → 저장)
-function LedgerUploadModal({ onClose, onSave }: { onClose: () => void; onSave: (d: PayrollLedger, full: PayrollLedgerFull | null) => Promise<void> }) {
+function LedgerUploadModal({ onClose, onSave, onSaveBonus }: { onClose: () => void; onSave: (d: PayrollLedger, full: PayrollLedgerFull | null) => Promise<void>; onSaveBonus: (b: BonusLedger, month: string) => Promise<void> }) {
   const [data, setData] = useState<PayrollLedger | null>(null)
+  const [bonus, setBonus] = useState<BonusLedger | null>(null) // 상여금 대장으로 인식된 경우
   const [full, setFull] = useState<PayrollLedgerFull | null>(null)
   const [month, setMonth] = useState('') // 'YYYY-MM' (자동 인식 또는 직접 선택)
   const [parsing, setParsing] = useState(false)
@@ -484,9 +517,17 @@ function LedgerUploadModal({ onClose, onSave }: { onClose: () => void; onSave: (
 
   async function handleFile(file: File | null) {
     if (!file) return
-    setParsing(true); setError(''); setData(null); setFull(null)
+    setParsing(true); setError(''); setData(null); setFull(null); setBonus(null)
     const parsed = await parsePayrollLedger(file).catch(() => null)
     const parsedFull = await parsePayrollLedgerFull(file).catch(() => null)
+    if (!parsed) {
+      // 급여대장 양식이 아니면 상여금 대장인지 확인
+      const b = await parseBonusLedger(file).catch(() => null)
+      setParsing(false)
+      if (b) { setBonus(b); if (b.month) setMonth(b.month); return }
+      setError('파일을 읽지 못했어요. 급여대장은 "급여대장" 시트에 성명·급여합계 열이, 상여금 대장은 성명·상여금액 열이 있어야 해요.')
+      return
+    }
     setParsing(false)
     if (!parsed) { setError('급여대장 시트에서 성명/급여합계를 찾지 못했어요. 파일에 "급여대장" 시트와 성명·급여합계 열이 있는지 확인해주세요.'); return }
     setData(parsed)
@@ -494,6 +535,7 @@ function LedgerUploadModal({ onClose, onSave }: { onClose: () => void; onSave: (
     // 월은 자동 입력하지 않음 — 사용자가 직접 선택 (잘못된 달로 저장 방지)
   }
   async function handleSave() {
+    if (bonus && month) { setSaving(true); await onSaveBonus(bonus, month); setSaving(false); return }
     if (!data || !month) return
     setSaving(true)
     await onSave({ month, rows: data.rows }, full ? { ...full, month } : null)
@@ -513,7 +555,7 @@ function LedgerUploadModal({ onClose, onSave }: { onClose: () => void; onSave: (
             <label className="text-sm font-medium text-gray-700 block mb-1.5">급여대장 엑셀 파일 *</label>
             <input type="file" accept=".xlsx,.xls" onChange={e => handleFile(e.target.files?.[0] || null)}
               className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:bg-green-50 file:text-green-700 file:text-xs" />
-            <p className="text-xs text-gray-400 mt-1">여러 시트 중 <b>&quot;급여대장&quot;</b> 시트를 자동으로 읽어요. 파일 선택 후 <b>어느 달 급여인지 직접 선택</b>하고 저장하세요.</p>
+            <p className="text-xs text-gray-400 mt-1"><b>급여대장</b>과 <b>상여금 대장</b> 모두 올릴 수 있어요 — 양식을 자동으로 구분합니다. 파일 선택 후 <b>어느 달인지 확인</b>하고 저장하세요.</p>
           </div>
           {parsing && <p className="text-sm text-gray-400">분석 중...</p>}
           {error && <p className="text-sm text-red-500 bg-red-50 px-3 py-2 rounded-lg">{error}</p>}
@@ -555,11 +597,47 @@ function LedgerUploadModal({ onClose, onSave }: { onClose: () => void; onSave: (
             )}
             </>
           )}
+          {bonus && (
+            <>
+              <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 px-3 py-2 rounded-lg">
+                🎁 <b>상여금 대장</b>으로 인식했어요{bonus.title ? ` · ${bonus.title}` : ''} — 월 급여와 별도로 보관돼요.
+              </p>
+              <div>
+                <label className="text-sm font-medium text-gray-700 block mb-1.5">상여금 월 * <span className="text-amber-600 font-normal">— 어느 달 상여금인지 확인하세요</span></label>
+                <input type="month" value={month} onChange={e => setMonth(e.target.value)}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
+              </div>
+              <div className="border border-gray-200 rounded-lg overflow-hidden">
+                <div className="bg-amber-50 px-3 py-2 text-sm text-amber-800 flex justify-between">
+                  <span><b>{month || '월 선택 필요'}</b> · {bonus.rows.length}명</span>
+                  <span className="font-semibold">합계 {bonus.total ? bonus.total[bonus.total.length - 1] : '-'}원</span>
+                </div>
+                <div className="max-h-56 overflow-y-auto">
+                  <table className="w-full text-sm">
+                    <thead className="bg-gray-50 sticky top-0"><tr>
+                      {bonus.headers.map((h, i) => (
+                        <th key={i} className={`text-xs font-semibold text-gray-400 px-3 py-2 ${i === bonus.headers.length - 1 ? 'text-right' : 'text-left'}`}>{h}</th>
+                      ))}
+                    </tr></thead>
+                    <tbody>
+                      {bonus.rows.map((r, i) => (
+                        <tr key={i} className="border-t border-gray-100">
+                          {r.map((v, c) => (
+                            <td key={c} className={`px-3 py-1.5 ${c === r.length - 1 ? 'text-right' : ''}`}>{v || '-'}</td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </>
+          )}
           <div className="flex gap-3 mt-1">
             <button onClick={onClose} className="flex-1 border border-gray-300 text-gray-700 py-2.5 rounded-lg text-sm font-medium">취소</button>
-            <button onClick={handleSave} disabled={saving || !data || !month}
+            <button onClick={handleSave} disabled={saving || (!data && !bonus) || !month}
               className="flex-1 bg-green-600 text-white py-2.5 rounded-lg text-sm font-medium disabled:opacity-50">
-              {saving ? '저장 중...' : month ? `${month} 급여 저장` : '월 선택 필요'}
+              {saving ? '저장 중...' : !month ? '월 선택 필요' : bonus ? `${month} 상여금 저장` : `${month} 급여 저장`}
             </button>
           </div>
           {data && month && <p className="text-xs text-gray-400 -mt-2">※ 같은 달을 다시 올리면 그 달 급여가 새 내용으로 교체됩니다.</p>}

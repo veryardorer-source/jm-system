@@ -224,3 +224,87 @@ export async function parsePayrollLedgerFull(file: File): Promise<PayrollLedgerF
   }
   return body.length ? { month, headers, rows: body, total } : null
 }
+
+// ── 상여금 대장 ──
+// 급여대장과 양식이 달라 별도 파서. (시트 이름 자유, '직급/성명/상여금액' 구조)
+// 예: 2026년 9월 상여금.xlsx → Sheet2에 "2026년 9월 상여금 대장", "추석 상여금", NO/직급/성명/상여금액
+export type BonusLedger = {
+  month: string      // 'YYYY-MM'
+  title: string      // 상여금 이름 (예: 추석 상여금)
+  headers: string[]  // ['직급','성명','상여금액']
+  rows: string[][]
+  total: string[] | null
+}
+
+function readAllSheets(file: File): Promise<{ name: string; rows: unknown[][] }[]> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = e => {
+      try {
+        const wb = XLSX.read(e.target?.result, { type: 'binary' })
+        resolve(wb.SheetNames.map(name => ({
+          name,
+          rows: XLSX.utils.sheet_to_json<unknown[]>(wb.Sheets[name], { header: 1, defval: '', raw: false }),
+        })))
+      } catch (err) { reject(err) }
+    }
+    reader.onerror = reject
+    reader.readAsBinaryString(file)
+  })
+}
+
+export async function parseBonusLedger(file: File): Promise<BonusLedger | null> {
+  const sheets = await readAllSheets(file)
+  const clean = (v: unknown) => String(v ?? '').replace(/\s+/g, ' ').trim()
+
+  for (const sheet of sheets) {
+    const rows = sheet.rows
+    // 제목에서 월과 상여금 이름 찾기 (예: '2026년 9월 상여금 대장', '추석 상여금')
+    let month = '', title = ''
+    for (let r = 0; r < Math.min(rows.length, 12); r++) {
+      for (const cell of rows[r] || []) {
+        const s = clean(cell)
+        if (!s) continue
+        const m = s.match(/(20\d{2})\s*년?\s*(\d{1,2})\s*월/)
+        if (m && !month) {
+          const mm = Number(m[2])
+          if (mm >= 1 && mm <= 12) month = `${m[1]}-${String(mm).padStart(2, '0')}`
+        }
+        if (!title && /상여/.test(s) && !/대장|명$/.test(s) && s.length <= 20) title = s
+      }
+    }
+
+    // 성명·금액·직급 열 위치 찾기 (머리글이 여러 줄에 나뉘어 있어도 되게 각각 탐색)
+    let nameCol = -1, amtCol = -1, rankCol = -1, headerRow = -1
+    for (let r = 0; r < Math.min(rows.length, 15); r++) {
+      const row = (rows[r] || []).map(clean)
+      row.forEach((v, i) => {
+        if (nameCol < 0 && (v === '성명' || v === '이름')) { nameCol = i; headerRow = Math.max(headerRow, r) }
+        if (amtCol < 0 && /^(상여금?액|지급액|금액)$/.test(v)) { amtCol = i; headerRow = Math.max(headerRow, r) }
+        if (rankCol < 0 && v === '직급') rankCol = i
+      })
+    }
+    if (nameCol < 0 || amtCol < 0) continue
+
+    const body: string[][] = []
+    let totalAmt: string | null = null
+    for (let r = headerRow + 1; r < rows.length; r++) {
+      const row = (rows[r] || []).map(clean)
+      const name = row[nameCol] || ''
+      const amt = row[amtCol] || ''
+      const isTotal = /합계|총계/.test(name) || /합계|총계/.test(row[0] || '')
+      if (isTotal) { if (!totalAmt && numOf(amt)) totalAmt = amt; continue }
+      if (!name || !numOf(amt)) continue
+      body.push(rankCol >= 0 ? [row[rankCol] || '', name, amt] : [name, amt])
+    }
+    if (!body.length) continue
+
+    const headers = rankCol >= 0 ? ['직급', '성명', '상여금액'] : ['성명', '상여금액']
+    if (!totalAmt) totalAmt = body.reduce((s, r) => s + numOf(r[r.length - 1]), 0).toLocaleString()
+    const total = rankCol >= 0 ? ['', '합계', totalAmt] : ['합계', totalAmt]
+
+    const fileMonth = monthFromFileName(file.name, month ? month.slice(0, 4) : undefined)
+    return { month: fileMonth || month, title: title || '상여금', headers, rows: body, total }
+  }
+  return null
+}
