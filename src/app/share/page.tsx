@@ -42,6 +42,20 @@ type ShareMeta = {
   attemptedAt?: number
   source?: string
 }
+// 지금 기대하는 서비스워커 버전 (public/sw.js SW_VERSION과 같아야 함 — 다르면 진단에 빨간색)
+const SW_WANT = 'v8-2026-09-28'
+
+// 앱을 띄운 브라우저 — 삼성 인터넷으로 설치한 앱은 공유 시 사진 파일이 넘어오지 않는다
+function browserInfo(): { label: string; samsung: boolean } {
+  if (typeof navigator === 'undefined') return { label: '?', samsung: false }
+  const ua = navigator.userAgent
+  const sm = ua.match(/SamsungBrowser\/([\d.]+)/)
+  if (sm) return { label: '삼성 인터넷 ' + sm[1], samsung: true }
+  const cm = ua.match(/Chrome\/([\d.]+)/)
+  if (cm) return { label: '크롬 ' + cm[1], samsung: false }
+  return { label: ua.slice(0, 60), samsung: false }
+}
+
 async function readSharedMeta(): Promise<ShareMeta | null> {
   if (typeof caches === 'undefined') return null
   try {
@@ -131,6 +145,7 @@ export default function SharePage() {
   const [shareMeta, setShareMeta] = useState<ShareMeta | null>(null)
   const [swVersion, setSwVersion] = useState('확인 중')
   const [swBusy, setSwBusy] = useState(false)
+  const [browser, setBrowser] = useState<{ label: string; samsung: boolean }>({ label: '확인 중', samsung: false })
   // 채팅으로 보내기 — 'all' | 'room:<방id>' | 'dm:<상대id>'
   const [rooms, setRooms] = useState<{ id: string; name: string }[]>([])
   const [people, setPeople] = useState<{ id: string; name: string }[]>([])
@@ -158,6 +173,7 @@ export default function SharePage() {
       setSharedText(t)
       setShareMeta(meta)
       getSwVersion().then(v => { if (active) setSwVersion(v) })
+      setBrowser(browserInfo())
       // 카톡 등에서 함께 넘어온 텍스트를 사유/메모 칸에 자동 입력
       if (t) { setReason(t); setMemo(t) }
       // 사진 없이 글만 공유된 경우엔 기본 저장처를 출금요청으로
@@ -313,7 +329,7 @@ export default function SharePage() {
       for (const r of regs) { try { await r.update() } catch { /* 무시 */ } }
       // 그래도 옛 버전이면 완전히 지우고 다시 설치 (알림 구독은 앱 재실행 시 자동 복구)
       const v = await getSwVersion()
-      if (v !== 'v6-2026-09-23') {
+      if (v !== SW_WANT) {
         for (const r of regs) { try { await r.unregister() } catch { /* 무시 */ } }
         await navigator.serviceWorker.register('/sw.js')
       }
@@ -422,6 +438,13 @@ export default function SharePage() {
                 </>
               )}
 
+              {browser.samsung && (
+                <div className="mt-4 text-left text-xs leading-relaxed bg-red-50 border border-red-200 text-red-700 rounded-lg px-3 py-2 max-w-sm mx-auto">
+                  <b>삼성 인터넷으로 설치된 앱이에요.</b> 삼성 인터넷은 공유로 사진을 넘겨주지 않아요.<br />
+                  이 앱을 지우고 <b>크롬</b>에서 jm-interior.vercel.app 접속 → ⋮ 메뉴 → <b>앱 설치</b> 로 다시 설치해 주세요.
+                </div>
+              )}
+
               {/* 공유로 못 받았을 때 — 여기서 바로 사진을 고르면 아래 저장 화면으로 이어진다 */}
               <label className="mt-4 inline-block bg-green-600 text-white px-5 py-2.5 rounded-lg text-sm font-medium cursor-pointer hover:bg-green-700">
                 <input type="file" accept="image/*,video/*" multiple className="hidden"
@@ -433,7 +456,7 @@ export default function SharePage() {
               <div className="mt-6 text-left max-w-md mx-auto border-t border-gray-100 pt-4">
                 <p className="text-[11px] font-semibold text-gray-500 mb-1">🔎 공유 진단</p>
                 <div className="text-[11px] text-gray-500 leading-relaxed bg-gray-50 rounded-lg px-3 py-2">
-                  <div>공유 처리 부품(SW): <b className={swVersion === 'v7-2026-09-28' ? 'text-green-600' : 'text-red-500'}>{swVersion}</b></div>
+                  <div>공유 처리 부품(SW): <b className={swVersion === SW_WANT ? 'text-green-600' : 'text-red-500'}>{swVersion}</b></div>
                   <div>받은 파일: <b>{shareMeta ? shareMeta.received : '기록 없음'}</b>{shareMeta ? <> · 저장됨 <b>{shareMeta.saved}</b></> : null}</div>
                   {shareMeta?.attemptedAt ? <div>최근 공유 요청: {new Date(shareMeta.attemptedAt).toLocaleString('ko-KR')} · {shareMeta.source || '서버'}</div> : null}
                   {shareMeta?.fields ? <div>전달된 항목: {shareMeta.fields.length ? shareMeta.fields.map(f => `${f.key}(${f.kind}${f.kind === 'file' ? `, ${f.size || 0}B` : ''})`).join(', ') : '없음'}</div> : null}
@@ -444,6 +467,7 @@ export default function SharePage() {
                       ))}
                     </div>
                   ) : null}
+                  <div>브라우저: <b className={browser.samsung ? 'text-red-500' : ''}>{browser.label}</b></div>
                   {shareMeta?.error ? <div className="text-red-500 mt-1 break-all">오류: {shareMeta.error}</div> : null}
                 </div>
                 <button onClick={refreshShareEngine} disabled={swBusy}

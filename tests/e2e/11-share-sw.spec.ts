@@ -29,3 +29,13 @@ test('서비스워커가 공유 POST의 사진을 받아 공유 화면에 넘긴
   await page.waitForURL(/\/share/, { timeout: 15_000 })
   await expect(page.getByText('공유된 파일 1개')).toBeVisible({ timeout: 20_000 })
 })
+
+// 삼성 인터넷처럼 파일 없이 GET으로만 오는 공유 — 공유 화면이 원인(GET)과 브라우저를 보여준다
+test('GET 방식 공유는 원인 안내가 뜬다', async ({ page }) => {
+  await login(page, 'e2e-admin@jmtest.local')
+  await page.goto('/share-target?text=E2E_GET공유')
+  await page.waitForURL(/\/share/, { timeout: 15_000 })
+  await expect(page.getByText(/GET으로 열렸어요/)).toBeVisible({ timeout: 15_000 })
+  await expect(page.getByText(/브라우저:/)).toBeVisible()
+  await expect(page.getByText('v8-2026-09-28')).toHaveClass(/text-green-600/, { timeout: 15_000 })
+})
