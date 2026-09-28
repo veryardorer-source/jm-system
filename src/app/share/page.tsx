@@ -66,6 +66,36 @@ async function readSharedText(): Promise<string> {
   return res ? (await res.text()).trim() : ''
 }
 
+// 서비스워커가 못 가로채 서버(/share-target)가 대신 받은 경우 — ?inbox=<묶음> 으로 넘어온다.
+// 서버 보관함에서 파일을 내려받아 메모리에 올린 뒤 보관본은 바로 지운다.
+async function readServerInbox(): Promise<{ files: File[]; text: string; meta: ShareMeta } | null> {
+  if (typeof window === 'undefined') return null
+  const qs = new URLSearchParams(window.location.search)
+  const inboxErr = qs.get('inboxError')
+  if (inboxErr) return { files: [], text: '', meta: { received: 0, saved: 0, error: '서버 수신: ' + inboxErr } }
+  const id = qs.get('inbox')
+  if (!id) return null
+  try {
+    const res = await fetch('/api/share-inbox?id=' + encodeURIComponent(id))
+    const j = await res.json()
+    if (!res.ok) return { files: [], text: '', meta: { received: 0, saved: 0, error: j.error || '서버 수신 실패' } }
+    const files: File[] = []
+    const detail: { name?: string; type?: string; size?: number }[] = []
+    for (const f of j.files as { name: string; type: string; size: number; url: string }[]) {
+      detail.push({ name: f.name, type: f.type, size: f.size })
+      if (!f.url) continue
+      const b = await fetch(f.url).then(r => r.blob()).catch(() => null)
+      if (b && b.size) files.push(new File([b], f.name, { type: f.type || b.type }))
+    }
+    fetch('/api/share-inbox?id=' + encodeURIComponent(id), { method: 'DELETE' }).catch(() => {})
+    // 새로고침 시 이미 지운 묶음을 다시 찾지 않게 주소 정리
+    window.history.replaceState(null, '', '/share')
+    return { files, text: j.text || '', meta: { received: j.received || 0, saved: files.length, error: j.error || undefined, detail } }
+  } catch (e) {
+    return { files: [], text: '', meta: { received: 0, saved: 0, error: '서버 수신: ' + String((e as Error)?.message || e) } }
+  }
+}
+
 async function clearShared() {
   if (typeof caches === 'undefined') return
   const cache = await caches.open('shared-media')
@@ -98,12 +128,14 @@ export default function SharePage() {
   useEffect(() => {
     let active = true
     async function init() {
-      const [f, t, p, meta] = await Promise.all([
-        readSharedFiles(),
-        readSharedText(),
+      const [inbox, p] = await Promise.all([
+        readServerInbox(),
         supabase.from('projects').select('id, name, status').order('created_at', { ascending: false }),
-        readSharedMeta(),
       ])
+      // 서버 대비책으로 들어온 경우엔 그 내용을, 아니면 서비스워커가 남긴 내용을 쓴다
+      const [f, t, meta] = inbox
+        ? [inbox.files, inbox.text, inbox.meta]
+        : await Promise.all([readSharedFiles(), readSharedText(), readSharedMeta()])
       if (!active) return
       setFiles(f)
       setSharedText(t)
