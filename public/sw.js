@@ -1,7 +1,7 @@
 // JM관리 서비스워커 — Web Share Target(공유) + Web Push(알림) 처리.
-// v8 (2026-09-28): 공유 본문을 읽지 못하면 서버 수신 경로로 재시도한다.
+// v9 (2026-09-28): 서버가 보낸 opaque redirect를 브라우저에 그대로 전달한다.
 
-const SW_VERSION = 'v8-2026-09-28'
+const SW_VERSION = 'v9-2026-09-28'
 
 // 페이지가 '지금 동작 중인 서비스워커 버전'을 물어볼 수 있게 (진단용)
 self.addEventListener('message', (event) => {
@@ -112,10 +112,13 @@ async function handleShare(request) {
       // 삼성 인터넷 등에서 SW의 본문 읽기가 실패하면 기존 서버 수신 경로를 쓴다.
       // 서버의 303 목적지를 다시 돌려주어 주소창도 /share로 이동시킨다.
       const response = await fetch(serverRequest)
+      // 네비게이션 요청의 redirect 모드는 manual이어서 303 응답이 status 0의
+      // opaqueredirect로 보인다. 주소를 읽을 수 없으므로 응답 자체를 전달한다.
+      if (response.type === 'opaqueredirect') return response
       if (response.redirected && response.url && new URL(response.url).origin === new URL(request.url).origin) {
         return Response.redirect(response.url, 303)
       }
-      serverError = '서버 응답 ' + response.status + ' (공유 화면으로 이동하지 않음)'
+      serverError = '서버 응답 ' + response.status + ' (' + response.type + ', 공유 화면으로 이동하지 않음)'
     } catch (fallbackError) {
       serverError = String((fallbackError && fallbackError.message) || fallbackError)
     }
