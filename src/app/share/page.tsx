@@ -191,6 +191,39 @@ export default function SharePage() {
     return () => { active = false }
   }, [])
 
+  // 붙여넣기(키보드 클립보드·PC Ctrl+V)로 들어온 사진도 공유받은 파일로 — 크롬 공유 버그 우회
+  useEffect(() => {
+    function onPaste(e: ClipboardEvent) {
+      const pasted = Array.from(e.clipboardData?.items || [])
+        .filter(it => it.kind === 'file')
+        .map(it => it.getAsFile())
+        .filter(Boolean) as File[]
+      if (pasted.length) { e.preventDefault(); setFiles(prev => [...prev, ...pasted]) }
+    }
+    window.addEventListener('paste', onPaste)
+    return () => window.removeEventListener('paste', onPaste)
+  }, [])
+
+  // 📋 버튼 — 문자·갤러리에서 '복사'한 사진을 클립보드에서 바로 읽는다
+  async function pasteFromClipboard() {
+    try {
+      if (!navigator.clipboard?.read) throw new Error('unsupported')
+      const items = await navigator.clipboard.read()
+      const got: File[] = []
+      for (const item of items) {
+        const type = item.types.find(t => t.startsWith('image/'))
+        if (!type) continue
+        const blob = await item.getType(type)
+        const ext = type.split('/')[1] || 'png'
+        got.push(new File([blob], dateStampedName(new File([blob], `copied.${ext}`, { type, lastModified: Date.now() })), { type }))
+      }
+      if (got.length) { setFiles(prev => [...prev, ...got]); return }
+      toast('복사된 사진이 없어요. 사진을 길게 눌러 ‘복사’한 뒤 다시 눌러주세요.', 'error')
+    } catch {
+      toast('붙여넣기를 못 했어요. 사진을 길게 눌러 ‘복사’하고, 권한을 물으면 ‘허용’해 주세요.', 'error')
+    }
+  }
+
   // 채팅 대상 목록 (내 단체방 + 직원들) — 프로필이 준비되면 로드
   useEffect(() => {
     const me = profile?.id
@@ -446,12 +479,26 @@ export default function SharePage() {
                 </div>
               )}
 
+              {/* 크롬 153(2026-08말) 버그 — 공유 요청이 항목 0개로 비어서 온다. 크롬 업데이트 전까지 붙여넣기로 우회 */}
+              {!browser.samsung && !!shareMeta?.attemptedAt && shareMeta.received === 0 && shareMeta.source !== 'GET' && (
+                <div className="mt-4 text-left text-xs leading-relaxed bg-amber-50 border border-amber-200 text-amber-800 rounded-lg px-3 py-2 max-w-sm mx-auto">
+                  <b>크롬 버그로 공유 사진이 비어서 왔어요.</b> (크롬 153 버전의 알려진 문제 — 크롬 업데이트로 고쳐질 예정)<br />
+                  그동안은 문자·갤러리에서 사진을 <b>길게 눌러 &lsquo;복사&rsquo;</b> → 아래 <b>📋 복사한 사진 붙여넣기</b>를 눌러 주세요.
+                </div>
+              )}
+
               {/* 공유로 못 받았을 때 — 여기서 바로 사진을 고르면 아래 저장 화면으로 이어진다 */}
-              <label className="mt-4 inline-block bg-green-600 text-white px-5 py-2.5 rounded-lg text-sm font-medium cursor-pointer hover:bg-green-700">
-                <input type="file" accept="image/*,video/*" multiple className="hidden"
-                  onChange={e => { const fs = Array.from(e.target.files || []); if (fs.length) setFiles(fs) }} />
-                📷 사진 직접 선택해서 올리기
-              </label>
+              <div className="mt-4 flex flex-col items-center gap-2">
+                <button type="button" onClick={pasteFromClipboard}
+                  className="bg-white border-2 border-green-600 text-green-700 px-5 py-2.5 rounded-lg text-sm font-medium hover:bg-green-50">
+                  📋 복사한 사진 붙여넣기
+                </button>
+                <label className="inline-block bg-green-600 text-white px-5 py-2.5 rounded-lg text-sm font-medium cursor-pointer hover:bg-green-700">
+                  <input type="file" accept="image/*,video/*" multiple className="hidden"
+                    onChange={e => { const fs = Array.from(e.target.files || []); if (fs.length) setFiles(fs) }} />
+                  📷 사진 직접 선택해서 올리기
+                </label>
+              </div>
 
               {/* 진단 — 공유가 계속 안 될 때 원인을 찾기 위한 정보 */}
               <div className="mt-6 text-left max-w-md mx-auto border-t border-gray-100 pt-4">

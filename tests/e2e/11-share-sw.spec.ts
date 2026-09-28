@@ -40,3 +40,33 @@ test('GET 방식 공유는 원인 안내가 뜬다', async ({ page }) => {
   // 동작 중인 서비스워커 버전이 기대 버전과 같으면 초록색
   await expect(page.locator('b', { hasText: /^v\d+-/ })).toHaveClass(/text-green-600/, { timeout: 15_000 })
 })
+
+// 크롬 153 버그 재현 — 공유 POST가 항목 0개로 비어서 옴 → 안내 + 📋 붙여넣기로 우회
+test('빈 공유는 크롬 버그 안내가 뜨고, 복사한 사진 붙여넣기로 이어진다', async ({ page, context }) => {
+  await context.grantPermissions(['clipboard-read', 'clipboard-write'])
+  await login(page, 'e2e-admin@jmtest.local')
+  await page.evaluate(() => navigator.serviceWorker.ready)
+  await page.reload()
+  await expect.poll(() => page.evaluate(() => !!navigator.serviceWorker.controller), { timeout: 15_000 }).toBe(true)
+
+  // 항목 없는 multipart 폼 제출
+  await page.evaluate(() => {
+    const form = document.createElement('form')
+    form.method = 'POST'
+    form.action = '/share-target'
+    form.enctype = 'multipart/form-data'
+    document.body.appendChild(form)
+    form.submit()
+  })
+  await page.waitForURL(/\/share/, { timeout: 15_000 })
+  await expect(page.getByText('크롬 버그로 공유 사진이 비어서 왔어요.')).toBeVisible({ timeout: 15_000 })
+
+  // 클립보드에 사진 넣고 📋 버튼
+  await page.evaluate(async () => {
+    const c = document.createElement('canvas'); c.width = 4; c.height = 4
+    const blob: Blob = await new Promise(r => c.toBlob(b => r(b!), 'image/png'))
+    await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })])
+  })
+  await page.getByRole('button', { name: '📋 복사한 사진 붙여넣기' }).click()
+  await expect(page.getByText('공유된 파일 1개')).toBeVisible({ timeout: 10_000 })
+})
