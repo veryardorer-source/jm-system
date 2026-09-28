@@ -8,6 +8,7 @@ import { supabase, Project, ProjectFile, Schedule, ProjectCost, ProjectAssignmen
 import { useAuth, canEdit } from '@/lib/auth-context'
 import { notifyOthers, notifyDM, notifyRoom } from '@/lib/notify'
 import { compressImage, makeThumbnail, hashFile, formatBytes, isCompressibleImage, dateStampedName, toShareableBlob } from '@/lib/image'
+import { FolderIndex, sha256Hex, uniqueByOriginal } from '@/lib/folder-dedupe'
 import { openPdfTitled, printUrl } from '@/lib/media'
 import { normalizePdfTitle } from '@/lib/pdf'
 import Image from 'next/image'
@@ -486,29 +487,29 @@ export default function ProjectDetail() {
     if (typeof w.showDirectoryPicker === 'function') {
       let dir: FileSystemDirectoryHandle
       try { dir = await w.showDirectoryPicker() } catch { return } // 사용자가 취소
-      const used = new Set<string>()
-      let ok = 0
-      for (let i = 0; i < fileList.length; i++) {
-        const f = fileList[i]
+      // NAS 중복 방지: 폴더에 이미 있는 것(이름이 달라도 내용이 같으면)과 시스템 안 같은 원본은 건너뛴다
+      toast('저장 폴더 확인 중… (이미 받은 사진은 건너뜁니다)')
+      let folder: FolderIndex
+      try { folder = await FolderIndex.scan(dir) } catch { toast('폴더를 읽지 못했어요 — 권한을 허용해 주세요', 'error'); return }
+      const { keep, dropped } = uniqueByOriginal(fileList.filter(f => f.file_type !== 'link'))
+      let ok = 0, already = 0, fail = 0
+      for (let i = 0; i < keep.length; i++) {
+        const f = keep[i]
         try {
           const res = await fetch(f.file_url, { mode: 'cors', credentials: 'omit' })
-          if (!res.ok) continue
+          if (!res.ok) { fail++; continue }
           const conv = await toShareableBlob(await res.blob(), nasName(f) || `file_${i}`)
-          const blob = conv.blob
-          let name = conv.name
-          if (used.has(name)) {
-            const dot = name.lastIndexOf('.')
-            name = dot > 0 ? `${name.slice(0, dot)}_${i}${name.slice(dot)}` : `${name}_${i}`
-          }
-          used.add(name)
-          const fh = await dir.getFileHandle(name, { create: true })
-          const ws = await fh.createWritable()
-          await ws.write(blob)
-          await ws.close()
+          const hash = await sha256Hex(conv.blob)
+          if (await folder.hasSameContent(conv.blob, hash)) { already++; continue }
+          await folder.write(folder.freeName(conv.name), conv.blob, hash)
           ok++
-        } catch { /* 개별 실패는 건너뜀 */ }
+        } catch { fail++ /* 개별 실패는 건너뜀 */ }
       }
-      toast(`${ok}개 저장 완료!`)
+      const parts = [`새로 ${ok}개 저장`]
+      if (already) parts.push(`이미 있는 ${already}개 건너뜀`)
+      if (dropped) parts.push(`같은 사진 중복 ${dropped}개 제외`)
+      if (fail) parts.push(`실패 ${fail}개`)
+      toast(parts.join(' · '), fail ? 'error' : 'ok')
       return
     }
     // 폴더 선택 미지원(모바일/사파리) → 공유 또는 개별 다운로드
