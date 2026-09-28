@@ -1,7 +1,7 @@
 // JM관리 서비스워커 — Web Share Target(공유) + Web Push(알림) 처리.
-// v7 (2026-09-28): 공유 시도마다 시각과 전달된 필드 형식을 기록해 오래된 진단값과 구분한다.
+// v8 (2026-09-28): 공유 본문을 읽지 못하면 서버 수신 경로로 재시도한다.
 
-const SW_VERSION = 'v7-2026-09-28'
+const SW_VERSION = 'v8-2026-09-28'
 
 // 페이지가 '지금 동작 중인 서비스워커 버전'을 물어볼 수 있게 (진단용)
 self.addEventListener('message', (event) => {
@@ -51,12 +51,16 @@ self.addEventListener('fetch', (event) => {
 
 async function handleShare(request) {
   const attemptedAt = Date.now()
+  // formData()가 실패해도 원본 본문을 서버로 전달할 수 있도록 먼저 복제한다.
+  const serverRequest = request.clone()
   let received = 0
   let saved = 0
   const detail = []
   const fields = []
+  let stage = 'formData'
   try {
     const formData = await request.formData()
+    stage = 'cache'
     const cache = await caches.open('shared-media')
     for (const key of await cache.keys()) await cache.delete(key)
 
@@ -103,9 +107,21 @@ async function handleShare(request) {
     // 받았지만 못 읽은 경우를 화면에서 안내할 수 있게 결과를 남긴다
     await cache.put('/__shared/meta', new Response(JSON.stringify({ received, saved, detail, fields, attemptedAt, source: 'service-worker' })))
   } catch (e) {
+    let serverError = ''
+    try {
+      // 삼성 인터넷 등에서 SW의 본문 읽기가 실패하면 기존 서버 수신 경로를 쓴다.
+      // 서버의 303 목적지를 다시 돌려주어 주소창도 /share로 이동시킨다.
+      const response = await fetch(serverRequest)
+      if (response.redirected && response.url && new URL(response.url).origin === new URL(request.url).origin) {
+        return Response.redirect(response.url, 303)
+      }
+      serverError = '서버 응답 ' + response.status + ' (공유 화면으로 이동하지 않음)'
+    } catch (fallbackError) {
+      serverError = String((fallbackError && fallbackError.message) || fallbackError)
+    }
     try {
       const cache = await caches.open('shared-media')
-      await cache.put('/__shared/meta', new Response(JSON.stringify({ received, saved, fields, attemptedAt, source: 'service-worker', error: String((e && e.message) || e) })))
+      await cache.put('/__shared/meta', new Response(JSON.stringify({ received, saved, fields, attemptedAt, source: 'service-worker', error: stage + ': ' + String((e && e.message) || e) + ' / 서버 재시도: ' + serverError })))
     } catch { /* 무시 */ }
   }
   return Response.redirect(new URL('/share?shareAttempt=' + attemptedAt, request.url).href, 303)

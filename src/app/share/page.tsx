@@ -101,7 +101,7 @@ async function readServerInbox(): Promise<{ files: File[]; text: string; meta: S
     fetch('/api/share-inbox?id=' + encodeURIComponent(id), { method: 'DELETE' }).catch(() => {})
     // 새로고침 시 이미 지운 묶음을 다시 찾지 않게 주소 정리
     window.history.replaceState(null, '', '/share')
-    return { files, text: j.text || '', meta: { received: j.received || 0, saved: files.length, error: j.error || undefined, detail } }
+    return { files, text: j.text || '', meta: { received: j.received || 0, saved: files.length, error: j.error || undefined, detail, attemptedAt: Date.now(), source: 'server' } }
   } catch (e) {
     return { files: [], text: '', meta: { received: 0, saved: 0, error: '서버 수신: ' + String((e as Error)?.message || e) } }
   }
