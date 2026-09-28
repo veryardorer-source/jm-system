@@ -33,7 +33,15 @@ async function readSharedFiles(): Promise<File[]> {
 }
 
 // 서비스워커가 남긴 공유 결과 — 받았지만 못 읽은 경우를 안내하기 위함
-type ShareMeta = { received: number; saved: number; error?: string; detail?: { name?: string; type?: string; size?: number }[] }
+type ShareMeta = {
+  received: number
+  saved: number
+  error?: string
+  detail?: { name?: string; type?: string; size?: number }[]
+  fields?: { key: string; kind: string; type?: string; size?: number; length?: number }[]
+  attemptedAt?: number
+  source?: string
+}
 async function readSharedMeta(): Promise<ShareMeta | null> {
   if (typeof caches === 'undefined') return null
   try {
@@ -71,6 +79,9 @@ async function readSharedText(): Promise<string> {
 async function readServerInbox(): Promise<{ files: File[]; text: string; meta: ShareMeta } | null> {
   if (typeof window === 'undefined') return null
   const qs = new URLSearchParams(window.location.search)
+  if (qs.get('shareMethod') === 'GET') {
+    return { files: [], text: '', meta: { received: 0, saved: 0, source: 'GET', attemptedAt: Date.now(), error: '설치된 앱이 사진 파일용 POST 대신 GET으로 열렸어요. Chrome에서 JM관리 앱을 다시 설치한 뒤 공유해 주세요.' } }
+  }
   const inboxErr = qs.get('inboxError')
   if (inboxErr) return { files: [], text: '', meta: { received: 0, saved: 0, error: '서버 수신: ' + inboxErr } }
   const id = qs.get('inbox')
@@ -133,9 +144,15 @@ export default function SharePage() {
         supabase.from('projects').select('id, name, status').order('created_at', { ascending: false }),
       ])
       // 서버 대비책으로 들어온 경우엔 그 내용을, 아니면 서비스워커가 남긴 내용을 쓴다
-      const [f, t, meta] = inbox
+      let [f, t, meta] = inbox
         ? [inbox.files, inbox.text, inbox.meta]
         : await Promise.all([readSharedFiles(), readSharedText(), readSharedMeta()])
+      const shareAttempt = new URLSearchParams(window.location.search).get('shareAttempt')
+      if (shareAttempt && !inbox && meta?.attemptedAt !== Number(shareAttempt)) {
+        f = []
+        t = ''
+        meta = { received: 0, saved: 0, error: '이번 공유 요청의 기록을 찾지 못했어요. 공유 기능을 새로고침한 뒤 다시 시도해 주세요.' }
+      }
       if (!active) return
       setFiles(f)
       setSharedText(t)
@@ -398,8 +415,8 @@ export default function SharePage() {
                   <p className="text-xs mt-1">카톡 등에서 사진이나 글을 공유 → 더보기 → JM관리 를 선택해 주세요.</p>
                   {shareMeta && shareMeta.received === 0 && (
                     <p className="text-xs mt-3 leading-relaxed text-gray-500 max-w-sm mx-auto">
-                      문자·일부 앱에서는 안드로이드 제한으로 사진이 전달되지 않을 수 있어요.<br />
-                      그럴 땐 아래에서 <b>사진을 직접 골라</b> 올리시면 됩니다.
+                      이번 공유에서 사진 데이터가 들어오지 않았어요. 아래 진단의 <b>최근 공유 요청 시각</b>이 방금인지 확인해 주세요.<br />
+                      급히 올려야 한다면 아래에서 <b>사진을 직접 골라</b> 올릴 수 있습니다.
                     </p>
                   )}
                 </>
@@ -416,8 +433,10 @@ export default function SharePage() {
               <div className="mt-6 text-left max-w-md mx-auto border-t border-gray-100 pt-4">
                 <p className="text-[11px] font-semibold text-gray-500 mb-1">🔎 공유 진단</p>
                 <div className="text-[11px] text-gray-500 leading-relaxed bg-gray-50 rounded-lg px-3 py-2">
-                  <div>공유 처리 부품(SW): <b className={swVersion === 'v6-2026-09-23' ? 'text-green-600' : 'text-red-500'}>{swVersion}</b></div>
+                  <div>공유 처리 부품(SW): <b className={swVersion === 'v7-2026-09-28' ? 'text-green-600' : 'text-red-500'}>{swVersion}</b></div>
                   <div>받은 파일: <b>{shareMeta ? shareMeta.received : '기록 없음'}</b>{shareMeta ? <> · 저장됨 <b>{shareMeta.saved}</b></> : null}</div>
+                  {shareMeta?.attemptedAt ? <div>최근 공유 요청: {new Date(shareMeta.attemptedAt).toLocaleString('ko-KR')} · {shareMeta.source || '서버'}</div> : null}
+                  {shareMeta?.fields ? <div>전달된 항목: {shareMeta.fields.length ? shareMeta.fields.map(f => `${f.key}(${f.kind}${f.kind === 'file' ? `, ${f.size || 0}B` : ''})`).join(', ') : '없음'}</div> : null}
                   {shareMeta?.detail?.length ? (
                     <div className="mt-1 break-all">
                       {shareMeta.detail.map((d, i) => (

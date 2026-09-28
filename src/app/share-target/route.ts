@@ -69,5 +69,5 @@ export async function POST(req: NextRequest) {
 
 // 주소창 등으로 GET 접근 시 공유 화면으로
 export function GET(req: NextRequest) {
-  return NextResponse.redirect(new URL('/share', req.url), 303)
+  return NextResponse.redirect(new URL('/share?shareMethod=GET', req.url), 303)
 }
