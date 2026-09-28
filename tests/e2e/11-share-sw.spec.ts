@@ -69,4 +69,22 @@ test('빈 공유는 크롬 버그 안내가 뜨고, 복사한 사진 붙여넣�
   })
   await page.getByRole('button', { name: '📋 복사한 사진 붙여넣기' }).click()
   await expect(page.getByText('공유된 파일 1개')).toBeVisible({ timeout: 10_000 })
+
+  // 여러 장: 다른 사진을 복사 → '다음 사진 붙여넣기'로 쌓인다
+  const copy = (color: string) => page.evaluate(async (c) => {
+    const cv = document.createElement('canvas'); cv.width = 4; cv.height = 4
+    const ctx = cv.getContext('2d')!; ctx.fillStyle = c; ctx.fillRect(0, 0, 4, 4)
+    const blob: Blob = await new Promise(r => cv.toBlob(b => r(b!), 'image/png'))
+    await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })])
+  }, color)
+  await copy('#f00')
+  await page.getByRole('button', { name: '📋 다음 사진 붙여넣기' }).click()
+  await expect(page.getByText('공유된 파일 2개')).toBeVisible({ timeout: 10_000 })
+  // 같은 사진 다시 → 중복이라 그대로 2개
+  await page.getByRole('button', { name: '📋 다음 사진 붙여넣기' }).click()
+  await expect(page.getByText('이미 붙여넣은 사진이에요', { exact: false })).toBeVisible({ timeout: 10_000 })
+  await expect(page.getByText('공유된 파일 2개')).toBeVisible()
+  // ✕로 한 장 빼기
+  await page.getByRole('button', { name: '이 사진 빼기' }).first().click()
+  await expect(page.getByText('공유된 파일 1개')).toBeVisible()
 })

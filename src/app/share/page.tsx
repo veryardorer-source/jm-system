@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { toast } from '@/components/Toaster'
 import Image from 'next/image'
 import { useRouter } from 'next/navigation'
@@ -191,6 +191,25 @@ export default function SharePage() {
     return () => { active = false }
   }, [])
 
+  // 붙여넣은 사진 지문(SHA-256) — 같은 사진을 두 번 붙여넣으면 건너뛴다
+  const pastedHashes = useRef<Set<string>>(new Set())
+  const hashOf = useRef<WeakMap<File, string>>(new WeakMap())
+
+  // 클립보드 사진을 한 장씩 쌓는다 (안드로이드 클립보드는 한 번에 1장만 담김 → 복사·붙여넣기 반복)
+  async function addPasted(list: File[]): Promise<number> {
+    let added = 0
+    const fresh: File[] = []
+    for (const f of list) {
+      const h = await hashFile(f)
+      if (h && pastedHashes.current.has(h)) continue
+      if (h) { pastedHashes.current.add(h); hashOf.current.set(f, h) }
+      fresh.push(f)
+      added++
+    }
+    if (fresh.length) setFiles(prev => [...prev, ...fresh])
+    return added
+  }
+
   // 붙여넣기(키보드 클립보드·PC Ctrl+V)로 들어온 사진도 공유받은 파일로 — 크롬 공유 버그 우회
   useEffect(() => {
     function onPaste(e: ClipboardEvent) {
@@ -198,7 +217,7 @@ export default function SharePage() {
         .filter(it => it.kind === 'file')
         .map(it => it.getAsFile())
         .filter(Boolean) as File[]
-      if (pasted.length) { e.preventDefault(); setFiles(prev => [...prev, ...pasted]) }
+      if (pasted.length) { e.preventDefault(); addPasted(pasted) }
     }
     window.addEventListener('paste', onPaste)
     return () => window.removeEventListener('paste', onPaste)
@@ -215,10 +234,13 @@ export default function SharePage() {
         if (!type) continue
         const blob = await item.getType(type)
         const ext = type.split('/')[1] || 'png'
-        got.push(new File([blob], dateStampedName(new File([blob], `copied.${ext}`, { type, lastModified: Date.now() })), { type }))
+        const seq = files.length + got.length + 1
+        got.push(new File([blob], dateStampedName(new File([blob], `copied.${ext}`, { type, lastModified: Date.now() }), undefined, seq), { type }))
       }
-      if (got.length) { setFiles(prev => [...prev, ...got]); return }
-      toast('복사된 사진이 없어요. 사진을 길게 눌러 ‘복사’한 뒤 다시 눌러주세요.', 'error')
+      if (!got.length) { toast('복사된 사진이 없어요. 사진을 길게 눌러 ‘복사’한 뒤 다시 눌러주세요.', 'error'); return }
+      const added = await addPasted(got)
+      if (!added) { toast('이미 붙여넣은 사진이에요. 다음 사진을 ‘복사’한 뒤 눌러주세요.', 'error'); return }
+      toast(`${files.length + added}장째 추가됐어요. 더 있으면 다음 사진을 복사해서 📋를 또 누르세요.`, 'ok')
     } catch {
       toast('붙여넣기를 못 했어요. 사진을 길게 눌러 ‘복사’하고, 권한을 물으면 ‘허용’해 주세요.', 'error')
     }
@@ -528,10 +550,19 @@ export default function SharePage() {
             <div className="max-w-lg flex flex-col gap-4">
               {files.length > 0 && (
               <div className="bg-white rounded-xl border border-gray-200 p-4">
-                <p className="text-sm font-semibold text-gray-700 mb-2">공유된 파일 {files.length}개</p>
+                <div className="flex items-center justify-between mb-2 gap-2">
+                  <p className="text-sm font-semibold text-gray-700">공유된 파일 {files.length}개</p>
+                  <button type="button" onClick={pasteFromClipboard}
+                    className="shrink-0 border border-green-600 text-green-700 px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-green-50">
+                    📋 다음 사진 붙여넣기
+                  </button>
+                </div>
+                <p className="text-[11px] text-gray-400 mb-2">여러 장은 문자에서 1장씩 ‘복사’ → 여기로 돌아와 📋 를 반복해서 누르면 쌓여요.</p>
                 <div className="grid grid-cols-4 gap-1.5">
                   {files.slice(0, 8).map((f, i) => (
-                    <div key={i} className="aspect-square bg-gray-100 rounded-lg flex items-center justify-center overflow-hidden">
+                    <div key={i} className="relative aspect-square bg-gray-100 rounded-lg flex items-center justify-center overflow-hidden">
+                      <button type="button" aria-label="이 사진 빼기" onClick={() => { const h = hashOf.current.get(f); if (h) pastedHashes.current.delete(h); setFiles(prev => prev.filter((_, j) => j !== i)) }}
+                        className="absolute top-0.5 right-0.5 z-10 w-6 h-6 rounded-full bg-black/60 text-white text-xs leading-none">✕</button>
                       {f.type.startsWith('image') ? (
                         <Image src={URL.createObjectURL(f)} alt="" width={160} height={160} unoptimized className="w-full h-full object-cover" />
                       ) : f.type.startsWith('video') ? (
