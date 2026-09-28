@@ -37,5 +37,6 @@ test('GET 방식 공유는 원인 안내가 뜬다', async ({ page }) => {
   await page.waitForURL(/\/share/, { timeout: 15_000 })
   await expect(page.getByText(/GET으로 열렸어요/)).toBeVisible({ timeout: 15_000 })
   await expect(page.getByText(/브라우저:/)).toBeVisible()
-  await expect(page.getByText('v8-2026-09-28')).toHaveClass(/text-green-600/, { timeout: 15_000 })
+  // 동작 중인 서비스워커 버전이 기대 버전과 같으면 초록색
+  await expect(page.locator('b', { hasText: /^v\d+-/ })).toHaveClass(/text-green-600/, { timeout: 15_000 })
 })

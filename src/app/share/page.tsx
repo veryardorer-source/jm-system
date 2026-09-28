@@ -5,6 +5,7 @@ import { toast } from '@/components/Toaster'
 import Image from 'next/image'
 import { useRouter } from 'next/navigation'
 import Sidebar from '@/components/Sidebar'
+import { WANT_VERSION } from '@/components/SWRegister'
 import { supabase, HIDDEN_STATUSES } from '@/lib/supabase'
 import { useAuth, canEdit } from '@/lib/auth-context'
 import { notifyOthers, notifyDM, notifyRoom } from '@/lib/notify'
@@ -42,8 +43,8 @@ type ShareMeta = {
   attemptedAt?: number
   source?: string
 }
-// 지금 기대하는 서비스워커 버전 (public/sw.js SW_VERSION과 같아야 함 — 다르면 진단에 빨간색)
-const SW_WANT = 'v8-2026-09-28'
+// 지금 기대하는 서비스워커 버전 — SWRegister 한 곳에서만 관리 (sw.js 버전을 올리면 거기만 같이 올리면 됨)
+const SW_WANT = WANT_VERSION
 
 // 앱을 띄운 브라우저 — 삼성 인터넷으로 설치한 앱은 공유 시 사진 파일이 넘어오지 않는다
 function browserInfo(): { label: string; samsung: boolean } {

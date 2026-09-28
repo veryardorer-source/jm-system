@@ -3,7 +3,7 @@
 import { useEffect } from 'react'
 
 // 지금 앱이 기대하는 서비스워커 버전 (public/sw.js의 SW_VERSION과 같아야 함)
-const WANT_VERSION = 'v9-2026-09-28'
+export const WANT_VERSION = 'v9-2026-09-28'
 const HEAL_KEY = 'jm_sw_heal_' + WANT_VERSION
 
 // 동작 중인 서비스워커에 버전을 물어본다 (옛 버전은 답하지 못함 → 빈 값)
