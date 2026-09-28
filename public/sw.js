@@ -1,7 +1,7 @@
 // JM관리 서비스워커 — Web Share Target(공유) + Web Push(알림) 처리.
-// v6 (2026-09-23): 공유 진단(버전 응답) 추가. size 0 파일도 끝까지 읽고 실패 이유를 남긴다.
+// v7 (2026-09-28): 공유 시도마다 시각과 전달된 필드 형식을 기록해 오래된 진단값과 구분한다.
 
-const SW_VERSION = 'v6-2026-09-23'
+const SW_VERSION = 'v7-2026-09-28'
 
 // 페이지가 '지금 동작 중인 서비스워커 버전'을 물어볼 수 있게 (진단용)
 self.addEventListener('message', (event) => {
@@ -50,9 +50,11 @@ self.addEventListener('fetch', (event) => {
 })
 
 async function handleShare(request) {
+  const attemptedAt = Date.now()
   let received = 0
   let saved = 0
   const detail = []
+  const fields = []
   try {
     const formData = await request.formData()
     const cache = await caches.open('shared-media')
@@ -60,8 +62,13 @@ async function handleShare(request) {
 
     // 파일 필드는 'files'가 표준이지만 기기·앱마다 이름이 다를 수 있어 전부 훑는다
     const entries = []
-    for (const [, value] of formData.entries()) {
-      if (value && typeof value === 'object' && typeof value.arrayBuffer === 'function') entries.push(value)
+    for (const [key, value] of formData.entries()) {
+      if (value && typeof value === 'object' && typeof value.arrayBuffer === 'function') {
+        entries.push(value)
+        fields.push({ key, kind: 'file', type: value.type || '', size: value.size || 0 })
+      } else {
+        fields.push({ key, kind: 'text', length: String(value).length })
+      }
     }
     received = entries.length
 
@@ -94,12 +101,12 @@ async function handleShare(request) {
       .trim()
     await cache.put('/__shared/text', new Response(sharedText))
     // 받았지만 못 읽은 경우를 화면에서 안내할 수 있게 결과를 남긴다
-    await cache.put('/__shared/meta', new Response(JSON.stringify({ received, saved, detail })))
+    await cache.put('/__shared/meta', new Response(JSON.stringify({ received, saved, detail, fields, attemptedAt, source: 'service-worker' })))
   } catch (e) {
     try {
       const cache = await caches.open('shared-media')
-      await cache.put('/__shared/meta', new Response(JSON.stringify({ received, saved, error: String((e && e.message) || e) })))
+      await cache.put('/__shared/meta', new Response(JSON.stringify({ received, saved, fields, attemptedAt, source: 'service-worker', error: String((e && e.message) || e) })))
     } catch { /* 무시 */ }
   }
-  return Response.redirect('/share', 303)
+  return Response.redirect(new URL('/share?shareAttempt=' + attemptedAt, request.url).href, 303)
 }
