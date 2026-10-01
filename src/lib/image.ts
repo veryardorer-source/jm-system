@@ -75,18 +75,15 @@ export async function hashFile(file: File): Promise<string> {
   }
 }
 
-// 사진 파일명 규칙 — NAS 등에서 날짜순 정렬이 유지되게.
-// 이름에 이미 날짜(20260730 / 2026-07-30 등)가 있으면 그대로 두고(확장자만 정리),
-// 없으면(폰 공유 시 image.jpg 등으로 바뀌는 경우) 촬영·생성 시각으로 'YYYYMMDD_HHMMSS' 이름을 지어준다.
-export function dateStampedName(file: File, finalExt?: string, seq?: number): string {
-  const ext = (finalExt || file.name.split('.').pop() || 'jpg').replace(/^\./, '')
-  const base = file.name.replace(/\.[^.]+$/, '')
-  const DATE_RE = /20\d{2}[._-]?(0[1-9]|1[0-2])[._-]?(0[1-9]|[12]\d|3[01])/
-  // 정렬은 이름 '맨 앞' 글자로 되므로, 날짜가 맨 앞일 때만 그대로 둔다
-  if (/^20\d{2}[._-]?(0[1-9]|1[0-2])[._-]?(0[1-9]|[12]\d|3[01])/.test(base)) return `${base}.${ext}`
-  // KakaoTalk_20260615_… / Resized_20260701_… 처럼 날짜가 속에 있으면 앞으로 끌어온다
-  const m = base.match(DATE_RE)
-  if (m) return `${m[0].replace(/[._-]/g, '')}_${base}.${ext}`
+// 사진·동영상 파일명 규칙 — 올린 사람이 올린 이름 그대로 (대표 지시 2026-10-01).
+// 폰 사진은 원래 이름에 촬영 날짜가 들어 있어(20260915_123456.jpg 등) 그대로 둬도 날짜순 정렬이 된다.
+// 예외: 폰 공유·복사로 이름이 image.jpg / copied.png 처럼 '원래 이름'이 사라진 경우만 촬영·생성 시각으로 'YYYYMMDD_HHMMSS' 이름을 지어준다.
+const PLACEHOLDER_NAME = /^(image|photo|picture|pic|video|copied|file|blob|사진|이미지|동영상)( ?\(\d+\)|[ _-]\d{1,2})?$/i
+export function mediaUploadName(file: File, seq?: number): string {
+  const name = (file.name || '').trim()
+  const base = name.replace(/\.[^.]+$/, '')
+  if (base && !PLACEHOLDER_NAME.test(base)) return name
+  const ext = (name.includes('.') ? name.split('.').pop() : (file.type.split('/')[1] || 'jpg'))!.toLowerCase()
   const d = new Date(file.lastModified || Date.now())
   const p = (n: number) => String(n).padStart(2, '0')
   const stamp = `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`
@@ -116,7 +113,8 @@ export async function toShareableBlob(blob: Blob, fileName: string): Promise<{ b
     bmp.close()
     const out: Blob | null = await new Promise(res => canvas.toBlob(res, 'image/jpeg', 0.92))
     if (!out) return { blob, name: fileName }
-    return { blob: out, name: fileName.replace(/\.webp$/i, '.jpg') }
+    // 원래 이름(20260915_123456.jpg)은 그대로, 내용이 JPEG가 됐으니 확장자만 .jpg로 (heic·png·webp → jpg)
+    return { blob: out, name: /\.jpe?g$/i.test(fileName) ? fileName : fileName.replace(/\.[^.]+$/, '') + '.jpg' }
   } catch {
     return { blob, name: fileName }
   }

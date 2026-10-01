@@ -7,7 +7,7 @@ import Sidebar from '@/components/Sidebar'
 import { supabase, Project, ProjectFile, Schedule, ProjectCost, ProjectAssignment, STATUS_LIST, STATUS_COLOR } from '@/lib/supabase'
 import { useAuth, canEdit } from '@/lib/auth-context'
 import { notifyOthers, notifyDM, notifyRoom } from '@/lib/notify'
-import { compressImage, makeThumbnail, hashFile, formatBytes, isCompressibleImage, dateStampedName, toShareableBlob } from '@/lib/image'
+import { compressImage, makeThumbnail, hashFile, formatBytes, isCompressibleImage, mediaUploadName, toShareableBlob } from '@/lib/image'
 import { FolderIndex, sha256Hex, uniqueByOriginal } from '@/lib/folder-dedupe'
 import { openPdfTitled, printUrl, downloadUrl } from '@/lib/media'
 import { normalizePdfTitle } from '@/lib/pdf'
@@ -346,9 +346,10 @@ export default function ProjectDetail() {
         // PDF는 문서 속성 제목을 파일명으로 교정 (복사해 만든 제안서에 남은 옛 현장 제목 제거)
         if (/\.pdf$/i.test(file.name)) file = await normalizePdfTitle(file)
         const ext = file.name.split('.').pop() || 'bin'
-        // 사진·동영상은 날짜 이름 유지(폰 공유로 이름이 image.jpg 등으로 바뀐 경우 촬영시각으로 복원) — NAS 날짜순 정렬용
+        // 올린 이름 그대로 저장 — 사진이 WebP로 압축돼도 이름은 원본(20260915_123456.jpg) 유지.
+        // 폰 공유로 이름이 image.jpg 등으로 사라진 사진·동영상만 촬영시각 이름으로
         const isMedia = (orig.type || '').startsWith('image/') || (orig.type || '').startsWith('video/') || isCompressibleImage(orig)
-        const displayName = isMedia ? dateStampedName(orig, ext, i + j) : file.name
+        const displayName = isMedia ? mediaUploadName(orig, i + j) : file.name
         const stamp = `${Date.now()}_${i + j}`
         const path = `files/${id}/${stamp}.${ext}`
         const { error: uploadError } = await supabase.storage.from('uploads').upload(path, file, {
@@ -827,14 +828,9 @@ export default function ProjectDetail() {
     return (f.created_at || '').slice(0, 10)
   }
 
-  // PC·NAS로 저장할 때의 파일명.
-  // 사진·동영상: 날짜순 정렬을 위해 날짜로 시작하지 않으면 앞에 날짜를 붙임 (카톡 저장본 등).
-  // PDF·문서: 사용자가 지은 제목이 중요하므로 저장한 이름 그대로 (날짜 안 붙임).
-  const nasName = (f: ProjectFile): string => {
-    const n = f.file_name || 'file'
-    if (!isImageFile(f) && !isVideoFile(f)) return n
-    return /^20\d{2}[._-]?(0[1-9]|1[0-2])[._-]?(0[1-9]|[12]\d|3[01])/.test(n) ? n : `${fileDate(f).replace(/-/g, '')}_${n}`
-  }
+  // PC·NAS로 저장할 때의 파일명 — 사진·문서 모두 올린 이름 그대로 (날짜 접두어 안 붙임, 대표 지시 2026-10-01).
+  // 폰 사진은 원래 이름에 촬영 날짜가 있어 그대로 날짜순 정렬된다.
+  const nasName = (f: ProjectFile): string => f.file_name || 'file'
 
   // 사진 분류에 섞인 문서(PDF·엑셀 등) 열기
   function openDocFile(f: ProjectFile) {

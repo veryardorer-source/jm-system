@@ -9,7 +9,7 @@ import { WANT_VERSION } from '@/components/SWRegister'
 import { supabase, HIDDEN_STATUSES } from '@/lib/supabase'
 import { useAuth, canEdit } from '@/lib/auth-context'
 import { notifyOthers, notifyDM, notifyRoom } from '@/lib/notify'
-import { compressImage, makeThumbnail, hashFile, isCompressibleImage, dateStampedName } from '@/lib/image'
+import { compressImage, makeThumbnail, hashFile, isCompressibleImage, mediaUploadName } from '@/lib/image'
 import { normalizePdfTitle } from '@/lib/pdf'
 
 const CATEGORY_LIST = ['공사전사진', '시공사진', '마감사진', '도면', '3D', '미팅내용', '고객요청', '기타']
@@ -235,7 +235,7 @@ export default function SharePage() {
         const blob = await item.getType(type)
         const ext = type.split('/')[1] || 'png'
         const seq = files.length + got.length + 1
-        got.push(new File([blob], dateStampedName(new File([blob], `copied.${ext}`, { type, lastModified: Date.now() }), undefined, seq), { type }))
+        got.push(new File([blob], mediaUploadName(new File([blob], `copied.${ext}`, { type, lastModified: Date.now() }), seq), { type }))
       }
       if (!got.length) { toast('복사된 사진이 없어요. 사진을 길게 눌러 ‘복사’한 뒤 다시 눌러주세요.', 'error'); return }
       const added = await addPasted(got)
@@ -331,9 +331,9 @@ export default function SharePage() {
               if (!thErr) thumb_url = supabase.storage.from('uploads').getPublicUrl(tPath).data.publicUrl
             }
           }
-          // 폰 공유로 이름이 image.jpg 등으로 바뀐 사진은 촬영시각 이름으로 — NAS 날짜순 정렬 유지
+          // 올린 이름 그대로 — 폰 공유로 이름이 image.jpg 등으로 사라진 사진만 촬영시각 이름으로
           const isMedia = (file.type || '').startsWith('image/') || (file.type || '').startsWith('video/') || isCompressibleImage(file)
-          const displayName = isMedia ? dateStampedName(file, ext, idx) : file.name
+          const displayName = isMedia ? mediaUploadName(file, idx) : file.name
           const baseRow = {
             project_id: projectId, file_name: displayName, file_url: url,
             file_type: up.type || '', category, memo: memo || '', uploaded_by: who,
