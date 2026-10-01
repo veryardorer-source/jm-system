@@ -9,7 +9,7 @@ import { useAuth, canEdit } from '@/lib/auth-context'
 import { notifyOthers, notifyDM, notifyRoom } from '@/lib/notify'
 import { compressImage, makeThumbnail, hashFile, formatBytes, isCompressibleImage, dateStampedName, toShareableBlob } from '@/lib/image'
 import { FolderIndex, sha256Hex, uniqueByOriginal } from '@/lib/folder-dedupe'
-import { openPdfTitled, printUrl } from '@/lib/media'
+import { openPdfTitled, printUrl, downloadUrl } from '@/lib/media'
 import { normalizePdfTitle } from '@/lib/pdf'
 import Image from 'next/image'
 import FileDropInput from '@/components/FileDropInput'
@@ -402,6 +402,8 @@ export default function ProjectDetail() {
   }
 
   async function downloadFile(file: ProjectFile) {
+    // 문서(PDF·DWG·엑셀 등)는 변환할 게 없으니 저장소 서버가 올린 파일명 그대로 내려주게 (폰에서도 이름 유지)
+    if (!isImageFile(file) && !isVideoFile(file)) { await downloadUrl(file.file_url, nasName(file)); return }
     try {
       const res = await fetch(file.file_url, { mode: 'cors', credentials: 'omit' })
       // 다른 사람이 교체·삭제한 옛 주소 — 원시 오류 화면 대신 안내하고 목록을 새로 불러온다
@@ -422,7 +424,7 @@ export default function ProjectDetail() {
       document.body.removeChild(a)
       URL.revokeObjectURL(url)
     } catch {
-      window.open(file.file_url, '_blank')
+      downloadUrl(file.file_url, nasName(file))
     }
   }
 

@@ -8,7 +8,7 @@ import { useAuth } from '@/lib/auth-context'
 import { notifyOthers } from '@/lib/notify'
 import FileDropInput from '@/components/FileDropInput'
 import { supabase, CompanyDocument, DOC_CATEGORY_LIST, DocVisibility } from '@/lib/supabase'
-import { openPdfTitled } from '@/lib/media'
+import { openPdfTitled, downloadUrl } from '@/lib/media'
 import { normalizePdfTitle } from '@/lib/pdf'
 
 const EMPTY_FORM = { title: '', category: DOC_CATEGORY_LIST[0] as string, visibility: '전체공개' as DocVisibility, memo: '' }
@@ -37,17 +37,9 @@ export default function DocumentsPage() {
 
   const isMobile = () => typeof window !== 'undefined' && window.matchMedia('(hover: none)').matches
 
-  async function downloadFile(doc: CompanyDocument) {
-    try {
-      const res = await fetch(doc.file_url, { mode: 'cors', credentials: 'omit' })
-      if (!res.ok) throw new Error('fetch failed')
-      const blob = await res.blob()
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url; a.download = doc.file_name
-      document.body.appendChild(a); a.click(); document.body.removeChild(a)
-      URL.revokeObjectURL(url)
-    } catch { window.open(doc.file_url, '_blank') }
+  // 올린 파일명 그대로 저장 (폰 포함 — 저장소 서버가 이름을 붙여 내려줌)
+  function downloadFile(doc: CompanyDocument) {
+    return downloadUrl(doc.file_url, doc.file_name)
   }
 
   async function shareDoc(doc: CompanyDocument) {

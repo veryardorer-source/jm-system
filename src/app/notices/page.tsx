@@ -10,7 +10,7 @@ import { useAuth, canEdit } from '@/lib/auth-context'
 import { notifyOthers } from '@/lib/notify'
 import LinkPreview from '@/components/LinkPreview'
 import { compressImage } from '@/lib/image'
-import { viewInBrowser } from '@/lib/media'
+import { viewInBrowser, downloadUrl } from '@/lib/media'
 
 // 내용 속 URL을 클릭 가능한 링크로
 function renderContent(t: string) {
@@ -318,8 +318,8 @@ export default function NoticesPage() {
                       className="flex items-center gap-2 w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm text-gray-700 hover:border-green-300 hover:bg-green-50 transition-colors cursor-pointer">
                       <span className="flex-shrink-0">📎</span>
                       <span className="flex-1 truncate font-medium">{f.name}</span>
-                      <a href={f.url} download={f.name} onClick={e => e.stopPropagation()}
-                        className="flex-shrink-0 text-xs text-gray-400 hover:text-green-600 px-1.5 py-0.5 rounded border border-gray-200">저장</a>
+                      <button onClick={e => { e.stopPropagation(); downloadUrl(f.url, f.name) }}
+                        className="flex-shrink-0 text-xs text-gray-400 hover:text-green-600 px-1.5 py-0.5 rounded border border-gray-200">저장</button>
                     </div>
                   ))}
                 </div>

@@ -100,11 +100,29 @@ export async function shareUrl(url: string, name?: string) {
   await downloadUrl(url, filename)
 }
 
-// 저장(다운로드)
+// 저장소(Supabase) 주소에 ?download=이름 을 붙이면 서버가 '그 이름으로 다운로드'(Content-Disposition, 한글 OK)로 내려준다.
+// <a download>는 다른 도메인 파일엔 무시되어(폰에서 특히) 저장소 숫자 이름(1785…_0.pdf)으로 받아지기 때문.
+export function namedDownloadUrl(url: string, name?: string) {
+  const n = (name || '').trim()
+  if (!n || !/\/storage\/v1\/object\//.test(url)) return url
+  return `${url}${url.includes('?') ? '&' : '?'}download=${encodeURIComponent(n)}`
+}
+
+function clickLink(href: string, filename?: string) {
+  const a = document.createElement('a')
+  a.href = href
+  if (filename) a.download = filename
+  a.rel = 'noopener'
+  document.body.appendChild(a); a.click(); document.body.removeChild(a)
+}
+
+// 저장(다운로드) — 어느 기기에서든 올린 사람이 올린 파일명 그대로
 export async function downloadUrl(url: string, name?: string) {
   const filename = name || url.split('/').pop()?.split('?')[0] || 'file'
+  const fromStorage = /\/storage\/v1\/object\//.test(url)
   try {
-    const res = await fetch(url, { mode: 'cors', credentials: 'omit' })
+    // 저장소 파일은 내용 전체를 받지 않고 존재만 확인(HEAD) — 큰 파일도 폰 메모리 부담 없음
+    const res = await fetch(url, { method: fromStorage ? 'HEAD' : 'GET', mode: 'cors', credentials: 'omit' })
     // 교체·삭제된 옛 주소 — 원시 오류(JSON) 대신 안내
     if (res.status === 404 || res.status === 400) {
       const { toast } = await import('@/components/Toaster')
@@ -112,13 +130,11 @@ export async function downloadUrl(url: string, name?: string) {
       return
     }
     if (!res.ok) throw new Error('fetch failed')
-    const blob = await res.blob()
-    const u = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = u; a.download = filename
-    document.body.appendChild(a); a.click(); document.body.removeChild(a)
+    if (fromStorage) { clickLink(namedDownloadUrl(url, filename)); return }
+    const u = URL.createObjectURL(await res.blob())
+    clickLink(u, filename)
     URL.revokeObjectURL(u)
   } catch {
-    window.open(url, '_blank')
+    window.open(namedDownloadUrl(url, filename), '_blank')
   }
 }
