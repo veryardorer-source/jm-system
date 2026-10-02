@@ -224,8 +224,11 @@ function PayrollTab({ list, onRefresh }: { list: Payroll[]; onRefresh: () => voi
     const sb = createClient()
     const monthKey = data.month + '-01'
     // 같은 달 기존 것 전부 삭제 후 교체 — 삭제 실패 시 중단(중복 방지)
+    // 끝은 '다음 달 1일 미만' — '-31' 고정이면 30일까지인 달(9월 등)에 없는 날짜라 DB가 거부함
+    const [y, m] = data.month.split('-').map(Number)
+    const nextMonthKey = m === 12 ? `${y + 1}-01-01` : `${y}-${String(m + 1).padStart(2, '0')}-01`
     const { error: delErr } = await sb.from('finance_payroll').delete()
-      .gte('month', data.month + '-01').lte('month', data.month + '-31')
+      .gte('month', monthKey).lt('month', nextMonthKey)
     if (delErr) { toast('기존 자료 삭제 실패(중복 방지를 위해 중단): ' + delErr.message); return }
     const { error } = await sb.from('finance_payroll').insert(
       data.rows.map(r => ({
