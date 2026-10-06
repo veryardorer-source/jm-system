@@ -194,6 +194,8 @@ test.describe('급여대장 화면', () => {
       await login(page, 'e2e-admin@jmtest.local')
       await page.goto('/admin/payroll')
       await expect(page.getByRole('heading', { name: '급여대장' })).toBeVisible()
+      await expect(page.getByText('📖 사용 방법')).toBeVisible()
+      await expect(page.getByText('매달 할 일')).toBeVisible()
 
       // 직원 급여 기준: 노무사 급여셋팅 기준 사무직/현장직 분류
       await page.getByRole('button', { name: '직원 급여 기준' }).click()

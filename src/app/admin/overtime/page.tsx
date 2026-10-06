@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from '@/components/Toaster'
 import Sidebar from '@/components/Sidebar'
+import HowTo from '@/components/HowTo'
 import { useAuth } from '@/lib/auth-context'
 import { createClient } from '@/lib/supabase-browser'
 import { Employee } from '@/lib/supabase'
@@ -269,6 +270,19 @@ export default function AdminOvertimePage() {
         </header>
 
         <div className="flex-1 overflow-auto px-4 md:px-8 py-6 pb-24 flex flex-col gap-6">
+          <HowTo id="overtime">
+            <ol>
+              <li><b>[+ 추가근무 입력]</b> → 직원, 날짜, 구분을 고르고 시간을 넣어요. 시작·종료 시각을 넣으면 시간이 자동 계산돼요(자정 넘겨도 OK, 예: 21:00~01:30 = 4.5시간).</li>
+              <li>같은 날 여러 명이 일했으면 <b>[저장 후 다음 직원]</b>으로 이어서 입력.</li>
+              <li>고칠 땐 아래 상세 내역의 <b>수정</b>·<b>삭제</b>. 이름을 누르면 그 직원 내역만 보여요.</li>
+            </ol>
+            <ul>
+              <li><b>구분</b>: 연장 = 정해진 근무시간 이후, 야간 = 밤 10시~아침 6시, 휴일 = 주말·공휴일.</li>
+              <li><b>현장직</b>은 포괄연장(월 41.3시간)이 이미 월급에 들어 있어요 — <b>그걸 넘는 시간만</b> 기록하세요.</li>
+              <li><b>급여 반영</b>: 💰 급여대장에서 그 달 대장을 만들 때 자동으로 불러와요(통상시급 × 시간 × 1배, 상시 5인 미만). 대장을 만든 뒤에 입력했으면 급여대장의 <b>[↻ 추가근무 다시 불러오기]</b>를 누르세요.</li>
+              <li>근무한 <b>날짜가 속한 달</b>의 급여로 들어가요.</li>
+            </ul>
+          </HowTo>
           {/* 달 이동 */}
           <div className="flex items-center gap-2">
             <button onClick={() => { setMonth(shiftMonth(month, -1)); setFilterEmp(null) }}

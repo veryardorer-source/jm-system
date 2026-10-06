@@ -32,6 +32,7 @@ test.describe('추가근무 관리', () => {
     await login(page, 'e2e-admin@jmtest.local')
     await page.goto('/admin/overtime')
     await expect(page.getByRole('heading', { name: '추가근무 관리' })).toBeVisible()
+    await expect(page.getByText('📖 사용 방법')).toBeVisible()
 
     await page.getByRole('button', { name: '+ 추가근무 입력' }).click()
     const form = page.locator('form')

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from '@/components/Toaster'
 import Sidebar from '@/components/Sidebar'
+import HowTo from '@/components/HowTo'
 import { useAuth } from '@/lib/auth-context'
 import { createClient } from '@/lib/supabase-browser'
 import { Employee } from '@/lib/supabase'
@@ -410,6 +411,45 @@ export default function AdminPayrollPage() {
         </header>
 
         <div className="flex-1 overflow-auto px-4 md:px-8 py-6 pb-24 flex flex-col gap-5">
+          <HowTo id="payroll">
+            <div>
+              <h4>처음 한 번 — 직원 급여 기준</h4>
+              <ol>
+                <li><b>[직원 급여 기준]</b> → 직원을 눌러 근무구분(사무직=본사 / 현장직=현장), 직책, 월지급액(연봉÷12), 식대·차량·직책수당, 공제대상가족 수, 고용보험 가입, 4대보험 공단 고지액, 수습 종료일을 넣어요.</li>
+                <li><b>새 직원 입사</b>: 직원정보내역에 먼저 등록 → 여기서 그 직원을 눌러 <b>‘다른 직원 기준 불러오기’</b>로 같은 자리 조건을 복사 → 가족 수·보험·수습 종료일만 직접 입력.</li>
+              </ol>
+            </div>
+            <div>
+              <h4>매달 할 일</h4>
+              <ol>
+                <li><b>⏱️ 추가근무</b> 메뉴에 그 달 연장·야간·휴일 근무를 기록해요.</li>
+                <li>여기서 달을 고르고 <b>[○월 급여대장 만들기]</b> — 추가근무·수습·중도 입사/퇴사가 자동으로 들어가요.</li>
+                <li>바뀌는 것만 <b>이름을 눌러</b> 입력: 상여금, 근태 공제(지각·결근 금액), 퇴사자 보험 정산(<span className="text-red-600">빨간 ‘퇴사월’ 표시</span>).</li>
+                <li>대장을 만든 뒤 추가근무를 더 넣었으면 <b>[↻ 추가근무 다시 불러오기]</b>.</li>
+                <li>금액 확인 후 <b>[경영관리에 저장]</b> → 경영관리 &gt; 급여내역에 들어가요.</li>
+                <li><b>[임금명세서]</b> → 직원별 <b>PDF·카톡</b>(폰은 카톡으로 바로 보내기) 또는 <b>선택 인쇄</b>.</li>
+                <li>노무사·세무사에게 보낼 때는 <b>[엑셀 저장]</b>.</li>
+              </ol>
+            </div>
+            <div>
+              <h4>자동으로 계산되는 것</h4>
+              <ul>
+                <li><b>수습</b>: 수습 종료일까지 90% (달 중간에 끝나면 그 날까지만).</li>
+                <li><b>일할</b>: 입사·퇴사 달은 그 달 실제 일수로 나눠요. 퇴사일 = <b>마지막 근무일</b>.</li>
+                <li><b>추가근무</b>: 통상시급 × 시간 × 1배 (상시 5인 미만 — 가산 없음). 현장직 <b>포괄연장 41.3시간은 월급에 포함</b>(1.5배)이라 그걸 넘는 시간만 추가근무로 기록하세요.</li>
+                <li>고용보험 0.9%, 소득세(간이세액표·가족 수), 지방소득세 10%.</li>
+              </ul>
+            </div>
+            <div>
+              <h4>주의</h4>
+              <ul>
+                <li><b>[추가근무 다시 불러오기]</b>는 대장에서 직접 고친 시간을 기록 값으로 덮어써요 — 시간은 추가근무 메뉴에서 고치세요.</li>
+                <li>보험 고지액(1년에 한 번 이상 바뀜)은 <b>급여 기준</b>에서 고치면 다음에 만드는 달부터 적용, 이미 만든 달은 그대로예요.</li>
+                <li>최저임금(매년 1월)·간이세액표 개정, 상시 5인 이상이 되면 시스템 설정을 바꿔야 하니 알려주세요.</li>
+                <li>이 화면은 대표·문준호 이사만 볼 수 있어요.</li>
+              </ul>
+            </div>
+          </HowTo>
           <div className="flex flex-wrap items-center gap-2">
             <button onClick={() => setMonth(shiftMonth(month, -1))} aria-label="이전 달"
               className="w-9 h-9 rounded-lg border border-gray-200 bg-white text-gray-600 hover:bg-gray-50">◀</button>
