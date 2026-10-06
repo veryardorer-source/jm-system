@@ -9,7 +9,7 @@ import { createClient } from '@/lib/supabase-browser'
 import { Employee } from '@/lib/supabase'
 import {
   COMPANY, WORK_TYPES, WORK_TYPE_LIST, calcPay, PayInput, PayResult,
-  birthFromRrn, ageAt, daysInMonth, daysWorkedIn, probationIn, SMALL_BUSINESS, extraOtMultiplier, JOB_GROUPS, jobGroup, BASE_HOURS,
+  birthFromRrn, ageAt, daysInMonth, daysWorkedIn, probationIn, SMALL_BUSINESS, extraOtMultiplier, JOB_GROUPS, jobGroup, BASE_HOURS, resignsIn,
 } from '@/lib/payroll'
 import { storeMonthlyLedger } from '@/lib/payroll-store'
 
@@ -184,6 +184,7 @@ export default function AdminPayrollPage() {
   }, [isAdmin, loadItems])
 
   const empById = useMemo(() => new Map(employees.map(e => [e.id, e])), [employees])
+  const isResignMonth = (it: Item) => resignsIn(month, it.employee_id ? empById.get(it.employee_id)?.resign_date : null)
   const year = Number(month.slice(0, 4))
   const rows = useMemo(() => items.map(it => ({
     it, r: calcPay(toInput(it, it.employee_id ? empById.get(it.employee_id) : undefined, month), year),
@@ -351,6 +352,8 @@ export default function AdminPayrollPage() {
   // 경영관리 > 급여내역에 저장 (그 달 기존 급여내역은 이 대장으로 교체)
   async function storeToFinance() {
     if (rows.length === 0) return
+    const noAdj = rows.filter(({ it }) => isResignMonth(it) && !Number(it.health_adj) && !Number(it.care_adj))
+    if (noAdj.length > 0 && !confirm(`퇴사월인데 건강보험·장기요양 퇴직정산이 비어 있어요: ${noAdj.map(({ it }) => it.employee_name).join(', ')}\n공단 정산 금액 없이 그대로 저장할까요?`)) return
     if (!confirm(`${month} 급여대장을 경영관리 > 급여내역에 저장할까요?\n그 달에 이미 올린 급여내역·급여대장은 이 내용으로 바뀌어요.`)) return
     const { headers, body, total } = sheetRows()
     const cut = 1 // 성명부터 (경영관리 보기 형식)
@@ -468,6 +471,9 @@ export default function AdminPayrollPage() {
                               {Number(it.pay_rate) !== 1 && <span className="text-amber-600"> · {it.rate_note || '지급률'} {Math.round(Number(it.pay_rate) * 100)}%{it.rate_days !== null && it.rate_days !== undefined ? ` ${it.rate_days}일` : ''}</span>}
                               {it.days_worked !== null && <span className="text-amber-600"> · {it.days_worked}/{daysInMonth(month)}일</span>}
                               {r.extraHours > 0 && <span className="text-indigo-600"> · 추가 {r.extraHours}h</span>}
+                              {isResignMonth(it) && (Number(it.health_adj) || Number(it.care_adj)
+                                ? <span className="text-gray-500"> · 퇴사월 · 정산 입력됨</span>
+                                : <span className="text-red-600 font-semibold"> · 퇴사월 · 보험 정산 확인</span>)}
                               {r.warnings.length > 0 && <span className="text-red-500"> · ⚠</span>}
                             </span>
                           </td>
@@ -779,6 +785,11 @@ function ItemModal({ item, emp, month, onClose, onSave, onDelete, onReload }: {
           {r.warnings.map(w => <p key={w} className="col-span-3 text-[11px] text-red-600">⚠ {w}</p>)}
         </div>
 
+        {resignsIn(month, emp?.resign_date) && (
+          <div className="bg-red-50 border border-red-100 rounded-xl px-4 py-2.5 text-xs text-red-700">
+            <b>퇴사월이에요 ({emp?.resign_date} 마지막 근무).</b> 건강보험공단 퇴직정산 금액을 아래 <b>건강보험 정산·장기요양 정산</b>에 넣어 주세요 (환급은 −, 추가 징수는 +).
+          </div>
+        )}
         <p className="text-xs font-bold text-gray-700 -mb-2">이번 달 변동</p>
         <div className="grid grid-cols-2 gap-3">
           <div className="col-span-2 grid grid-cols-3 gap-2">

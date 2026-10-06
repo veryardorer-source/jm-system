@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test'
 import { login, adminClient, loginApi } from './helpers'
-import { calcPay, incomeTax, daysWorkedIn, daysInMonth, probationIn, birthFromRrn, ageAt, PayInput } from '../../src/lib/payroll'
+import { calcPay, incomeTax, daysWorkedIn, daysInMonth, probationIn, resignsIn, birthFromRrn, ageAt, PayInput } from '../../src/lib/payroll'
 
 // ⑭ 급여대장 — 노무사 양식 계산식 + 관리자 전용 화면
 // 화면 테스트는 실제 달과 겹치지 않게 2030-01을 쓰고 끝나면 지움
@@ -87,6 +87,13 @@ test.describe('급여 계산식', () => {
     expect(f.ot).toBe(Math.round(3_000_000 / 270.95 * 41.3 * 1.5))
   })
 
+  test('퇴사월 판정 (보험 퇴직정산 안내용)', () => {
+    expect(resignsIn('2026-09', '2026-09-11')).toBe(true)
+    expect(resignsIn('2026-09', '2026-09-30')).toBe(true) // 말일 퇴사도 퇴사월 (일할은 없음)
+    expect(resignsIn('2026-10', '2026-09-30')).toBe(false)
+    expect(resignsIn('2026-09', null)).toBe(false)
+  })
+
   test('최저임금 미달 경고', () => {
     expect(calcPay({ ...base, monthly_pay: 2_000_000 }, 2026).warnings.join()).toContain('최저임금')
     expect(calcPay({ ...base, monthly_pay: 2_200_000 }, 2026).warnings).toHaveLength(0)
@@ -164,6 +171,7 @@ test.describe('급여대장 화면', () => {
     await cleanup()
     const { data: emp } = await admin.from('employees').insert([{
       name: 'E2E_급여', employment_type: '상용직', is_active: true, hire_date: '2029-12-01', resident_number: '900101-1000000',
+      resign_date: '2030-01-31', // 말일 퇴사 → 일할 없음, 퇴사월 보험 정산 안내만
     }]).select('id').single()
     expect(emp).toBeTruthy()
     await admin.from('employee_pay_settings').insert([{
@@ -211,11 +219,18 @@ test.describe('급여대장 화면', () => {
       await page.locator('input[type="month"]').fill(TEST_MONTH)
       await expect(row.locator('td').nth(10)).toHaveText('100,000', { timeout: 15_000 })
 
-      // 상여금 100,000 추가
+      // 퇴사월인데 정산 미입력 → 경고
+      await expect(row).toContainText('퇴사월 · 보험 정산 확인')
+
+      // 상여금 100,000 추가 + 건강보험 퇴직정산 환급 −10,000
       await row.getByRole('button', { name: 'E2E_급여' }).click()
+      await expect(page.getByText('퇴사월이에요')).toBeVisible()
       await page.getByLabel('상여금').fill('100000')
+      await page.getByLabel('건강보험 정산').fill('-10000')
       await page.getByRole('button', { name: '저장', exact: true }).click()
       await expect(row.locator('td').nth(8)).toHaveText((3_250_000 + holidayPay).toLocaleString(), { timeout: 15_000 })
+      await expect(row).toContainText('퇴사월 · 정산 입력됨')
+      await expect(row.locator('td').nth(17)).toHaveText('-10,000') // 건강정산 칸
 
       const dl = page.waitForEvent('download')
       await page.getByRole('button', { name: '엑셀 저장' }).click()

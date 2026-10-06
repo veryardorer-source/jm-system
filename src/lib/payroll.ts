@@ -217,6 +217,11 @@ export function probationIn(month: string, hire: string | null, resign: string |
 }
 
 /** 입사일·퇴사일로 그 달 근무 일수 (달력 기준, 한 달 전부면 null). 퇴사일은 마지막 근무일로 봄 */
+/** 그 달에 퇴사하는가 (퇴사일 = 마지막 근무일이 그 달 안) — 건강보험·장기요양 퇴직정산을 넣어야 하는 달 */
+export function resignsIn(month: string, resign: string | null | undefined): boolean {
+  return !!resign && resign.slice(0, 7) === month
+}
+
 export function daysWorkedIn(month: string, hire: string | null, resign: string | null): number | null {
   const total = daysInMonth(month)
   const first = `${month}-01`, last = `${month}-${String(total).padStart(2, '0')}`
