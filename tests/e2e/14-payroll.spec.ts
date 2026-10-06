@@ -247,7 +247,7 @@ test.describe('급여대장 화면', () => {
       const { data: fp } = await admin.from('finance_payroll').select('amount').eq('employee_name', 'E2E_급여').eq('month', `${TEST_MONTH}-01`)
       expect(fp?.[0]?.amount).toBe(3_250_000 + holidayPay)
 
-      // 임금명세서: 법정 기재사항(지급일·항목별 금액·계산방법·근로시간 수·공제) + PDF
+      // 임금명세서: 노무사 양식 항목만(회사·귀속·지급일·성명·입사일, 지급·공제, 계산 방법) + PDF
       // (테스트 달에는 실제 직원 대장도 같이 만들어지므로 테스트 직원만 골라서 확인)
       await page.getByRole('button', { name: '임금명세서' }).click()
       const slipRow = page.getByTestId('slip-row').filter({ hasText: 'E2E_급여' })
@@ -256,15 +256,16 @@ test.describe('급여대장 화면', () => {
       await slipRow.getByRole('button', { name: 'E2E_급여' }).click()
       const slip = page.getByTestId('slip-preview')
       await expect(slip).toContainText('E2E_급여')
-      await expect(slip).toContainText('1990-01-01') // 생년월일
       await expect(slip).toContainText('2030년 2월 5일') // 지급일 = 다음 달 5일
+      await expect(slip).toContainText('2029-12-01') // 입사일
       await expect(slip).toContainText((3_250_000 + holidayPay).toLocaleString()) // 지급액 계
-      await expect(slip).toContainText('추가근무수당')
-      await expect(slip).toContainText('× 1배(상시 5인 미만 — 가산 없음)')
-      await expect(slip).toContainText('수습 90%')
-      await expect(slip).toContainText('휴일근로')
-      await expect(slip).toContainText('건강보험 정산')
+      await expect(slip).toContainText('연장추가수당')
+      await expect(slip).toContainText('통상시급 x 8시간')
+      await expect(slip).toContainText('통상시급 x 41.3시간 x 1.5')
+      await expect(slip).toContainText('건강보험정산')
       await expect(slip).toContainText('실수령액')
+      await expect(slip).not.toContainText('생년월일') // 양식에 없는 항목은 넣지 않음
+      await expect(slip).not.toContainText('근로시간')
       if (process.env.SLIP_SHOT) await slip.screenshot({ path: process.env.SLIP_SHOT })
 
       const pdfDl = page.waitForEvent('download')

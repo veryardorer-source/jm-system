@@ -564,10 +564,7 @@ export default function AdminPayrollPage() {
         <SlipModal onClose={() => setShowSlips(false)} slips={rows.map(({ it }) => {
           const emp = it.employee_id ? empById.get(it.employee_id) : undefined
           const input = toInput(it, emp, month)
-          return buildSlip({
-            month, name: it.employee_name, birth: birthFromRrn(emp?.resident_number), hireDate: emp?.hire_date || null,
-            position: it.position, input, r: calcPay(input, year),
-          })
+          return buildSlip({ month, name: it.employee_name, hireDate: emp?.hire_date || null, input, r: calcPay(input, year) })
         })} />
       )}
 
