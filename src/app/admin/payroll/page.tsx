@@ -12,6 +12,7 @@ import {
   birthFromRrn, ageAt, daysInMonth, daysWorkedIn, probationIn, SMALL_BUSINESS, extraOtMultiplier, JOB_GROUPS, jobGroup, BASE_HOURS, resignsIn,
 } from '@/lib/payroll'
 import { storeMonthlyLedger } from '@/lib/payroll-store'
+import { buildSlip, slipHtml, slipFileName, slipsToPdf, printSlips, shareOrDownload, Slip } from '@/lib/payslip'
 
 // 급여대장 — 노무사 양식 계산식(src/lib/payroll.ts)으로 매달 자동 생성. 관리자 전용.
 type Setting = {
@@ -127,6 +128,7 @@ export default function AdminPayrollPage() {
   const [showSettings, setShowSettings] = useState(false)
   const [editSetting, setEditSetting] = useState<{ emp: Employee; s: Setting } | null>(null)
   const [showAdd, setShowAdd] = useState(false)
+  const [showSlips, setShowSlips] = useState(false)
 
   // 관리자 등급 + 급여 열람자 명단(대표·이사)에 있어야 함 — DB(RLS)도 같은 기준으로 막혀 있음
   const [viewer, setViewer] = useState<boolean | null>(null)
@@ -391,6 +393,10 @@ export default function AdminPayrollPage() {
                 className="border border-gray-300 text-gray-700 px-3 py-2 rounded-lg text-sm font-medium hover:bg-gray-50 disabled:opacity-40">
                 직원 급여 기준
               </button>
+              <button onClick={() => setShowSlips(true)} disabled={rows.length === 0}
+                className="border border-gray-300 text-gray-700 px-3 py-2 rounded-lg text-sm font-medium hover:bg-gray-50 disabled:opacity-40">
+                임금명세서
+              </button>
               <button onClick={exportExcel} disabled={rows.length === 0}
                 className="border border-gray-300 text-gray-700 px-3 py-2 rounded-lg text-sm font-medium hover:bg-gray-50 disabled:opacity-40">
                 엑셀 저장
@@ -514,6 +520,17 @@ export default function AdminPayrollPage() {
           }} />
       )}
 
+      {showSlips && (
+        <SlipModal onClose={() => setShowSlips(false)} slips={rows.map(({ it }) => {
+          const emp = it.employee_id ? empById.get(it.employee_id) : undefined
+          const input = toInput(it, emp, month)
+          return buildSlip({
+            month, name: it.employee_name, birth: birthFromRrn(emp?.resident_number), hireDate: emp?.hire_date || null,
+            position: it.position, input, r: calcPay(input, year),
+          })
+        })} />
+      )}
+
       {showAdd && (
         <Modal title="급여대장에 직원 추가" onClose={() => setShowAdd(false)}>
           <div className="px-6 py-4 flex flex-col gap-1.5">
@@ -619,6 +636,71 @@ export default function AdminPayrollPage() {
           others={employees.filter(e => e.id !== editSetting.emp.id && settings.has(e.id)).map(e => ({ name: e.name, s: settings.get(e.id)! }))}
           onClose={() => setEditSetting(null)} onSave={saveSetting} />
       )}
+    </div>
+  )
+}
+
+// 임금명세서 — 미리보기 / 인쇄(한 장에 한 명) / PDF 저장·카톡 보내기
+function SlipModal({ slips, onClose }: { slips: Slip[]; onClose: () => void }) {
+  const [sel, setSel] = useState<Set<number>>(() => new Set(slips.map((_, i) => i)))
+  const [view, setView] = useState(0)
+  const [busy, setBusy] = useState<string | null>(null)
+  const htmls = useMemo(() => slips.map(slipHtml), [slips])
+  const chosen = slips.map((_, i) => i).filter(i => sel.has(i))
+  const monthLabel = slips[0]?.monthLabel || ''
+
+  async function pdf(idx: number[], name: string) {
+    setBusy(name)
+    try {
+      const blob = await slipsToPdf(idx.map(i => htmls[i]), name)
+      const r = await shareOrDownload(blob, `${name}.pdf`)
+      if (r === 'downloaded') toast('PDF를 저장했어요')
+    } catch (e) {
+      toast('PDF 만들기 실패: ' + (e instanceof Error ? e.message : String(e)))
+    }
+    setBusy(null)
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-2 md:p-4">
+      <div className="bg-white rounded-2xl w-full max-w-5xl shadow-xl max-h-[95vh] flex flex-col">
+        <div className="flex items-center justify-between px-5 py-3 border-b border-gray-100">
+          <h2 className="text-lg font-bold">{monthLabel} 임금명세서</h2>
+          <button onClick={onClose} className="text-gray-400 text-2xl" aria-label="닫기">&times;</button>
+        </div>
+        <div className="flex flex-col md:flex-row min-h-0 flex-1">
+          <div className="md:w-64 border-b md:border-b-0 md:border-r border-gray-100 p-3 flex flex-col gap-1.5 overflow-y-auto max-h-48 md:max-h-none">
+            <div className="flex gap-3 text-xs px-2 pb-1">
+              <button onClick={() => setSel(new Set(slips.map((_, i) => i)))} className="text-green-700 hover:underline">전체 선택</button>
+              <button onClick={() => setSel(new Set())} className="text-gray-500 hover:underline">전체 해제</button>
+            </div>
+            {slips.map((s, i) => (
+              <div key={i} data-testid="slip-row" className={`flex items-center gap-2 rounded-lg px-2 py-1.5 ${view === i ? 'bg-green-50' : ''}`}>
+                <input type="checkbox" checked={sel.has(i)} aria-label={`${s.name} 선택`} className="accent-green-600"
+                  onChange={e => setSel(prev => { const n = new Set(prev); if (e.target.checked) n.add(i); else n.delete(i); return n })} />
+                <button onClick={() => setView(i)} className="flex-1 text-left text-sm font-medium">{s.name}</button>
+                <button onClick={() => pdf([i], slipFileName(s))} disabled={!!busy}
+                  className="text-xs text-green-700 hover:underline disabled:opacity-40">{busy === slipFileName(s) ? '만드는 중' : 'PDF·카톡'}</button>
+              </div>
+            ))}
+          </div>
+          <div className="flex-1 overflow-auto bg-gray-100 p-3 min-h-0">
+            {/* 우리가 만든 HTML(값은 모두 이스케이프) — 인쇄·PDF와 같은 모양 */}
+            <div className="mx-auto w-fit shadow" data-testid="slip-preview" dangerouslySetInnerHTML={{ __html: htmls[view] || '' }} />
+          </div>
+        </div>
+        <div className="flex flex-wrap gap-2 justify-end px-5 py-3 border-t border-gray-100">
+          <span className="text-xs text-gray-400 mr-auto self-center">선택 {chosen.length}명 · 지급일 {slips[0]?.payDate}</span>
+          <button disabled={chosen.length === 0} onClick={() => { if (!printSlips(chosen.map(i => htmls[i]), `${monthLabel} 임금명세서`)) toast('팝업이 막혀 있어요. 브라우저에서 팝업을 허용해 주세요.') }}
+            className="border border-gray-300 text-gray-700 px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-50 disabled:opacity-40">
+            선택 인쇄
+          </button>
+          <button disabled={chosen.length === 0 || !!busy} onClick={() => pdf(chosen, `${monthLabel} 임금명세서`)}
+            className="bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-40">
+            {busy === `${monthLabel} 임금명세서` ? 'PDF 만드는 중...' : '선택 PDF 저장(한 파일)'}
+          </button>
+        </div>
+      </div>
     </div>
   )
 }

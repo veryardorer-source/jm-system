@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test'
 import { login, adminClient, loginApi } from './helpers'
+import fs from 'fs'
 import { calcPay, incomeTax, daysWorkedIn, daysInMonth, probationIn, resignsIn, birthFromRrn, ageAt, PayInput } from '../../src/lib/payroll'
 
 // ⑭ 급여대장 — 노무사 양식 계산식 + 관리자 전용 화면
@@ -243,6 +244,42 @@ test.describe('급여대장 화면', () => {
       }, { timeout: 15_000 }).toContain('E2E_급여')
       const { data: fp } = await admin.from('finance_payroll').select('amount').eq('employee_name', 'E2E_급여').eq('month', `${TEST_MONTH}-01`)
       expect(fp?.[0]?.amount).toBe(3_250_000 + holidayPay)
+
+      // 임금명세서: 법정 기재사항(지급일·항목별 금액·계산방법·근로시간 수·공제) + PDF
+      // (테스트 달에는 실제 직원 대장도 같이 만들어지므로 테스트 직원만 골라서 확인)
+      await page.getByRole('button', { name: '임금명세서' }).click()
+      const slipRow = page.getByTestId('slip-row').filter({ hasText: 'E2E_급여' })
+      await page.getByRole('button', { name: '전체 해제' }).click()
+      await slipRow.getByRole('checkbox').check()
+      await slipRow.getByRole('button', { name: 'E2E_급여' }).click()
+      const slip = page.getByTestId('slip-preview')
+      await expect(slip).toContainText('E2E_급여')
+      await expect(slip).toContainText('1990-01-01') // 생년월일
+      await expect(slip).toContainText('2030년 2월 5일') // 지급일 = 다음 달 5일
+      await expect(slip).toContainText((3_250_000 + holidayPay).toLocaleString()) // 지급액 계
+      await expect(slip).toContainText('추가근무수당')
+      await expect(slip).toContainText('× 1배(상시 5인 미만 — 가산 없음)')
+      await expect(slip).toContainText('수습 90%')
+      await expect(slip).toContainText('휴일근로')
+      await expect(slip).toContainText('건강보험 정산')
+      await expect(slip).toContainText('실수령액')
+      if (process.env.SLIP_SHOT) await slip.screenshot({ path: process.env.SLIP_SHOT })
+
+      const pdfDl = page.waitForEvent('download')
+      await slipRow.getByRole('button', { name: 'PDF·카톡' }).click()
+      const pdf = await pdfDl
+      expect(pdf.suggestedFilename()).toBe('2030년 1월 임금명세서_E2E_급여.pdf')
+      const buf = fs.readFileSync((await pdf.path())!)
+      expect(buf.subarray(0, 5).toString()).toBe('%PDF-')
+      expect(buf.length).toBeGreaterThan(20_000) // 명세서 이미지가 실제로 들어 있음
+      if (process.env.SLIP_PDF) fs.copyFileSync((await pdf.path())!, process.env.SLIP_PDF)
+
+      const popup = page.waitForEvent('popup')
+      await page.getByRole('button', { name: '선택 인쇄' }).click()
+      const pop = await popup
+      await expect(pop.locator('body')).toContainText('E2E_급여')
+      expect(await pop.locator('.pg').count()).toBe(1) // 선택한 1명만 인쇄
+      await pop.close()
     } finally {
       await admin.from('payroll_viewers').delete().eq('user_id', testAdminId)
       await cleanup()
