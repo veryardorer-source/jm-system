@@ -9,7 +9,7 @@ import { createClient } from '@/lib/supabase-browser'
 import { Employee } from '@/lib/supabase'
 import {
   COMPANY, WORK_TYPES, WORK_TYPE_LIST, calcPay, PayInput, PayResult,
-  birthFromRrn, ageAt, daysInMonth, daysWorkedIn, probationIn,
+  birthFromRrn, ageAt, daysInMonth, daysWorkedIn, probationIn, SMALL_BUSINESS, extraOtMultiplier, JOB_GROUPS, jobGroup, BASE_HOURS,
 } from '@/lib/payroll'
 import { storeMonthlyLedger } from '@/lib/payroll-store'
 
@@ -41,6 +41,9 @@ type Item = Omit<Setting, 'probation_end' | 'probation_rate'> & {
   rate_note: string | null
   days_worked: number | null
   extra_ot_hours: number
+  night_hours: number
+  holiday_hours: number
+  small_business: boolean
   bonus: number
   health_adj: number
   care_adj: number
@@ -89,7 +92,8 @@ function toInput(it: Item, emp: Employee | undefined, month: string): PayInput {
     employment_insurance: it.employment_insurance,
     age: ageAt(birthFromRrn(emp?.resident_number), new Date(y, m, 0)),
     pay_rate: Number(it.pay_rate), rate_days: it.rate_days ?? null, days_worked: it.days_worked, month_days: daysInMonth(month),
-    extra_ot_hours: Number(it.extra_ot_hours), bonus: Number(it.bonus),
+    extra_ot_hours: Number(it.extra_ot_hours), night_hours: Number(it.night_hours || 0), holiday_hours: Number(it.holiday_hours || 0),
+    small_business: it.small_business ?? SMALL_BUSINESS, bonus: Number(it.bonus),
     health_ins: Number(it.health_ins), care_ins: Number(it.care_ins), pension: Number(it.pension),
     health_adj: Number(it.health_adj), care_adj: Number(it.care_adj),
     attendance_deduction: Number(it.attendance_deduction),
@@ -99,6 +103,7 @@ function toInput(it: Item, emp: Employee | undefined, month: string): PayInput {
 // 표 칸 — 노무사 양식 급여대장 순서 (생년월일 등 신상 칸은 엑셀에만)
 const COLS: [string, (r: PayResult, it: Item) => number][] = [
   ['기본급', r => r.base], ['식대', r => r.meal], ['차량유지비', r => r.car], ['연장근로', r => r.ot],
+  // '연장추가수당'은 엑셀 양식 칸 이름 유지 — 추가근무(연장·야간·휴일) 수당
   ['연장추가수당', r => r.extraOt], ['직책수당', r => r.position], ['상여금', r => r.bonus],
   ['급여합계', r => r.gross], ['과세합계', r => r.taxable],
   ['건강보험', r => r.health], ['장기요양', r => r.care], ['국민연금', r => r.pension], ['고용보험', r => r.empIns],
@@ -195,6 +200,38 @@ export default function AdminPayrollPage() {
     return true
   }
 
+  // 그 달 추가근무 기록(⏱️ 추가근무 메뉴)을 직원별·구분별로 합산
+  async function overtimeSums() {
+    const { data, error } = await createClient().from('employee_overtime').select('employee_id, ot_type, hours')
+      .gte('work_date', `${month}-01`).lt('work_date', `${shiftMonth(month, 1)}-01`)
+    if (error) { toast('추가근무 불러오기 실패: ' + error.message); return null }
+    const m = new Map<string, { extra_ot_hours: number; night_hours: number; holiday_hours: number }>()
+    for (const r of data || []) {
+      const v = m.get(r.employee_id) || { extra_ot_hours: 0, night_hours: 0, holiday_hours: 0 }
+      const k = r.ot_type === '야간' ? 'night_hours' : r.ot_type === '휴일' ? 'holiday_hours' : 'extra_ot_hours'
+      v[k] = Math.round((v[k] + Number(r.hours)) * 100) / 100
+      m.set(r.employee_id, v)
+    }
+    return m
+  }
+  const NO_OT = { extra_ot_hours: 0, night_hours: 0, holiday_hours: 0 }
+
+  async function reloadOvertime() {
+    if (!confirm('추가근무 메뉴의 이 달 기록으로 연장·야간·휴일 시간을 다시 채울까요?\n(직접 고친 시간은 기록 값으로 바뀌어요)')) return
+    const ot = await overtimeSums()
+    if (!ot) return
+    setBusy(true)
+    const sb = createClient()
+    for (const it of items) {
+      if (!it.employee_id) continue
+      const { error } = await sb.from('payroll_items').update({ ...(ot.get(it.employee_id) || NO_OT), updated_at: new Date().toISOString() }).eq('id', it.id)
+      if (error) { setBusy(false); toast('반영 실패: ' + error.message); return }
+    }
+    setBusy(false)
+    toast('추가근무 시간을 반영했어요')
+    loadItems()
+  }
+
   function itemFrom(e: Employee, s: Setting, sort: number) {
     const prob = probationIn(month, e.hire_date || null, e.resign_date || null, s.probation_end)
     return {
@@ -206,17 +243,21 @@ export default function AdminPayrollPage() {
       pay_rate: prob === 'none' ? 1 : Number(s.probation_rate), rate_note: prob === 'none' ? null : '수습',
       rate_days: typeof prob === 'number' ? prob : null,
       days_worked: daysWorkedIn(month, e.hire_date || null, e.resign_date || null),
+      small_business: SMALL_BUSINESS,
     }
   }
 
   async function generate() {
     const targets = employees.filter(eligible)
-      .sort((a, b) => rank(settings.get(a.id)!.position) - rank(settings.get(b.id)!.position)
+      .sort((a, b) => JOB_GROUPS.indexOf(jobGroup(settings.get(a.id)!.work_type)) - JOB_GROUPS.indexOf(jobGroup(settings.get(b.id)!.work_type))
+        || rank(settings.get(a.id)!.position) - rank(settings.get(b.id)!.position)
         || (a.hire_date || '').localeCompare(b.hire_date || ''))
     if (targets.length === 0) { toast('급여 기준이 등록된 재직 직원이 없어요. [직원 급여 기준]에서 먼저 입력하세요.'); return }
     setBusy(true)
+    const ot = await overtimeSums()
+    if (!ot) { setBusy(false); return }
     const { error } = await createClient().from('payroll_items')
-      .insert(targets.map((e, i) => itemFrom(e, settings.get(e.id)!, i + 1)))
+      .insert(targets.map((e, i) => ({ ...itemFrom(e, settings.get(e.id)!, i + 1), ...(ot.get(e.id) || NO_OT) })))
     setBusy(false)
     if (error) { toast('만들기 실패: ' + error.message); return }
     toast(`${Number(month.slice(5))}월 급여대장을 만들었어요 (${targets.length}명)`)
@@ -226,8 +267,10 @@ export default function AdminPayrollPage() {
   async function addEmployee(e: Employee) {
     const s = settings.get(e.id)
     if (!s) { toast('이 직원은 급여 기준이 없어요. 먼저 [직원 급여 기준]에서 입력하세요.'); return }
+    const ot = await overtimeSums()
+    if (!ot) return
     const { error } = await createClient().from('payroll_items')
-      .insert([itemFrom(e, s, items.length + 1)])
+      .insert([{ ...itemFrom(e, s, items.length + 1), ...(ot.get(e.id) || NO_OT) }])
     if (error) { toast('추가 실패: ' + error.message); return }
     setShowAdd(false)
     loadItems()
@@ -402,6 +445,7 @@ export default function AdminPayrollPage() {
                 <div className="flex items-center justify-between mb-2">
                   <h2 className="text-sm font-bold text-gray-700">{yy}년 {Number(mm)}월 <span className="text-gray-400 font-normal">· 이름을 누르면 수정</span></h2>
                   <div className="flex gap-3">
+                    <button onClick={reloadOvertime} disabled={busy} className="text-xs text-green-700 hover:underline disabled:opacity-40">↻ 추가근무 다시 불러오기</button>
                     <button onClick={() => setShowAdd(true)} className="text-xs text-green-700 hover:underline">+ 직원 추가</button>
                     <button onClick={deleteMonth} className="text-xs text-red-400 hover:text-red-600">이 달 대장 지우기</button>
                   </div>
@@ -420,9 +464,10 @@ export default function AdminPayrollPage() {
                           <td className="sticky left-0 bg-white px-3 py-2.5">
                             <button onClick={() => setEditItem(it)} className="text-green-700 hover:underline font-semibold">{it.employee_name}</button>
                             <span className="block text-[11px] text-gray-400">
-                              {it.position || ''} {it.work_type}
+                              {jobGroup(it.work_type)} · {it.position || ''} {it.work_type}
                               {Number(it.pay_rate) !== 1 && <span className="text-amber-600"> · {it.rate_note || '지급률'} {Math.round(Number(it.pay_rate) * 100)}%{it.rate_days !== null && it.rate_days !== undefined ? ` ${it.rate_days}일` : ''}</span>}
                               {it.days_worked !== null && <span className="text-amber-600"> · {it.days_worked}/{daysInMonth(month)}일</span>}
+                              {r.extraHours > 0 && <span className="text-indigo-600"> · 추가 {r.extraHours}h</span>}
                               {r.warnings.length > 0 && <span className="text-red-500"> · ⚠</span>}
                             </span>
                           </td>
@@ -442,6 +487,7 @@ export default function AdminPayrollPage() {
                   <ul className="mt-3 text-xs text-red-600 flex flex-col gap-0.5">{allWarnings.map(w => <li key={w}>⚠ {w}</li>)}</ul>
                 )}
                 <p className="text-xs text-gray-400 mt-3 leading-relaxed">
+                  추가근무(연장·야간·휴일)는 ⏱️ 추가근무 기록을 불러와 통상시급 × 시간 × {extraOtMultiplier(SMALL_BUSINESS)}배{SMALL_BUSINESS ? '(5인 미만 — 가산 없음)' : ''}로 계산해요. 포괄연장은 계약대로 1.5배.
                   소득세는 간이세액표(공제대상가족 수 기준), 주민세는 소득세의 10%, 고용보험은 과세합계의 0.9%(10원 미만 절사)로 자동 계산돼요.
                   건강·장기요양·국민연금은 공단 고지액을 그대로 써요.
                 </p>
@@ -479,25 +525,85 @@ export default function AdminPayrollPage() {
 
       {showSettings && !editSetting && (
         <Modal title="직원 급여 기준" onClose={() => setShowSettings(false)} wide>
-          <div className="px-6 py-4 flex flex-col gap-1.5">
-            <p className="text-xs text-gray-500 mb-2">새 달 급여대장을 만들 때 쓰는 기본값이에요. 바꿔도 이미 만든 달은 그대로예요.</p>
-            {employees.filter(e => e.is_active || settings.has(e.id)).map(e => {
-              const s = settings.get(e.id)
+          <div className="px-6 py-4 flex flex-col gap-4">
+            <p className="text-xs text-gray-500">새 달 급여대장을 만들 때 쓰는 기본값이에요. 바꿔도 이미 만든 달은 그대로예요(그 달 대장에 복사돼 있음).</p>
+
+            {/* 노무사 자료 첫 페이지 '급여셋팅' — 근무구분별 근로조건 */}
+            <div className="border border-gray-200 rounded-xl overflow-x-auto">
+              <table className="w-full whitespace-nowrap text-xs">
+                <thead>
+                  <tr className="bg-gray-50 text-gray-500">
+                    <th className="text-left px-3 py-2">직군</th><th className="text-left px-3 py-2">근무구분</th>
+                    <th className="text-left px-3 py-2">근무시간</th><th className="text-left px-3 py-2">휴게</th>
+                    <th className="text-left px-3 py-2">근로일</th><th className="text-left px-3 py-2">휴일</th>
+                    <th className="text-right px-3 py-2">기본</th><th className="text-right px-3 py-2">포괄연장</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {JOB_GROUPS.flatMap(g => WORK_TYPE_LIST.filter(w => jobGroup(w) === g).map((w, i) => {
+                    const t = WORK_TYPES[w]
+                    return (
+                      <tr key={w} className="border-t border-gray-100">
+                        <td className="px-3 py-1.5 font-semibold text-gray-700">{i === 0 ? g : ''}</td>
+                        <td className="px-3 py-1.5">{w}</td><td className="px-3 py-1.5">{t.time}</td><td className="px-3 py-1.5">{t.rest}</td>
+                        <td className="px-3 py-1.5">{t.days}</td><td className="px-3 py-1.5">{t.off}</td>
+                        <td className="px-3 py-1.5 text-right">{BASE_HOURS}h</td>
+                        <td className="px-3 py-1.5 text-right">{t.inclusiveOt ? `${t.inclusiveOt}h ×1.5` : '-'}</td>
+                      </tr>
+                    )
+                  }))}
+                </tbody>
+              </table>
+            </div>
+
+            {(() => {
+              const row = (e: Employee) => {
+                const s = settings.get(e.id)
+                return (
+                  <button key={e.id} onClick={() => setEditSetting({ emp: e, s: s || defaultSetting(e.id) })}
+                    className="flex flex-wrap items-center gap-x-3 gap-y-0.5 border border-gray-200 rounded-lg px-4 py-2.5 text-sm text-left hover:border-green-500">
+                    <span className="font-semibold w-20">{e.name}</span>
+                    {s ? (
+                      <>
+                        <span className="text-gray-500 text-xs">{s.position || '-'} · {s.work_type}</span>
+                        <span className="text-gray-900 font-medium">월 {fmt(Number(s.monthly_pay))}원</span>
+                        <span className="text-gray-400 text-xs">가족 {s.dependents}명{s.employment_insurance ? '' : ' · 고용보험 X'}{s.probation_end ? ` · 수습 ~${s.probation_end}` : ''}</span>
+                      </>
+                    ) : <span className="text-amber-600 text-xs">급여 기준 미입력 — 눌러서 입력</span>}
+                    <span className="ml-auto text-xs text-gray-400">{e.is_active ? e.employment_type : '퇴사 · 기준 보관'}</span>
+                  </button>
+                )
+              }
+              const withSet = employees.filter(e => settings.has(e.id))
+              const missing = employees.filter(e => e.is_active && !settings.has(e.id) && e.employment_type === '상용직')
+              const daily = employees.filter(e => e.is_active && !settings.has(e.id) && e.employment_type !== '상용직')
               return (
-                <button key={e.id} onClick={() => setEditSetting({ emp: e, s: s || defaultSetting(e.id) })}
-                  className="flex flex-wrap items-center gap-x-3 gap-y-0.5 border border-gray-200 rounded-lg px-4 py-2.5 text-sm text-left hover:border-green-500">
-                  <span className="font-semibold w-20">{e.name}</span>
-                  {s ? (
-                    <>
-                      <span className="text-gray-500 text-xs">{s.position || '-'} · {s.work_type}</span>
-                      <span className="text-gray-900 font-medium">월 {fmt(Number(s.monthly_pay))}원</span>
-                      <span className="text-gray-400 text-xs">가족 {s.dependents}명{s.employment_insurance ? '' : ' · 고용보험 X'}{s.probation_end ? ` · 수습 ~${s.probation_end}` : ''}</span>
-                    </>
-                  ) : <span className="text-amber-600 text-xs">급여 기준 미입력 — 눌러서 입력</span>}
-                  <span className="ml-auto text-xs text-gray-400">{e.is_active ? e.employment_type : '퇴사 · 기준 보관'}</span>
-                </button>
+                <>
+                  {JOB_GROUPS.map(g => {
+                    const list = withSet.filter(e => jobGroup(settings.get(e.id)!.work_type) === g)
+                      .sort((a, b) => Number(b.is_active) - Number(a.is_active) || rank(settings.get(a.id)!.position) - rank(settings.get(b.id)!.position))
+                    return (
+                      <section key={g} className="flex flex-col gap-1.5">
+                        <h3 className="text-sm font-bold text-gray-700">{g} <span className="text-gray-400 font-normal">({list.filter(e => e.is_active).length}명{list.some(e => !e.is_active) ? ` · 퇴사 ${list.filter(e => !e.is_active).length}` : ''})</span></h3>
+                        {list.length === 0 ? <p className="text-xs text-gray-400">없음</p> : list.map(row)}
+                      </section>
+                    )
+                  })}
+                  {missing.length > 0 && (
+                    <section className="flex flex-col gap-1.5">
+                      <h3 className="text-sm font-bold text-amber-700">급여 기준 미입력 <span className="font-normal">({missing.length}명) — 근무구분을 정하면 사무직/현장직으로 들어가요</span></h3>
+                      {missing.map(row)}
+                    </section>
+                  )}
+                  {daily.length > 0 && (
+                    <details className="text-sm">
+                      <summary className="cursor-pointer text-gray-500 text-xs">일용직 {daily.length}명 (노무사 급여대장 대상 아님)</summary>
+                      <div className="flex flex-col gap-1.5 mt-2">{daily.map(row)}</div>
+                    </details>
+                  )}
+                </>
               )
-            })}
+            })()}
           </div>
         </Modal>
       )}
@@ -647,6 +753,16 @@ function ItemModal({ item, emp, month, onClose, onSave, onDelete, onReload }: {
 }) {
   const [f, setF] = useState<Item>(item)
   const [ver, setVer] = useState(0) // 기본값 다시 불러오기 시 입력칸 초기화용
+  // 그 달 근태 기록(직원정보내역에서 입력) — 근태 공제 금액 넣을 때 참고
+  const [atts, setAtts] = useState<{ att_date: string; att_type: string; memo: string | null }[] | null>(null)
+  useEffect(() => {
+    if (!item.employee_id) return
+    let on = true
+    createClient().from('employee_attendance').select('att_date, att_type, memo').eq('employee_id', item.employee_id)
+      .gte('att_date', `${month}-01`).lt('att_date', `${shiftMonth(month, 1)}-01`).order('att_date')
+      .then(({ data }) => { if (on) setAtts(data || []) })
+    return () => { on = false }
+  }, [item.employee_id, month])
   const set = (p: Partial<Item>) => setF(prev => ({ ...prev, ...p }))
   const r = calcPay(toInput(f, emp, month), Number(month.slice(0, 4)))
   const md = daysInMonth(month)
@@ -665,8 +781,24 @@ function ItemModal({ item, emp, month, onClose, onSave, onDelete, onReload }: {
 
         <p className="text-xs font-bold text-gray-700 -mb-2">이번 달 변동</p>
         <div className="grid grid-cols-2 gap-3">
-          <NumField label="연장 추가시간" hint="포괄 외" step="0.5" value={Number(f.extra_ot_hours)} onChange={n => set({ extra_ot_hours: n })} />
+          <div className="col-span-2 grid grid-cols-3 gap-2">
+            <NumField label="연장" hint="포괄 외" step="0.5" value={Number(f.extra_ot_hours)} onChange={n => set({ extra_ot_hours: n })} />
+            <NumField label="야간" step="0.5" value={Number(f.night_hours || 0)} onChange={n => set({ night_hours: n })} />
+            <NumField label="휴일" step="0.5" value={Number(f.holiday_hours || 0)} onChange={n => set({ holiday_hours: n })} />
+            <p className="col-span-3 text-[11px] text-gray-500 -mt-1">
+              추가근무 {r.extraHours}시간 × 통상시급 × {extraOtMultiplier(f.small_business ?? SMALL_BUSINESS)}배 = <b>{fmt(r.extraOt)}원</b>
+              <label className="ml-2 inline-flex items-center gap-1">
+                <input type="checkbox" checked={f.small_business ?? SMALL_BUSINESS} onChange={e => set({ small_business: e.target.checked })} className="accent-green-600" />
+                5인 미만(가산 없음)
+              </label>
+            </p>
+          </div>
           <NumField label="상여금" value={Number(f.bonus)} onChange={n => set({ bonus: n })} />
+          {atts && atts.length > 0 && (
+            <div className="col-span-2 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2 text-[11px] text-amber-800">
+              <b>이 달 근태 기록</b> · {atts.map(a => `${a.att_date.slice(5).replace('-', '/')} ${a.att_type}${a.memo ? `(${a.memo})` : ''}`).join(', ')}
+            </div>
+          )}
           <NumField label="근태 공제" hint="지각·결근" value={Number(f.attendance_deduction)} onChange={n => set({ attendance_deduction: n })} />
           <div>
             <label className="text-xs font-medium text-gray-600 block mb-1">근태 공제 사유</label>

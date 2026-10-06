@@ -9,7 +9,7 @@ const TEST_MONTH = '2030-01'
 const base: PayInput = {
   work_type: '본사', monthly_pay: 0, meal: 0, car: 0, position_allowance: 0, dependents: 1,
   employment_insurance: true, age: 30, pay_rate: 1, rate_days: null, days_worked: null, month_days: 30,
-  extra_ot_hours: 0, bonus: 0, health_ins: 0, care_ins: 0, pension: 0, health_adj: 0, care_adj: 0, attendance_deduction: 0,
+  extra_ot_hours: 0, night_hours: 0, holiday_hours: 0, small_business: false, bonus: 0, health_ins: 0, care_ins: 0, pension: 0, health_adj: 0, care_adj: 0, attendance_deduction: 0,
 }
 
 test.describe('급여 계산식', () => {
@@ -74,6 +74,17 @@ test.describe('급여 계산식', () => {
     const r = calcPay({ ...base, monthly_pay: 2_090_000 * 1.5, extra_ot_hours: 2, attendance_deduction: 50_000 }, 2026)
     expect(r.extraOt).toBe(Math.round(15_000 * 2 * 1.5)) // 통상시급 15,000
     expect(r.attendance).toBe(50_000)
+  })
+
+  test('5인 미만: 추가근무(연장·야간·휴일)는 1배, 포괄연장은 1.5배 그대로', () => {
+    const p = { ...base, monthly_pay: 2_090_000, extra_ot_hours: 2, night_hours: 3, holiday_hours: 8 } // 통상시급 10,000
+    const small = calcPay({ ...p, small_business: true }, 2026)
+    expect(small.extraHours).toBe(13)
+    expect(small.extraOt).toBe(130_000)
+    expect(calcPay({ ...p, small_business: false }, 2026).extraOt).toBe(195_000)
+    // 현장 포괄연장은 5인 미만이어도 1.5배 (노무사 계약)
+    const f = calcPay({ ...base, work_type: '현장', monthly_pay: 3_000_000, small_business: true }, 2026)
+    expect(f.ot).toBe(Math.round(3_000_000 / 270.95 * 41.3 * 1.5))
   })
 
   test('최저임금 미달 경고', () => {
@@ -161,6 +172,10 @@ test.describe('급여대장 화면', () => {
       probation_end: '2030-01-31', probation_rate: 0.9,
     }])
 
+    // 추가근무 기록: 휴일 8시간 → 대장 만들 때 자동으로 불러와 1배(5인 미만) 반영
+    await admin.from('employee_overtime').insert([{ employee_id: emp!.id, work_date: `${TEST_MONTH}-10`, ot_type: '휴일', hours: 8 }])
+    const holidayPay = Math.round(3_500_000 / 270.95 * 8) // 103,340
+
     // 화면 흐름 확인을 위해 테스트 관리자를 이 테스트 동안만 열람자로 지정 (finally에서 해제)
     const { data: au } = await admin.auth.admin.listUsers({ page: 1, perPage: 1000 })
     const testAdminId = au.users.find(u => u.email === 'e2e-admin@jmtest.local')!.id
@@ -170,19 +185,37 @@ test.describe('급여대장 화면', () => {
       await login(page, 'e2e-admin@jmtest.local')
       await page.goto('/admin/payroll')
       await expect(page.getByRole('heading', { name: '급여대장' })).toBeVisible()
+
+      // 직원 급여 기준: 노무사 급여셋팅 기준 사무직/현장직 분류
+      await page.getByRole('button', { name: '직원 급여 기준' }).click()
+      const fieldSec = page.locator('section').filter({ has: page.getByRole('heading', { name: /^현장직/ }) })
+      await expect(page.getByRole('heading', { name: /^사무직/ })).toBeVisible()
+      await expect(fieldSec.getByText('E2E_급여')).toBeVisible()
+      await page.getByRole('button', { name: '닫기' }).click()
+
       await page.locator('input[type="month"]').fill(TEST_MONTH)
       await page.getByRole('button', { name: '1월 급여대장 만들기' }).click()
 
       const row = page.locator('tr').filter({ hasText: 'E2E_급여' })
       await expect(row).toBeVisible({ timeout: 15_000 })
       await expect(row).toContainText('수습 90%')
-      await expect(row.locator('td').nth(8)).toHaveText('3,150,000') // 급여합계
+      await expect(row).toContainText('추가 8h')
+      await expect(row).toContainText('현장직')
+      await expect(row.locator('td').nth(5)).toHaveText(holidayPay.toLocaleString()) // 연장추가수당 칸
+      await expect(row.locator('td').nth(8)).toHaveText((3_150_000 + holidayPay).toLocaleString()) // 급여합계
+      await expect(row.locator('td').nth(10)).toHaveText('100,000') // 건강보험
 
-      // 상여금 100,000 추가 → 급여합계 3,250,000
+      // 1년에 한 번 바뀌는 보험 고지액: 급여 기준을 고쳐도 이미 만든 달 대장은 그대로
+      await admin.from('employee_pay_settings').update({ health_ins: 123_450 }).eq('employee_id', emp!.id)
+      await page.reload()
+      await page.locator('input[type="month"]').fill(TEST_MONTH)
+      await expect(row.locator('td').nth(10)).toHaveText('100,000', { timeout: 15_000 })
+
+      // 상여금 100,000 추가
       await row.getByRole('button', { name: 'E2E_급여' }).click()
       await page.getByLabel('상여금').fill('100000')
       await page.getByRole('button', { name: '저장', exact: true }).click()
-      await expect(row.locator('td').nth(8)).toHaveText('3,250,000', { timeout: 15_000 })
+      await expect(row.locator('td').nth(8)).toHaveText((3_250_000 + holidayPay).toLocaleString(), { timeout: 15_000 })
 
       const dl = page.waitForEvent('download')
       await page.getByRole('button', { name: '엑셀 저장' }).click()
@@ -194,7 +227,7 @@ test.describe('급여대장 화면', () => {
         return JSON.stringify(data?.rows || [])
       }, { timeout: 15_000 }).toContain('E2E_급여')
       const { data: fp } = await admin.from('finance_payroll').select('amount').eq('employee_name', 'E2E_급여').eq('month', `${TEST_MONTH}-01`)
-      expect(fp?.[0]?.amount).toBe(3_250_000)
+      expect(fp?.[0]?.amount).toBe(3_250_000 + holidayPay)
     } finally {
       await admin.from('payroll_viewers').delete().eq('user_id', testAdminId)
       await cleanup()

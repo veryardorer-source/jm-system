@@ -253,7 +253,7 @@ export default function AdminOvertimePage() {
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <h1 className="text-xl font-bold text-gray-900">추가근무 관리</h1>
-              <p className="text-sm text-gray-500 mt-0.5">직원별 연장·야간·휴일 근무 시간을 기록하고 월별로 합산합니다.</p>
+              <p className="text-sm text-gray-500 mt-0.5">직원별 연장·야간·휴일 근무 시간을 기록하고 월별로 합산합니다. 급여대장을 만들 때 자동으로 불러와요(5인 미만 — 가산 없이 1배).</p>
             </div>
             <div className="flex gap-2">
               <button onClick={exportExcel} disabled={tableMissing}

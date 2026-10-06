@@ -14,6 +14,14 @@ export const COMPANY = {
 export const BASE_HOURS = 209
 /** 고용보험 근로자 부담률 (노무사 양식 '26.07월 개정 분 반영') */
 export const EMPLOYMENT_INS_RATE = 0.009
+/** 상시근로자 5인 미만 사업장 여부 (대표 확인 2026-10-06).
+ *  5인 미만은 연장·야간·휴일 가산(50%) 의무가 없어 '추가근무'는 1배로 지급.
+ *  단, 노무사 양식의 포괄연장(현장 41.3h)은 계약대로 1.5배 유지 — 5인 이상 대비해 노무사가 설계.
+ *  5인 이상이 되면 false로 바꾸면 새로 만드는 달부터 1.5배 (지난 달 대장은 저장된 값 유지). */
+export const SMALL_BUSINESS = true
+/** 추가근무 가산 배율 */
+export const extraOtMultiplier = (small: boolean) => (small ? 1 : 1.5)
+
 /** 연도별 최저시급 — 매년 1월 갱신 */
 export const MIN_WAGE: Record<number, number> = { 2025: 10030, 2026: 10320 }
 
@@ -25,6 +33,9 @@ export const WORK_TYPES = {
   '현장(계약직)': { time: '09:00~18:00', rest: '12:00~13:00',             days: '월~금', off: '매주 토·일',      inclusiveOt: 0 },
 } as const
 export type WorkType = keyof typeof WORK_TYPES
+/** 직군 — 노무사 자료 첫 페이지(급여셋팅) 기준: 본사 = 사무직, 현장 = 현장직 (계약직 포함) */
+export const JOB_GROUPS = ['사무직', '현장직'] as const
+export const jobGroup = (workType: string) => (workType.startsWith('현장') ? '현장직' : '사무직')
 export const WORK_TYPE_LIST = Object.keys(WORK_TYPES) as WorkType[]
 
 /** 한 직원의 한 달 급여 입력값 (DB payroll_items 한 줄) */
@@ -42,6 +53,9 @@ export type PayInput = {
   days_worked: number | null   // 중도 입사·퇴사 시 그 달 근무 일수(달력 기준, 퇴사일=마지막 근무일 포함). 비우면 한 달 전부
   month_days: number           // 그 달의 날 수
   extra_ot_hours: number       // 포괄 외 연장 추가시간
+  night_hours: number          // 야간 근무시간 (추가근무 기록)
+  holiday_hours: number        // 휴일 근무시간 (추가근무 기록)
+  small_business: boolean      // 5인 미만 → 추가근무 가산 없음(1배)
   bonus: number                // 상여금(과세)
   health_ins: number           // 건강보험 (공단 고지액)
   care_ins: number             // 장기요양 (공단 고지액)
@@ -59,7 +73,8 @@ export type PayResult = {
   meal: number
   car: number
   ot: number           // 연장근로(포괄)
-  extraOt: number      // 연장 추가수당
+  extraOt: number      // 추가근무수당 (연장·야간·휴일, 포괄 외)
+  extraHours: number   // 추가근무 시간 합계
   position: number     // 직책수당
   bonus: number
   gross: number        // 급여 합계 = 지급총액
@@ -128,7 +143,9 @@ export function calcPay(p: PayInput, year = new Date().getFullYear()): PayResult
   const position = won(p.position_allowance * ratio)
   const ot = won(hourly * inclusiveOt * 1.5 * ratio)
   const base = scaledTotal - meal - car - position - ot
-  const extraOt = won(hourly * (p.extra_ot_hours || 0) * 1.5)
+  // 추가근무(포괄 외 연장·야간·휴일) — 엑셀 '추가연장근로' = 통상시급 × 시간 × 배율. 5인 미만은 1배
+  const extraHours = (p.extra_ot_hours || 0) + (p.night_hours || 0) + (p.holiday_hours || 0)
+  const extraOt = won(hourly * extraHours * extraOtMultiplier(p.small_business))
   const bonus = won(p.bonus || 0)
 
   const gross = base + meal + car + ot + extraOt + position + bonus
@@ -155,7 +172,7 @@ export function calcPay(p: PayInput, year = new Date().getFullYear()): PayResult
   }
 
   return {
-    totalHours, hourly, ratio, base, meal, car, ot, extraOt, position, bonus, gross, taxable,
+    totalHours, hourly, ratio, base, meal, car, ot, extraOt, extraHours, position, bonus, gross, taxable,
     health, care, pension, empIns, incomeTax: tax, localTax, attendance, healthAdj, careAdj,
     deductions, net: gross - deductions, warnings,
   }

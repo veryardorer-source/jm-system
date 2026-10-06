@@ -41,7 +41,10 @@ create table if not exists public.payroll_items (
   rate_days            int check (rate_days between 0 and 31), -- 지급률 적용 일수 (수습이 달 중간에 끝날 때). 비우면 근무일 전부
   rate_note            text,                           -- '수습' 등
   days_worked          int check (days_worked between 0 and 31), -- 중도 입사·퇴사 근무일수 (비우면 한 달 전부)
-  extra_ot_hours       numeric(6,2) not null default 0, -- 포괄 외 연장 추가시간
+  extra_ot_hours       numeric(6,2) not null default 0, -- 포괄 외 연장 추가시간 (추가근무 기록에서 불러옴)
+  night_hours          numeric(6,2) not null default 0, -- 야간 근무시간
+  holiday_hours        numeric(6,2) not null default 0, -- 휴일 근무시간
+  small_business       boolean not null default true,  -- 5인 미만 → 추가근무 가산 없음(1배)
   bonus                bigint not null default 0,
   health_ins           bigint not null default 0,
   care_ins             bigint not null default 0,
@@ -56,6 +59,9 @@ create table if not exists public.payroll_items (
   updated_at           timestamptz not null default now()
 );
 alter table public.payroll_items add column if not exists rate_days int check (rate_days between 0 and 31); -- 2026-10-06 추가(기존 DB용)
+alter table public.payroll_items add column if not exists night_hours numeric(6,2) not null default 0;
+alter table public.payroll_items add column if not exists holiday_hours numeric(6,2) not null default 0;
+alter table public.payroll_items add column if not exists small_business boolean not null default true;
 create unique index if not exists payroll_items_month_emp on public.payroll_items (month, employee_id);
 create index if not exists payroll_items_month_idx on public.payroll_items (month, sort);
 
