@@ -9,7 +9,7 @@ declare
   t text;
   p record;
   tables text[] := array[
-    'employees','employee_salaries','employee_attendance',
+    'employees','employee_salaries','employee_attendance','employee_overtime',
     'finance_fixed_costs','finance_payroll','finance_project_profit','finance_sales','finance_quotes'
   ];
 begin

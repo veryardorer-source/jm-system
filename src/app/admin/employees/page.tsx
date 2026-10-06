@@ -190,7 +190,7 @@ export default function AdminEmployeesPage() {
                       className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
                   </div>
                   <div>
-                    <label className="text-sm font-medium text-gray-700 block mb-1.5">퇴사날짜</label>
+                    <label className="text-sm font-medium text-gray-700 block mb-1.5">퇴사날짜 <span className="text-xs font-normal text-gray-400">· 마지막 근무일 (급여 일할 기준)</span></label>
                     <input type="date" value={form.resign_date} onChange={e => setForm({ ...form, resign_date: e.target.value })}
                       className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
                   </div>

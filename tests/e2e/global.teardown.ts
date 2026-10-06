@@ -19,6 +19,12 @@ export default async function globalTeardown() {
   await admin.from('notices').delete().like('title', 'E2E\\_%')
   await admin.from('notifications').delete().or('title.like.%E2E관리자%,title.like.%E2E현장%,title.like.%E2E디자인%,body.like.E2E\\_%')
   await admin.from('invite_tokens').delete().like('email', 'e2e-%')
+  await admin.from('employees').delete().like('name', 'E2E\\_%') // 추가근무·급여 기준은 cascade 삭제
+  await admin.from('payroll_items').delete().eq('month', '2030-01') // 급여대장 테스트 달
+  await admin.from('payroll_items').delete().eq('month', '2030-02')
+  await admin.from('payroll_viewers').delete().eq('note', 'E2E 임시')
+  await admin.from('finance_payroll').delete().gte('month', '2030-01-01').lt('month', '2030-02-01')
+  await admin.from('finance_payroll_ledger').delete().eq('month', '2030-01')
 
   // 2) 테스트 계정 삭제 (임시 생성 계정 포함)
   const { data: list } = await admin.auth.admin.listUsers({ page: 1, perPage: 1000 })

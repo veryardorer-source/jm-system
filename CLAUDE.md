@@ -38,7 +38,8 @@ npx vercel --prod  # 배포 (jm-system 폴더에서 실행)
 - 직원 가입은 관리자가 `/admin/users`에서 직접 생성 (가입 후 승인 전까지는 pending)
 - 역할: `admin`, `designer`, `field`, `partner`(외부협력업체·보기전용) + 미승인(pending=위 4개가 아닌 값). 승인 판정 `isApproved()`/`APPROVED_ROLES`(`lib/auth-context.tsx`)
 - **RLS 계층형 적용(2026-07-02 최신)**: 초기엔 전체 테이블 RLS ON + `authenticated` 전체허용(`auth_all`)이었으나, 이후 테이블별로 세분화. 데이터 클라이언트는 `createBrowserClient`(쿠키 세션)라 로그인 사용자로 요청되고, RLS가 역할/참여자 기준으로 강제한다.
-  - **admin 전용**: employees·employee_salaries·employee_attendance·finance_*(`db/rls_sensitive.sql`)
+  - **admin 전용**: employees·employee_salaries·employee_attendance·employee_overtime·finance_*(`db/rls_sensitive.sql`)
+  - **급여 열람자 전용**(대표·문준호 이사, 2026-10-06): employee_pay_settings·payroll_items + audit_logs의 해당 줄 — admin이어도 `payroll_viewers` 명단에 있어야 함(`is_payroll_viewer()`, 명단은 SQL Editor에서만 변경). ⚠️ 이 표들을 rls_sensitive.sql 목록에 넣지 말 것(admin 전체 허용으로 풀림)
   - **본인 데이터만**: notifications(`db/rls_notifications.sql`), chat_reads(본인 읽음행만 upsert)
   - **역할별 제한**(`db/rls_money.sql`): receipts·withdrawal_requests·payments=admin/designer/field, project_costs=admin/designer, company_documents=admin전체·designer/field는 전체공개만·쓰기 admin, project_files=승인자 읽기·비파트너 쓰기
   - **채팅 참여자 기준**(`db/rls_chat.sql`): messages/chat_rooms/chat_room_members/message_reactions는 참여자·본인 기준, insert는 승인 실무역할만(partner=보기전용, pending 차단). 헬퍼 `my_role()`/`is_approved()`/`is_room_member()`/`can_see_message()`(security definer)
@@ -49,7 +50,7 @@ npx vercel --prod  # 배포 (jm-system 폴더에서 실행)
 - **새 DB 세팅 시 SQL 실행 순서** (Supabase SQL Editor):
   1. `db/rls_helpers.sql` — 공통 함수(my_role 등). **가장 먼저, 다른 파일들이 의존**
   2. `db/security_and_realtime.sql` — 기본 테이블 + 공용 정책 + realtime
-  3. 기능 테이블: `payments.sql` `worklogs.sql` `push_subscriptions.sql` `finance_quotes.sql` `employee_records.sql` `chat_features.sql` `chat_reads.sql` `payroll_ledger.sql` `profit_file.sql` `notice_images.sql` `notice_files.sql` 등
+  3. 기능 테이블: `payments.sql` `worklogs.sql` `push_subscriptions.sql` `finance_quotes.sql` `employee_records.sql` `employee_overtime.sql` `payroll.sql` `chat_features.sql` `chat_reads.sql` `payroll_ledger.sql` `profit_file.sql` `notice_images.sql` `notice_files.sql` 등
   4. `db/rls_notifications.sql` — **필수** (없으면 알림 전면 차단)
   5. `db/rls_chat.sql` — **필수** (없으면 채팅 전면 차단)
   6. `db/rls_sensitive.sql` → 7. `db/rls_money.sql` → 8. `db/project_access.sql` — **필수** (partner 현장별 접근)

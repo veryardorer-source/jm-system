@@ -6,7 +6,7 @@ test.describe('역할별 메뉴', () => {
   test('admin: 관리자 메뉴 전부 보임', async ({ page }) => {
     await login(page, 'e2e-admin@jmtest.local')
     const nav = page.locator('aside, nav').first()
-    for (const label of ['수금 관리', '회원 관리', '직원정보내역', '경영관리']) {
+    for (const label of ['수금 관리', '회원 관리', '직원정보내역', '추가근무', '경영관리']) {
       await expect(nav.getByText(label, { exact: false }).first()).toBeVisible()
     }
   })

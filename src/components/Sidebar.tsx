@@ -23,6 +23,8 @@ const NAV_ITEMS = [
 const ADMIN_ITEMS = [
   { href: '/admin/users', label: '회원 관리', icon: '👥' },
   { href: '/admin/employees', label: '직원정보내역', icon: '🔒' },
+  { href: '/admin/overtime', label: '추가근무', icon: '⏱️' },
+  { href: '/admin/payroll', label: '급여대장', icon: '💰' },
   { href: '/admin/finance', label: '경영관리', icon: '📊' },
   { href: '/admin/audit', label: '감사 기록', icon: '📋' },
 ]
@@ -59,6 +61,16 @@ export default function Sidebar() {
   const [unread, setUnread] = useState(0)
   const [chatUnread, setChatUnread] = useState(0)
   const [moreOpen, setMoreOpen] = useState(false)
+  // 급여대장은 관리자 중에서도 지정된 열람자(대표·이사)만 — DB 함수로 확인
+  const [payrollViewer, setPayrollViewer] = useState(false)
+  const adminItems = ADMIN_ITEMS.filter(i => i.href !== '/admin/payroll' || payrollViewer)
+
+  useEffect(() => {
+    if (!isAdmin) return
+    let active = true
+    supabase.rpc('is_payroll_viewer').then(({ data }) => { if (active) setPayrollViewer(data === true) })
+    return () => { active = false }
+  }, [isAdmin, profile?.id])
 
   useEffect(() => {
     if (!profile?.id) return
@@ -116,7 +128,7 @@ export default function Sidebar() {
           {isAdmin && (
             <>
               <div className="mt-3 mb-1 px-3 text-xs text-green-400 font-semibold uppercase tracking-wide">관리자</div>
-              {ADMIN_ITEMS.map(item => {
+              {adminItems.map(item => {
                 const active = pathname.startsWith(item.href)
                 return (
                   <Link key={item.href} href={item.href}
@@ -198,7 +210,7 @@ export default function Sidebar() {
                   </Link>
                 )
               })}
-              {isAdmin && ADMIN_ITEMS.map(item => {
+              {isAdmin && adminItems.map(item => {
                 const active = pathname.startsWith(item.href)
                 return (
                   <Link key={item.href} href={item.href} onClick={() => setMoreOpen(false)}

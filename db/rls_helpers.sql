@@ -48,6 +48,22 @@ as $$
     ))
 $$;
 
+-- 급여대장 열람자 (2026-10-06) — 관리자 등급이어도 이 명단에 있어야 급여대장·급여 기준을 봄.
+-- 명단 쓰기 정책 없음 = 앱에서 못 바꿈, SQL Editor에서만. 대표 지정은 payroll.sql
+create table if not exists public.payroll_viewers (
+  user_id    uuid primary key references auth.users(id) on delete cascade,
+  note       text,
+  created_at timestamptz not null default now()
+);
+alter table public.payroll_viewers enable row level security;
+drop policy if exists "self read" on public.payroll_viewers;
+create policy "self read" on public.payroll_viewers for select to authenticated using (user_id = auth.uid());
+
+create or replace function public.is_payroll_viewer()
+returns boolean language sql stable security definer set search_path = public
+as $$ select exists(select 1 from public.payroll_viewers where user_id = auth.uid())
+            and coalesce(public.my_role() = 'admin', false) $$;
+
 -- 특정 테이블의 기존 정책 전부 제거 (정책 교체용)
 create or replace function public._drop_all_policies(tbl text)
 returns void language plpgsql as $$
