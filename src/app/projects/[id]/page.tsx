@@ -723,14 +723,15 @@ export default function ProjectDetail() {
   async function handleSchedule(e: React.FormEvent) {
     e.preventDefault()
     setSavingS(true)
+    // 빈 날짜('')는 DB date 형식 오류로 저장이 통째로 실패함 → null로 보냄
+    const row = { ...sForm, scheduled_date: sForm.scheduled_date || null, end_date: sForm.end_date || null }
     if (editingSchedule) {
-      await supabase.from('schedules').update({
-        ...sForm,
-        end_date: sForm.end_date || null,
-      }).eq('id', editingSchedule.id)
+      const { error } = await supabase.from('schedules').update(row).eq('id', editingSchedule.id)
+      if (error) { setSavingS(false); toast('공정 저장 실패: ' + error.message); return }
       setEditingSchedule(null)
     } else {
-      await supabase.from('schedules').insert([{ project_id: id, ...sForm, end_date: sForm.end_date || null }])
+      const { error } = await supabase.from('schedules').insert([{ project_id: id, ...row }])
+      if (error) { setSavingS(false); toast('공정 저장 실패: ' + error.message); return }
       notifyOthers(profile?.id, { type: 'schedule', title: `${project?.name || '현장'} · 공정 추가`, body: `${sForm.task_name} (${sForm.scheduled_date})`, link: `/projects/${id}?tab=공정` })
     }
     setSForm({ task_name: '', scheduled_date: '', end_date: '', manager: '' })
