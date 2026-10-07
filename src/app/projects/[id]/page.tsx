@@ -15,6 +15,7 @@ import Image from 'next/image'
 import FileDropInput from '@/components/FileDropInput'
 import SnsTab from '@/components/SnsTab'
 
+const EMPTY_SFORM = { task_name: '', scheduled_date: '', end_date: '', manager: '', vendor: '', vendor_booked: false }
 const TAB_LIST = ['현황', '자료', '공정', '비용', 'SNS']
 const PHOTO_CATS = ['공사전사진', '시공전사진', '시공사진', '마감사진'] // 시공전사진=옛 이름 호환
 // 글이 길어지는 분류 — 수정창을 넓고 크게 연다 (미팅 기록·요청사항 등)
@@ -158,7 +159,8 @@ export default function ProjectDetail() {
   const [hoveredFileId, setHoveredFileId] = useState<string | null>(null)
 
   const [showScheduleForm, setShowScheduleForm] = useState(false)
-  const [sForm, setSForm] = useState({ task_name: '', scheduled_date: '', end_date: '', manager: '' })
+  const [sForm, setSForm] = useState(EMPTY_SFORM)
+  const [vendorNames, setVendorNames] = useState<string[]>([]) // 연락처의 업체명 (외주업체 자동완성)
   const [savingS, setSavingS] = useState(false)
   const [editingSchedule, setEditingSchedule] = useState<Schedule | null>(null)
 
@@ -724,7 +726,14 @@ export default function ProjectDetail() {
     e.preventDefault()
     setSavingS(true)
     // 빈 날짜('')는 DB date 형식 오류로 저장이 통째로 실패함 → null로 보냄
-    const row = { ...sForm, scheduled_date: sForm.scheduled_date || null, end_date: sForm.end_date || null }
+    const vendor = sForm.vendor.trim()
+    const row = { ...sForm, vendor: vendor || null, vendor_booked: !!vendor && sForm.vendor_booked, scheduled_date: sForm.scheduled_date || null, end_date: sForm.end_date || null }
+    // 이미 예약 확정된 업체를 다른 업체로 바꾸려 하면 한 번 더 확인 (중복 예약 방지)
+    const prev = editingSchedule
+    if (prev?.vendor_booked && prev.vendor && prev.vendor !== vendor
+      && !confirm(`이 공정은 이미 "${prev.vendor}"(으)로 예약 확정돼 있어요.\n\n${vendor ? `"${vendor}"(으)로 바꿀까요?` : '외주업체를 비울까요?'} (기존 업체 예약 취소는 따로 연락해야 해요)`)) {
+      setSavingS(false); return
+    }
     if (editingSchedule) {
       const { error } = await supabase.from('schedules').update(row).eq('id', editingSchedule.id)
       if (error) { setSavingS(false); toast('공정 저장 실패: ' + error.message); return }
@@ -734,15 +743,23 @@ export default function ProjectDetail() {
       if (error) { setSavingS(false); toast('공정 저장 실패: ' + error.message); return }
       notifyOthers(profile?.id, { type: 'schedule', title: `${project?.name || '현장'} · 공정 추가`, body: `${sForm.task_name} (${sForm.scheduled_date})`, link: `/projects/${id}?tab=공정` })
     }
-    setSForm({ task_name: '', scheduled_date: '', end_date: '', manager: '' })
+    setSForm(EMPTY_SFORM)
     setShowScheduleForm(false)
     setSavingS(false)
     fetchAll()
   }
 
+  // 공정 창이 열릴 때 연락처 업체명을 한 번만 불러옴 (외주업체 자동완성)
+  useEffect(() => {
+    if (!showScheduleForm || vendorNames.length) return
+    supabase.from('contacts').select('company').order('company').then(({ data }) => {
+      setVendorNames(Array.from(new Set((data || []).map(c => c.company).filter(Boolean))))
+    })
+  }, [showScheduleForm, vendorNames.length])
+
   function openEditSchedule(s: Schedule) {
     setEditingSchedule(s)
-    setSForm({ task_name: s.task_name, scheduled_date: s.scheduled_date || '', end_date: s.end_date || '', manager: s.manager || '' })
+    setSForm({ task_name: s.task_name, scheduled_date: s.scheduled_date || '', end_date: s.end_date || '', manager: s.manager || '', vendor: s.vendor || '', vendor_booked: !!s.vendor_booked })
     setShowScheduleForm(true)
   }
 
@@ -1083,6 +1100,12 @@ export default function ProjectDetail() {
                         return (
                           <div key={s.id} className="flex items-center gap-3">
                             <span className="w-20 md:w-28 text-sm text-gray-700 truncate flex-shrink-0">{s.task_name}</span>
+                            {s.vendor && (
+                              <span title={s.vendor_booked ? '예약 확정' : '예약 미확정'}
+                                className={`hidden sm:inline max-w-28 truncate text-xs px-1.5 py-0.5 rounded flex-shrink-0 ${s.vendor_booked ? 'bg-green-50 text-green-700' : 'bg-amber-50 text-amber-700'}`}>
+                                {s.vendor_booked ? '✔ ' : ''}{s.vendor}
+                              </span>
+                            )}
                             <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden">
                               <div className={`h-full rounded-full ${barColor}`} style={{ width: `${barW}%` }} />
                             </div>
@@ -1394,6 +1417,7 @@ export default function ProjectDetail() {
                         <th className="text-left text-xs font-semibold text-gray-400 px-4 py-3">시작일</th>
                         <th className="text-left text-xs font-semibold text-gray-400 px-4 py-3">종료일</th>
                         <th className="text-left text-xs font-semibold text-gray-400 px-4 py-3">담당자</th>
+                        <th className="text-left text-xs font-semibold text-gray-400 px-4 py-3">외주업체</th>
                         <th className="text-left text-xs font-semibold text-gray-400 px-4 py-3">상태</th>
                         <th className="px-4 py-3"></th>
                       </tr>
@@ -1409,6 +1433,16 @@ export default function ProjectDetail() {
                           <td className="px-4 py-3 text-sm text-gray-600">{s.scheduled_date || '-'}</td>
                           <td className="px-4 py-3 text-sm text-gray-600">{s.end_date || '-'}</td>
                           <td className="px-4 py-3 text-sm text-gray-600">{s.manager || '-'}</td>
+                          <td className="px-4 py-3 text-sm text-gray-700">
+                            {s.vendor ? (
+                              <span className="inline-flex items-center gap-1.5 flex-wrap">
+                                {s.vendor}
+                                {s.vendor_booked
+                                  ? <span className="text-xs px-1.5 py-0.5 rounded bg-green-100 text-green-700 font-medium">✔ 확정</span>
+                                  : <span className="text-xs px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 font-medium">미확정</span>}
+                              </span>
+                            ) : <span className="text-gray-300">-</span>}
+                          </td>
                           <td className="px-4 py-3">
                             {readOnly ? (
                               <span className={`text-xs px-2 py-1 rounded-full font-medium border ${
@@ -2027,7 +2061,7 @@ export default function ProjectDetail() {
           <div className="bg-white rounded-2xl w-full max-w-md shadow-xl max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between px-6 py-5 border-b border-gray-100 sticky top-0 bg-white">
               <h2 className="text-lg font-bold">{editingSchedule ? '공정 수정' : '공정 추가'}</h2>
-              <button onClick={() => { setShowScheduleForm(false); setEditingSchedule(null); setSForm({ task_name: '', scheduled_date: '', end_date: '', manager: '' }) }} className="text-gray-400 text-2xl">&times;</button>
+              <button onClick={() => { setShowScheduleForm(false); setEditingSchedule(null); setSForm(EMPTY_SFORM) }} className="text-gray-400 text-2xl">&times;</button>
             </div>
             <form onSubmit={handleSchedule} className="px-6 py-5 flex flex-col gap-4">
               <div>
@@ -2054,8 +2088,24 @@ export default function ProjectDetail() {
                   placeholder="김팀장"
                   className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
               </div>
+              <div>
+                <label className="text-sm font-medium text-gray-700 block mb-1.5">외주업체</label>
+                <input value={sForm.vendor} onChange={e => setSForm({...sForm, vendor: e.target.value})}
+                  list="vendor-names" placeholder="업체명 (연락처에서 골라도 돼요)"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
+                <datalist id="vendor-names">
+                  {vendorNames.map(n => <option key={n} value={n} />)}
+                </datalist>
+                {sForm.vendor.trim() && (
+                  <label className="flex items-center gap-2 mt-2 text-sm text-gray-700 cursor-pointer">
+                    <input type="checkbox" checked={sForm.vendor_booked} onChange={e => setSForm({...sForm, vendor_booked: e.target.checked})}
+                      className="w-4 h-4 accent-green-600" />
+                    예약 확정 <span className="text-xs text-gray-400">(업체와 날짜까지 약속됨)</span>
+                  </label>
+                )}
+              </div>
               <div className="flex gap-3 mt-2">
-                <button type="button" onClick={() => { setShowScheduleForm(false); setEditingSchedule(null); setSForm({ task_name: '', scheduled_date: '', end_date: '', manager: '' }) }}
+                <button type="button" onClick={() => { setShowScheduleForm(false); setEditingSchedule(null); setSForm(EMPTY_SFORM) }}
                   className="flex-1 border border-gray-300 text-gray-700 py-2.5 rounded-lg text-sm font-medium">취소</button>
                 <button type="submit" disabled={savingS}
                   className="flex-1 bg-blue-600 text-white py-2.5 rounded-lg text-sm font-medium disabled:opacity-50">

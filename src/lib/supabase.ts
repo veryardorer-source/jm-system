@@ -184,6 +184,8 @@ export type Schedule = {
   scheduled_date: string
   end_date: string
   manager: string
+  vendor: string | null       // 외주업체
+  vendor_booked: boolean      // 외주업체 예약 확정
   is_done: boolean
   phase_status: PhaseStatus
   created_at: string
