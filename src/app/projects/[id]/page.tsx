@@ -776,6 +776,16 @@ export default function ProjectDetail() {
     fetchAll()
   }
 
+  // 공정일정(현황 탭)에서 바로 상태 변경 — 화면 먼저 바꾸고 저장 (실패하면 되돌림)
+  async function quickPhaseStatus(s: Schedule, status: '예정' | '진행중' | '완료') {
+    setSchedules(prev => prev.map(x => x.id === s.id ? { ...x, phase_status: status, is_done: status === '완료' } : x))
+    const { error } = await supabase.from('schedules').update({ phase_status: status, is_done: status === '완료' }).eq('id', s.id)
+    if (error) {
+      setSchedules(prev => prev.map(x => x.id === s.id ? s : x))
+      toast('상태 변경 실패: ' + error.message)
+    } else toast(`${s.task_name} → ${status}`)
+  }
+
   async function handleCost(e: React.FormEvent) {
     e.preventDefault()
     if (!cForm.month) return
@@ -1087,7 +1097,7 @@ export default function ProjectDetail() {
                 {!ganttOpen ? null : schedules.length === 0 ? (
                   <p className="text-sm text-gray-400 py-6 text-center">등록된 공정이 없어요</p>
                 ) : (
-                  <ProjectGantt schedules={schedules} onSelect={readOnly ? undefined : openEditSchedule} />
+                  <ProjectGantt schedules={schedules} onEdit={readOnly ? undefined : openEditSchedule} onStatus={readOnly ? undefined : quickPhaseStatus} />
                 )}
               </div>
 

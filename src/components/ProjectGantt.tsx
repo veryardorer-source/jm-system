@@ -20,8 +20,17 @@ const STYLE: Record<Status, { bar: string; text: string; chip: string }> = {
   '지연':   { bar: 'bg-red-500',   text: 'text-white',    chip: 'bg-red-100 text-red-700' },
 }
 
-export default function ProjectGantt(props: { schedules: Schedule[]; onSelect?: (s: Schedule) => void }) {
+type PhaseStatus = '예정' | '진행중' | '완료'
+type Props = {
+  schedules: Schedule[]
+  onEdit?: (s: Schedule) => void                       // 공정 수정 창 열기
+  onStatus?: (s: Schedule, st: PhaseStatus) => void    // 상태 바로 변경
+}
+
+export default function ProjectGantt({ schedules, onEdit, onStatus }: Props) {
   const [full, setFull] = useState(false)
+  const [picked, setPicked] = useState<string | null>(null) // 막대를 눌러 연 공정 id
+  const pickedS = schedules.find(s => s.id === picked)
   // 크게 보기: 화면 전체로 띄우기 (뒤 화면 스크롤 잠금)
   useEffect(() => {
     if (!full) return
@@ -33,7 +42,7 @@ export default function ProjectGantt(props: { schedules: Schedule[]; onSelect?: 
   }, [full])
   return (
     <>
-      <Chart {...props} full={false} onFull={() => setFull(true)} />
+      <Chart schedules={schedules} onSelect={s => setPicked(s.id)} full={false} onFull={() => setFull(true)} />
       {full && (
         <div className="fixed inset-0 z-50 bg-white flex flex-col">
           <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200">
@@ -41,10 +50,60 @@ export default function ProjectGantt(props: { schedules: Schedule[]; onSelect?: 
             <button onClick={() => setFull(false)} className="text-sm border border-gray-300 rounded-lg px-3 py-1.5 text-gray-600 hover:bg-gray-50">닫기 ✕</button>
           </div>
           <div className="flex-1 overflow-auto p-3 md:p-5">
-            <Chart {...props} full onSelect={props.onSelect && (s => { setFull(false); props.onSelect!(s) })} />
+            <Chart schedules={schedules} onSelect={s => setPicked(s.id)} full />
           </div>
         </div>
       )}
+
+      {/* 막대 누르면: 공정 정보 + 상태 바로 변경 */}
+      {pickedS && (() => {
+        const start = parseDate(pickedS.scheduled_date), end = parseDate(pickedS.end_date) || start
+        const ps = (pickedS.phase_status || '예정') as PhaseStatus
+        const late = ps !== '완료' && !!end && end < new Date(new Date().setHours(0, 0, 0, 0))
+        const fmtD = (d: Date | null) => d ? `${d.getMonth() + 1}/${d.getDate()}` : '-'
+        return (
+          <div className="fixed inset-0 z-[60] bg-black/40 flex items-end sm:items-center justify-center p-0 sm:p-4" onClick={() => setPicked(null)}>
+            <div className="bg-white w-full sm:max-w-sm rounded-t-2xl sm:rounded-2xl shadow-xl p-5" onClick={e => e.stopPropagation()}>
+              <div className="flex items-start justify-between gap-2 mb-1">
+                <h3 className="text-base font-bold text-gray-900 break-keep">{pickedS.task_name}</h3>
+                <button onClick={() => setPicked(null)} className="text-gray-400 text-2xl leading-none">&times;</button>
+              </div>
+              <p className="text-sm text-gray-500">
+                {fmtD(start)}{end && start && end > start ? ` ~ ${fmtD(end)}` : ''}
+                {pickedS.manager ? ` · 담당 ${pickedS.manager}` : ''}
+              </p>
+              {pickedS.vendor && <p className="text-sm text-gray-500">업체 {pickedS.vendor} {pickedS.vendor_booked ? '(확정)' : '(미확정)'}</p>}
+              {late && <p className="mt-2 text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2">종료일이 지났는데 아직 완료로 체크되지 않았어요</p>}
+
+              {onStatus ? (
+                <>
+                  <p className="text-xs text-gray-400 mt-4 mb-2">상태 변경</p>
+                  <div className="grid grid-cols-3 gap-2">
+                    {(['예정', '진행중', '완료'] as const).map(st => {
+                      const on = ps === st
+                      const color = st === '완료' ? 'bg-green-500 border-green-500 text-white' : st === '진행중' ? 'bg-blue-500 border-blue-500 text-white' : 'bg-gray-300 border-gray-300 text-gray-800'
+                      return (
+                        <button key={st} onClick={() => { if (!on) onStatus(pickedS, st); setPicked(null) }}
+                          className={`py-2.5 rounded-lg text-sm font-medium border ${on ? color : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
+                          {on ? '✓ ' : ''}{st}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </>
+              ) : (
+                <p className="mt-4 text-sm">현재 상태: <b>{late ? '지연' : ps}</b></p>
+              )}
+              {onEdit && (
+                <button onClick={() => { setPicked(null); setFull(false); onEdit(pickedS) }}
+                  className="mt-3 w-full py-2.5 rounded-lg text-sm border border-gray-300 text-gray-700 hover:bg-gray-50">
+                  날짜·담당·업체 수정
+                </button>
+              )}
+            </div>
+          </div>
+        )
+      })()}
     </>
   )
 }
@@ -172,7 +231,7 @@ function Chart({ schedules, onSelect, full, onFull }: {
                     <div className="absolute top-0 bottom-0 w-0.5 bg-red-400 z-10" style={{ left: todayIdx * DAY_W + DAY_W / 2 }} />
                     <button type="button" onClick={() => onSelect?.(s)}
                       title={`${s.task_name}\n${fmt(start)} ~ ${fmt(end)} · ${status}${s.manager ? `\n담당: ${s.manager}` : ''}${s.vendor ? `\n업체: ${s.vendor}${s.vendor_booked ? ' (확정)' : ' (미확정)'}` : ''}`}
-                      className={`absolute top-1/2 -translate-y-1/2 h-[22px] rounded-md px-1.5 flex items-center overflow-hidden z-[5] ${st.bar} ${st.text} ${onSelect ? 'cursor-pointer hover:brightness-95' : 'cursor-default'}`}
+                      className={`absolute top-1/2 -translate-y-1/2 h-[22px] rounded-md px-1.5 flex items-center overflow-hidden z-[5] ${st.bar} ${st.text} cursor-pointer hover:brightness-95`}
                       style={{ left, width }}>
                       <span className="hidden md:inline text-[10px] font-medium whitespace-nowrap">{width >= 66 ? `${fmt(start)}~${fmt(end)}` : ''}</span>
                     </button>
