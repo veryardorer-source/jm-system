@@ -57,8 +57,8 @@ function Chart({ schedules, onSelect, full, onFull }: {
 }) {
   const [zoom, setZoom] = useState(full ? 2 : 1)
   const DAY_W = ZOOMS[zoom]
-  // 공정명 칸: 크게 보기에선 넓게, 평소엔 폰에서 좁게
-  const nameW = full ? 'w-44 md:w-60' : 'w-28 md:w-44'
+  // 공정명 칸은 PC에서만 (폰은 칸 대신 막대 옆에 공정명 표시)
+  const nameW = `hidden md:flex ${full ? 'md:w-60' : 'md:w-44'}`
   const scrollRef = useRef<HTMLDivElement>(null)
   const today = new Date(); today.setHours(0, 0, 0, 0)
 
@@ -138,7 +138,7 @@ function Chart({ schedules, onSelect, full, onFull }: {
               ))}
             </div>
             <div className="flex bg-gray-50 border-b border-gray-200">
-              <div className={`${nameW} flex-shrink-0 sticky left-0 z-20 bg-gray-50 border-r border-gray-100 px-3 py-1 text-xs font-semibold text-gray-400`}>공정</div>
+              <div className={`${nameW} flex-shrink-0 sticky left-0 z-20 bg-gray-50 border-r border-gray-100 px-3 py-1 text-xs font-semibold text-gray-400 items-center`}>공정</div>
               {Array.from({ length: totalDays }).map((_, i) => {
                 const d = new Date(rangeStart.getTime() + i * DAY)
                 const dow = d.getDay()
@@ -154,6 +154,8 @@ function Chart({ schedules, onSelect, full, onFull }: {
               const left = dayIdx(start) * DAY_W
               const width = (dayIdx(end) - dayIdx(start) + 1) * DAY_W
               const st = STYLE[status]
+              // 폰: 막대 옆에 공정명 — 오른쪽 끝 근처면 막대 왼쪽에 붙임
+              const labelLeft = dayIdx(end) < totalDays - 10
               return (
                 <div key={s.id} className="flex border-b border-gray-50 hover:bg-gray-50/70 group">
                   <div className={`${nameW} flex-shrink-0 sticky left-0 z-20 bg-white group-hover:bg-gray-50 border-r border-gray-100 px-2 md:px-3 py-1.5 flex items-center gap-1.5`}>
@@ -172,7 +174,12 @@ function Chart({ schedules, onSelect, full, onFull }: {
                       title={`${s.task_name}\n${fmt(start)} ~ ${fmt(end)} · ${status}${s.manager ? `\n담당: ${s.manager}` : ''}${s.vendor ? `\n업체: ${s.vendor}${s.vendor_booked ? ' (확정)' : ' (미확정)'}` : ''}`}
                       className={`absolute top-1/2 -translate-y-1/2 h-[22px] rounded-md px-1.5 flex items-center overflow-hidden z-[5] ${st.bar} ${st.text} ${onSelect ? 'cursor-pointer hover:brightness-95' : 'cursor-default'}`}
                       style={{ left, width }}>
-                      <span className="text-[10px] font-medium whitespace-nowrap">{width >= 66 ? `${fmt(start)}~${fmt(end)}` : ''}</span>
+                      <span className="hidden md:inline text-[10px] font-medium whitespace-nowrap">{width >= 66 ? `${fmt(start)}~${fmt(end)}` : ''}</span>
+                    </button>
+                    <button type="button" onClick={() => onSelect?.(s)}
+                      className={`md:hidden absolute top-1/2 -translate-y-1/2 z-[6] whitespace-nowrap ${full ? 'text-sm' : 'text-xs'} font-medium ${status === '완료' ? 'text-gray-400' : status === '지연' ? 'text-red-600' : 'text-gray-800'}`}
+                      style={labelLeft ? { left: left + width + 4 } : { right: totalDays * DAY_W - left + 4 }}>
+                      {s.task_name} <span className="text-[10px] font-normal text-gray-400">{fmt(start)}{end > start ? `~${fmt(end)}` : ''}</span>
                     </button>
                   </div>
                 </div>
