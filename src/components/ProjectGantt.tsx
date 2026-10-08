@@ -1,10 +1,10 @@
 'use client'
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { Schedule } from '@/lib/supabase'
 
 // 현장 상세 · 현황 탭의 공정일정(간트) — 공정별 기간 막대를 상태별 색으로 표시
 const DAY = 86400000
-const DAY_W = 22 // 하루 칸 너비(px)
+const ZOOMS = [10, 16, 24, 36] // 하루 칸 너비(px) — 확대/축소 단계
 
 // 'YYYY-MM-DD'를 현지 자정으로 (new Date('YYYY-MM-DD')는 UTC 기준이라 하루 밀릴 수 있음)
 function parseDate(s?: string | null): Date | null {
@@ -20,10 +20,45 @@ const STYLE: Record<Status, { bar: string; text: string; chip: string }> = {
   '지연':   { bar: 'bg-red-500',   text: 'text-white',    chip: 'bg-red-100 text-red-700' },
 }
 
-export default function ProjectGantt({ schedules, onSelect }: {
+export default function ProjectGantt(props: { schedules: Schedule[]; onSelect?: (s: Schedule) => void }) {
+  const [full, setFull] = useState(false)
+  // 크게 보기: 화면 전체로 띄우기 (뒤 화면 스크롤 잠금)
+  useEffect(() => {
+    if (!full) return
+    const prev = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setFull(false) }
+    window.addEventListener('keydown', onKey)
+    return () => { document.body.style.overflow = prev; window.removeEventListener('keydown', onKey) }
+  }, [full])
+  return (
+    <>
+      <Chart {...props} full={false} onFull={() => setFull(true)} />
+      {full && (
+        <div className="fixed inset-0 z-50 bg-white flex flex-col">
+          <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200">
+            <h2 className="text-base font-bold text-gray-800">공정일정</h2>
+            <button onClick={() => setFull(false)} className="text-sm border border-gray-300 rounded-lg px-3 py-1.5 text-gray-600 hover:bg-gray-50">닫기 ✕</button>
+          </div>
+          <div className="flex-1 overflow-auto p-3 md:p-5">
+            <Chart {...props} full onSelect={props.onSelect && (s => { setFull(false); props.onSelect!(s) })} />
+          </div>
+        </div>
+      )}
+    </>
+  )
+}
+
+function Chart({ schedules, onSelect, full, onFull }: {
   schedules: Schedule[]
   onSelect?: (s: Schedule) => void
+  full: boolean
+  onFull?: () => void
 }) {
+  const [zoom, setZoom] = useState(full ? 2 : 1)
+  const DAY_W = ZOOMS[zoom]
+  // 공정명 칸: 크게 보기에선 넓게, 평소엔 폰에서 좁게
+  const nameW = full ? 'w-44 md:w-60' : 'w-28 md:w-44'
   const scrollRef = useRef<HTMLDivElement>(null)
   const today = new Date(); today.setHours(0, 0, 0, 0)
 
@@ -63,8 +98,8 @@ export default function ProjectGantt({ schedules, onSelect }: {
   // 처음 열 때 오늘 위치가 보이도록 가로 스크롤
   useEffect(() => {
     const el = scrollRef.current
-    if (el) el.scrollLeft = Math.max(0, todayIdx * DAY_W - el.clientWidth / 3)
-  }, [todayIdx])
+    if (el) el.scrollLeft = Math.max(0, todayIdx * DAY_W - el.clientWidth / 2)
+  }, [todayIdx, DAY_W, dated.length])
 
   const fmt = (d: Date) => `${d.getMonth() + 1}/${d.getDate()}`
 
@@ -78,27 +113,38 @@ export default function ProjectGantt({ schedules, onSelect }: {
           </span>
         ))}
         <span className="flex items-center gap-1.5 text-xs text-gray-500"><span className="w-0.5 h-3 bg-red-400" />오늘</span>
+        {dated.length > 0 && (
+          <div className="ml-auto flex items-center gap-1">
+            <button onClick={() => setZoom(z => Math.max(0, z - 1))} disabled={zoom === 0} title="축소"
+              className="w-7 h-7 rounded-md border border-gray-300 text-gray-600 text-sm disabled:opacity-30 hover:bg-gray-50">−</button>
+            <button onClick={() => setZoom(z => Math.min(ZOOMS.length - 1, z + 1))} disabled={zoom === ZOOMS.length - 1} title="확대"
+              className="w-7 h-7 rounded-md border border-gray-300 text-gray-600 text-sm disabled:opacity-30 hover:bg-gray-50">+</button>
+            {!full && onFull && (
+              <button onClick={onFull} className="h-7 px-2.5 rounded-md border border-gray-300 text-gray-600 text-xs hover:bg-gray-50">⛶ 크게 보기</button>
+            )}
+          </div>
+        )}
       </div>
 
       {dated.length > 0 && (
         <div ref={scrollRef} className="overflow-x-auto border border-gray-100 rounded-lg">
-          <div style={{ width: `calc(9rem + ${totalDays * DAY_W}px)` }}>
+          <div className="w-max">
             {/* 월 · 날짜 헤더 */}
             <div className="flex bg-gray-50 border-b border-gray-100">
-              <div className="w-36 flex-shrink-0 sticky left-0 z-20 bg-gray-50 border-r border-gray-100" />
+              <div className={`${nameW} flex-shrink-0 sticky left-0 z-20 bg-gray-50 border-r border-gray-100`} />
               {months.map((m, i) => (
                 <div key={i} className="text-xs font-semibold text-gray-500 py-1 px-1.5 border-r border-gray-100 truncate"
                   style={{ width: m.days * DAY_W }}>{m.label}</div>
               ))}
             </div>
             <div className="flex bg-gray-50 border-b border-gray-200">
-              <div className="w-36 flex-shrink-0 sticky left-0 z-20 bg-gray-50 border-r border-gray-100 px-3 py-1 text-xs font-semibold text-gray-400">공정</div>
+              <div className={`${nameW} flex-shrink-0 sticky left-0 z-20 bg-gray-50 border-r border-gray-100 px-3 py-1 text-xs font-semibold text-gray-400`}>공정</div>
               {Array.from({ length: totalDays }).map((_, i) => {
                 const d = new Date(rangeStart.getTime() + i * DAY)
                 const dow = d.getDay()
                 return (
                   <div key={i} className={`flex-shrink-0 text-center py-1 border-r border-gray-100 ${i === todayIdx ? 'bg-red-50 font-bold text-red-500' : dow === 0 ? 'text-red-400' : dow === 6 ? 'text-blue-400' : 'text-gray-400'}`}
-                    style={{ width: DAY_W, fontSize: 10 }}>{d.getDate()}</div>
+                    style={{ width: DAY_W, fontSize: DAY_W < 14 ? 8 : 10 }}>{DAY_W < 14 && d.getDate() % 2 === 0 && i !== todayIdx ? '' : d.getDate()}</div>
                 )
               })}
             </div>
@@ -110,11 +156,12 @@ export default function ProjectGantt({ schedules, onSelect }: {
               const st = STYLE[status]
               return (
                 <div key={s.id} className="flex border-b border-gray-50 hover:bg-gray-50/70 group">
-                  <div className="w-36 flex-shrink-0 sticky left-0 z-20 bg-white group-hover:bg-gray-50 border-r border-gray-100 px-3 py-2 flex items-center gap-1.5">
+                  <div className={`${nameW} flex-shrink-0 sticky left-0 z-20 bg-white group-hover:bg-gray-50 border-r border-gray-100 px-2 md:px-3 py-1.5 flex items-center gap-1.5`}>
                     <span className={`w-2 h-2 rounded-full flex-shrink-0 ${st.bar}`} />
-                    <span className={`text-xs truncate ${status === '완료' ? 'text-gray-400' : 'text-gray-800'}`} title={s.task_name}>{s.task_name}</span>
+                    {/* 긴 공정명은 잘리지 않게 줄바꿈 */}
+                    <span className={`${full ? 'text-sm' : 'text-xs'} leading-tight break-keep line-clamp-2 ${status === '완료' ? 'text-gray-400' : 'text-gray-800'}`} title={s.task_name}>{s.task_name}</span>
                   </div>
-                  <div className="relative flex-1" style={{ height: 34 }}>
+                  <div className="relative" style={{ width: totalDays * DAY_W, minHeight: full ? 40 : 36 }}>
                     {/* 주말 음영 */}
                     {Array.from({ length: totalDays }).map((_, i) => {
                       const dow = new Date(rangeStart.getTime() + i * DAY).getDay()
@@ -123,7 +170,7 @@ export default function ProjectGantt({ schedules, onSelect }: {
                     <div className="absolute top-0 bottom-0 w-0.5 bg-red-400 z-10" style={{ left: todayIdx * DAY_W + DAY_W / 2 }} />
                     <button type="button" onClick={() => onSelect?.(s)}
                       title={`${s.task_name}\n${fmt(start)} ~ ${fmt(end)} · ${status}${s.manager ? `\n담당: ${s.manager}` : ''}${s.vendor ? `\n업체: ${s.vendor}${s.vendor_booked ? ' (확정)' : ' (미확정)'}` : ''}`}
-                      className={`absolute top-1.5 h-[22px] rounded-md px-1.5 flex items-center overflow-hidden z-[5] ${st.bar} ${st.text} ${onSelect ? 'cursor-pointer hover:brightness-95' : 'cursor-default'}`}
+                      className={`absolute top-1/2 -translate-y-1/2 h-[22px] rounded-md px-1.5 flex items-center overflow-hidden z-[5] ${st.bar} ${st.text} ${onSelect ? 'cursor-pointer hover:brightness-95' : 'cursor-default'}`}
                       style={{ left, width }}>
                       <span className="text-[10px] font-medium whitespace-nowrap">{width >= 66 ? `${fmt(start)}~${fmt(end)}` : ''}</span>
                     </button>
