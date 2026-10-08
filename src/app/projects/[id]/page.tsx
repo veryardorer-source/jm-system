@@ -159,6 +159,7 @@ export default function ProjectDetail() {
   const [moving, setMoving] = useState(false)
   const [hoveredFileId, setHoveredFileId] = useState<string | null>(null)
 
+  const [ganttOpen, setGanttOpen] = useState(true) // 현황 탭 공정일정 접기/펴기
   const [showScheduleForm, setShowScheduleForm] = useState(false)
   const [sForm, setSForm] = useState(EMPTY_SFORM)
   const [vendorNames, setVendorNames] = useState<string[]>([]) // 연락처의 업체명 (외주업체 자동완성)
@@ -1076,11 +1077,14 @@ export default function ProjectDetail() {
 
               {/* 공정일정 (간트) */}
               <div className="bg-white rounded-xl border border-gray-200 p-4 md:p-5">
-                <div className="flex items-center justify-between mb-3">
-                  <h3 className="text-sm font-semibold text-gray-700">공정일정 <span className="font-normal text-gray-400">· 진행률 {progressPct}%</span></h3>
-                  <button onClick={() => setTab('공정')} className="text-xs text-green-600 hover:text-green-700">공정 자세히 →</button>
+                <div className={`flex items-center justify-between gap-2 ${ganttOpen ? 'mb-3' : ''}`}>
+                  <button onClick={() => setGanttOpen(o => !o)} className="flex items-center gap-2 text-left flex-1 min-w-0">
+                    <h3 className="text-sm font-semibold text-gray-700">공정일정 <span className="font-normal text-gray-400">· 진행률 {progressPct}%</span></h3>
+                    <span className="text-gray-400 text-xs">{ganttOpen ? '▲ 접기' : '▼ 펼치기'}</span>
+                  </button>
+                  <button onClick={() => setTab('공정')} className="text-xs text-green-600 hover:text-green-700 flex-shrink-0">공정 자세히 →</button>
                 </div>
-                {schedules.length === 0 ? (
+                {!ganttOpen ? null : schedules.length === 0 ? (
                   <p className="text-sm text-gray-400 py-6 text-center">등록된 공정이 없어요</p>
                 ) : (
                   <ProjectGantt schedules={schedules} onSelect={readOnly ? undefined : openEditSchedule} />
