@@ -13,6 +13,7 @@ import { openPdfTitled, printUrl, downloadUrl } from '@/lib/media'
 import { normalizePdfTitle } from '@/lib/pdf'
 import Image from 'next/image'
 import FileDropInput from '@/components/FileDropInput'
+import ProjectGantt from '@/components/ProjectGantt'
 import SnsTab from '@/components/SnsTab'
 
 const EMPTY_SFORM = { task_name: '', scheduled_date: '', end_date: '', manager: '', vendor: '', vendor_booked: false }
@@ -1073,48 +1074,16 @@ export default function ProjectDetail() {
                 )}
               </div>
 
-              {/* 공정 현황 */}
+              {/* 공정일정 (간트) */}
               <div className="bg-white rounded-xl border border-gray-200 p-4 md:p-5">
                 <div className="flex items-center justify-between mb-3">
-                  <h3 className="text-sm font-semibold text-gray-700">공정 현황</h3>
+                  <h3 className="text-sm font-semibold text-gray-700">공정일정 <span className="font-normal text-gray-400">· 진행률 {progressPct}%</span></h3>
                   <button onClick={() => setTab('공정')} className="text-xs text-green-600 hover:text-green-700">공정 자세히 →</button>
                 </div>
                 {schedules.length === 0 ? (
                   <p className="text-sm text-gray-400 py-6 text-center">등록된 공정이 없어요</p>
                 ) : (
-                  <>
-                    <div className="mb-4">
-                      <div className="flex justify-between text-xs text-gray-500 mb-1">
-                        <span>전체 진행</span><span>{progressPct}%</span>
-                      </div>
-                      <div className="w-full bg-gray-100 rounded-full h-2.5">
-                        <div className="bg-green-500 h-2.5 rounded-full transition-all" style={{ width: `${progressPct}%` }} />
-                      </div>
-                    </div>
-                    <div className="flex flex-col gap-2.5">
-                      {schedules.map(s => {
-                        const ps = s.phase_status || '예정'
-                        const barW = ps === '완료' ? 100 : ps === '진행중' ? 50 : 0
-                        const barColor = ps === '완료' ? 'bg-green-500' : ps === '진행중' ? 'bg-amber-400' : 'bg-gray-200'
-                        const labelColor = ps === '완료' ? 'text-green-600' : ps === '진행중' ? 'text-amber-600' : 'text-gray-400'
-                        return (
-                          <div key={s.id} className="flex items-center gap-3">
-                            <span className="w-20 md:w-28 text-sm text-gray-700 truncate flex-shrink-0">{s.task_name}</span>
-                            {s.vendor && (
-                              <span title={s.vendor_booked ? '예약 확정' : '예약 미확정'}
-                                className={`hidden sm:inline max-w-28 truncate text-xs px-1.5 py-0.5 rounded flex-shrink-0 ${s.vendor_booked ? 'bg-green-50 text-green-700' : 'bg-amber-50 text-amber-700'}`}>
-                                {s.vendor_booked ? '✔ ' : ''}{s.vendor}
-                              </span>
-                            )}
-                            <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden">
-                              <div className={`h-full rounded-full ${barColor}`} style={{ width: `${barW}%` }} />
-                            </div>
-                            <span className={`w-12 text-right text-xs font-medium flex-shrink-0 ${labelColor}`}>{ps}</span>
-                          </div>
-                        )
-                      })}
-                    </div>
-                  </>
+                  <ProjectGantt schedules={schedules} onSelect={readOnly ? undefined : openEditSchedule} />
                 )}
               </div>
 

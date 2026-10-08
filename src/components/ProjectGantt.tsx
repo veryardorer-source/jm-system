@@ -1,0 +1,154 @@
+'use client'
+import { useEffect, useRef } from 'react'
+import type { Schedule } from '@/lib/supabase'
+
+// 현장 상세 · 현황 탭의 공정일정(간트) — 공정별 기간 막대를 상태별 색으로 표시
+const DAY = 86400000
+const DAY_W = 22 // 하루 칸 너비(px)
+
+// 'YYYY-MM-DD'를 현지 자정으로 (new Date('YYYY-MM-DD')는 UTC 기준이라 하루 밀릴 수 있음)
+function parseDate(s?: string | null): Date | null {
+  const m = (s || '').match(/^(\d{4})-(\d{2})-(\d{2})/)
+  return m ? new Date(+m[1], +m[2] - 1, +m[3]) : null
+}
+
+type Status = '완료' | '진행중' | '예정' | '지연'
+const STYLE: Record<Status, { bar: string; text: string; chip: string }> = {
+  '완료':   { bar: 'bg-green-500', text: 'text-white',    chip: 'bg-green-100 text-green-700' },
+  '진행중': { bar: 'bg-blue-500',  text: 'text-white',    chip: 'bg-blue-100 text-blue-700' },
+  '예정':   { bar: 'bg-gray-300',  text: 'text-gray-700', chip: 'bg-gray-100 text-gray-600' },
+  '지연':   { bar: 'bg-red-500',   text: 'text-white',    chip: 'bg-red-100 text-red-700' },
+}
+
+export default function ProjectGantt({ schedules, onSelect }: {
+  schedules: Schedule[]
+  onSelect?: (s: Schedule) => void
+}) {
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const today = new Date(); today.setHours(0, 0, 0, 0)
+
+  const rows = schedules.map(s => {
+    const start = parseDate(s.scheduled_date)
+    const end = parseDate(s.end_date) || start
+    const ps = (s.phase_status || '예정') as Exclude<Status, '지연'>
+    // 종료일(없으면 시작일)이 지났는데 완료가 아니면 지연
+    const status: Status = ps !== '완료' && end && end < today ? '지연' : ps
+    return { s, start, end: end && start && end < start ? start : end, status }
+  })
+  const dated = rows.filter(r => r.start) as (typeof rows[number] & { start: Date; end: Date })[]
+  const undated = rows.filter(r => !r.start)
+
+  // 표시 범위: 전체 공정 기간 앞뒤 3일 (오늘이 범위 밖이면 오늘까지 포함)
+  let rangeStart = today, rangeEnd = today
+  if (dated.length) {
+    rangeStart = new Date(Math.min(...dated.map(r => r.start.getTime()), today.getTime()))
+    rangeEnd = new Date(Math.max(...dated.map(r => r.end.getTime()), today.getTime()))
+  }
+  rangeStart = new Date(rangeStart.getTime() - 3 * DAY)
+  rangeEnd = new Date(rangeEnd.getTime() + 3 * DAY)
+  const totalDays = Math.round((rangeEnd.getTime() - rangeStart.getTime()) / DAY) + 1
+  const dayIdx = (d: Date) => Math.round((d.getTime() - rangeStart.getTime()) / DAY)
+  const todayIdx = dayIdx(today)
+
+  const months: { label: string; days: number }[] = []
+  for (let i = 0; i < totalDays; i++) {
+    const d = new Date(rangeStart.getTime() + i * DAY)
+    const label = `${d.getFullYear() !== today.getFullYear() ? `${String(d.getFullYear()).slice(2)}년 ` : ''}${d.getMonth() + 1}월`
+    if (months.length && months[months.length - 1].label === label) months[months.length - 1].days++
+    else months.push({ label, days: 1 })
+  }
+
+  const counts = rows.reduce((acc, r) => { acc[r.status]++; return acc }, { '완료': 0, '진행중': 0, '예정': 0, '지연': 0 } as Record<Status, number>)
+
+  // 처음 열 때 오늘 위치가 보이도록 가로 스크롤
+  useEffect(() => {
+    const el = scrollRef.current
+    if (el) el.scrollLeft = Math.max(0, todayIdx * DAY_W - el.clientWidth / 3)
+  }, [todayIdx])
+
+  const fmt = (d: Date) => `${d.getMonth() + 1}/${d.getDate()}`
+
+  return (
+    <div>
+      {/* 범례 + 상태별 개수 */}
+      <div className="flex items-center gap-3 flex-wrap mb-3">
+        {(['진행중', '지연', '예정', '완료'] as Status[]).map(st => (
+          <span key={st} className="flex items-center gap-1.5 text-xs text-gray-500">
+            <span className={`w-3 h-3 rounded-sm ${STYLE[st].bar}`} />{st} <b className="text-gray-700">{counts[st]}</b>
+          </span>
+        ))}
+        <span className="flex items-center gap-1.5 text-xs text-gray-500"><span className="w-0.5 h-3 bg-red-400" />오늘</span>
+      </div>
+
+      {dated.length > 0 && (
+        <div ref={scrollRef} className="overflow-x-auto border border-gray-100 rounded-lg">
+          <div style={{ width: `calc(9rem + ${totalDays * DAY_W}px)` }}>
+            {/* 월 · 날짜 헤더 */}
+            <div className="flex bg-gray-50 border-b border-gray-100">
+              <div className="w-36 flex-shrink-0 sticky left-0 z-20 bg-gray-50 border-r border-gray-100" />
+              {months.map((m, i) => (
+                <div key={i} className="text-xs font-semibold text-gray-500 py-1 px-1.5 border-r border-gray-100 truncate"
+                  style={{ width: m.days * DAY_W }}>{m.label}</div>
+              ))}
+            </div>
+            <div className="flex bg-gray-50 border-b border-gray-200">
+              <div className="w-36 flex-shrink-0 sticky left-0 z-20 bg-gray-50 border-r border-gray-100 px-3 py-1 text-xs font-semibold text-gray-400">공정</div>
+              {Array.from({ length: totalDays }).map((_, i) => {
+                const d = new Date(rangeStart.getTime() + i * DAY)
+                const dow = d.getDay()
+                return (
+                  <div key={i} className={`flex-shrink-0 text-center py-1 border-r border-gray-100 ${i === todayIdx ? 'bg-red-50 font-bold text-red-500' : dow === 0 ? 'text-red-400' : dow === 6 ? 'text-blue-400' : 'text-gray-400'}`}
+                    style={{ width: DAY_W, fontSize: 10 }}>{d.getDate()}</div>
+                )
+              })}
+            </div>
+
+            {/* 공정 행 */}
+            {dated.map(({ s, start, end, status }) => {
+              const left = dayIdx(start) * DAY_W
+              const width = (dayIdx(end) - dayIdx(start) + 1) * DAY_W
+              const st = STYLE[status]
+              return (
+                <div key={s.id} className="flex border-b border-gray-50 hover:bg-gray-50/70 group">
+                  <div className="w-36 flex-shrink-0 sticky left-0 z-20 bg-white group-hover:bg-gray-50 border-r border-gray-100 px-3 py-2 flex items-center gap-1.5">
+                    <span className={`w-2 h-2 rounded-full flex-shrink-0 ${st.bar}`} />
+                    <span className={`text-xs truncate ${status === '완료' ? 'text-gray-400' : 'text-gray-800'}`} title={s.task_name}>{s.task_name}</span>
+                  </div>
+                  <div className="relative flex-1" style={{ height: 34 }}>
+                    {/* 주말 음영 */}
+                    {Array.from({ length: totalDays }).map((_, i) => {
+                      const dow = new Date(rangeStart.getTime() + i * DAY).getDay()
+                      return (dow === 0 || dow === 6) ? <div key={i} className="absolute top-0 bottom-0 bg-gray-50" style={{ left: i * DAY_W, width: DAY_W }} /> : null
+                    })}
+                    <div className="absolute top-0 bottom-0 w-0.5 bg-red-400 z-10" style={{ left: todayIdx * DAY_W + DAY_W / 2 }} />
+                    <button type="button" onClick={() => onSelect?.(s)}
+                      title={`${s.task_name}\n${fmt(start)} ~ ${fmt(end)} · ${status}${s.manager ? `\n담당: ${s.manager}` : ''}${s.vendor ? `\n업체: ${s.vendor}${s.vendor_booked ? ' (확정)' : ' (미확정)'}` : ''}`}
+                      className={`absolute top-1.5 h-[22px] rounded-md px-1.5 flex items-center overflow-hidden z-[5] ${st.bar} ${st.text} ${onSelect ? 'cursor-pointer hover:brightness-95' : 'cursor-default'}`}
+                      style={{ left, width }}>
+                      <span className="text-[10px] font-medium whitespace-nowrap">{width >= 66 ? `${fmt(start)}~${fmt(end)}` : ''}</span>
+                    </button>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* 날짜 미정 공정 */}
+      {undated.length > 0 && (
+        <div className="mt-3">
+          <p className="text-xs text-gray-400 mb-1.5">날짜 미정 {undated.length}건</p>
+          <div className="flex flex-wrap gap-1.5">
+            {undated.map(({ s, status }) => (
+              <button key={s.id} type="button" onClick={() => onSelect?.(s)}
+                className={`text-xs px-2 py-1 rounded-full ${STYLE[status].chip}`}>
+                {s.task_name} · {status}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
