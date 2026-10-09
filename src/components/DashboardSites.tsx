@@ -16,7 +16,7 @@ const MAX_CHIPS = 6
 export const STAGES = STATUS_LIST.filter(s => !HIDDEN_STATUSES.includes(s as typeof HIDDEN_STATUSES[number]))
 
 // 현장별 공정 요약
-export type Kind = 'late' | 'ok' | 'stale' | 'empty'
+export type Kind = 'late' | 'ok' | 'empty'
 export type Info = {
   p: Project
   late: Row[]     // 지연 (기간 상관없이 — 완료 체크가 필요하므로)
@@ -25,7 +25,7 @@ export type Info = {
   doneInWeek: number
   kind: Kind
 }
-export type Filter = 'all' | 'now' | 'late' | 'stale' | 'empty'
+export type Filter = 'all' | 'now' | 'late' | 'empty'
 
 const ORDER: Record<string, number> = { '지연': 0, '진행중': 1, '예정': 2, '완료': 3 }
 
@@ -39,7 +39,7 @@ export function summarize(p: Project, schedules: Schedule[], today: Date): Info 
   const week = rows.filter(r => r.status === '지연' || (r.status !== '완료' && inWeek(r)))
     .sort((a, b) => (ORDER[a.status] - ORDER[b.status]) || byStart(a, b))
   const doneInWeek = rows.filter(r => r.status === '완료' && inWeek(r)).length
-  const kind: Kind = rows.length === 0 ? 'empty' : late.length ? 'late' : rows.every(r => r.status === '완료') ? 'stale' : 'ok'
+  const kind: Kind = rows.length === 0 ? 'empty' : late.length ? 'late' : 'ok'
   return { p, late, now, week, doneInWeek, kind }
 }
 
@@ -100,7 +100,6 @@ export function StatusBoard({ infos, today, readOnly, onAdd, onPick }: {
               {week.length > MAX_CHIPS && <span className="text-xs text-gray-400">+{week.length - MAX_CHIPS}</span>}
               {week.length > 0 && doneInWeek > 0 && <span className="text-xs text-gray-400">완료 {doneInWeek}</span>}
               {week.length === 0 && (
-                kind === 'stale' ? <span className="text-sm text-amber-600">공정이 모두 완료됐어요 · 다음 공정 추가 또는 현장 완료 처리</span> :
                 kind === 'empty' ? <span className="text-sm text-gray-400">등록된 공정 없음</span> :
                 <span className="text-sm text-gray-400">이번 2주 공정 없음{doneInWeek ? ` · 완료 ${doneInWeek}` : ''}</span>
               )}

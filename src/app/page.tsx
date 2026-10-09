@@ -59,7 +59,6 @@ export default function Dashboard() {
     all: infos.length,
     now: infos.filter(i => i.now.length).length,
     late: infos.filter(i => i.kind === 'late').length,
-    stale: infos.filter(i => i.kind === 'stale').length,
     empty: infos.filter(i => i.kind === 'empty').length,
   }
   const shown = infos.filter(i => filter === 'all' ? true : filter === 'now' ? i.now.length > 0 : i.kind === filter)
@@ -98,7 +97,6 @@ export default function Dashboard() {
     { key: 'all', label: '진행중', on: 'bg-green-600 text-white border-green-600' },
     { key: 'now', label: '오늘 작업', on: 'bg-green-600 text-white border-green-600' },
     { key: 'late', label: '지연', on: 'bg-red-500 text-white border-red-500' },
-    { key: 'stale', label: '공정 갱신 필요', on: 'bg-amber-500 text-white border-amber-500' },
     { key: 'empty', label: '공정 미등록', on: 'bg-gray-600 text-white border-gray-600' },
   ]
 
