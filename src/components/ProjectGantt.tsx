@@ -44,9 +44,10 @@ type Props = {
   schedules: Schedule[]
   onEdit?: (s: Schedule) => void                       // 공정 수정 창 열기
   onStatus?: (s: Schedule, st: PhaseStatus) => void    // 상태 바로 변경
+  onDelete?: (s: Schedule) => void                     // 공정 삭제 (확인 창은 부르는 쪽에서)
 }
 
-export default function ProjectGantt({ schedules, onEdit, onStatus }: Props) {
+export default function ProjectGantt({ schedules, onEdit, onStatus, onDelete }: Props) {
   // 보기 방식: 저장된 선택 → 없으면 폰(640px 미만)은 목록, 태블릿·PC는 일정표
   const [view, setViewState] = useState<'list' | 'chart'>(() => {
     try {
@@ -129,6 +130,12 @@ export default function ProjectGantt({ schedules, onEdit, onStatus }: Props) {
                 <button onClick={() => { setPicked(null); setFull(false); onEdit(pickedS) }}
                   className="mt-3 w-full py-2.5 rounded-lg text-sm border border-gray-300 text-gray-700 hover:bg-gray-50">
                   날짜·담당·업체 수정
+                </button>
+              )}
+              {onDelete && (
+                <button onClick={() => { setPicked(null); onDelete(pickedS) }}
+                  className="mt-2 w-full py-2 rounded-lg text-sm text-red-500 hover:bg-red-50">
+                  공정 삭제
                 </button>
               )}
             </div>

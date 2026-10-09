@@ -4,7 +4,7 @@ import { useEffect, useState, useRef, useCallback } from 'react'
 import { toast } from '@/components/Toaster'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import Sidebar from '@/components/Sidebar'
-import { supabase, Project, ProjectFile, Schedule, ProjectCost, STATUS_LIST, STATUS_COLOR } from '@/lib/supabase'
+import { supabase, Project, ProjectFile, Schedule, STATUS_LIST, STATUS_COLOR } from '@/lib/supabase'
 import { useAuth, canEdit } from '@/lib/auth-context'
 import { notifyOthers, notifyDM, notifyRoom } from '@/lib/notify'
 import { compressImage, makeThumbnail, hashFile, formatBytes, isCompressibleImage, mediaUploadName, toShareableBlob } from '@/lib/image'
@@ -13,11 +13,12 @@ import { openPdfTitled, printUrl, downloadUrl } from '@/lib/media'
 import { normalizePdfTitle } from '@/lib/pdf'
 import Image from 'next/image'
 import FileDropInput from '@/components/FileDropInput'
-import ProjectGantt from '@/components/ProjectGantt'
+import ProjectGantt, { todayStart, STYLE } from '@/components/ProjectGantt'
+import { summarize, chipWhen } from '@/components/DashboardSites'
 import SnsTab from '@/components/SnsTab'
 
 const EMPTY_SFORM = { task_name: '', scheduled_date: '', end_date: '', manager: '', vendor: '', vendor_booked: false }
-const TAB_LIST = ['현황', '자료', '공정', '비용', 'SNS']
+const TAB_LIST = ['현황', '공정', '자료', 'SNS']
 const PHOTO_CATS = ['공사전사진', '시공전사진', '시공사진', '마감사진'] // 시공전사진=옛 이름 호환
 // 글이 길어지는 분류 — 수정창을 넓고 크게 연다 (미팅 기록·요청사항 등)
 const LONG_TEXT_CATS = ['미팅내용', '고객요청']
@@ -100,22 +101,17 @@ export default function ProjectDetail() {
   const [project, setProject] = useState<Project | null>(null)
   const [tab, setTab] = useState('현황')
 
-  // 알림 링크(?tab=자료/공정/비용)로 들어오면 해당 탭 바로 열기 — 렌더 중 보정 패턴(같은 링크는 1회만)
+  // 알림 링크(?tab=자료/공정)로 들어오면 해당 탭 바로 열기 — 렌더 중 보정 패턴(같은 링크는 1회만)
   const searchParams = useSearchParams()
   const [handledTab, setHandledTab] = useState('')
   {
     const t = searchParams.get('tab')
     if (t && handledTab !== t) {
-      if (t === '비용') {
-        // 비용 탭은 권한 확인 후에만 (field·partner는 금액 숨김)
-        if (profile && profile.role !== 'field' && profile.role !== 'partner') { setHandledTab(t); setTab('비용') }
-        else if (profile) setHandledTab(t) // 권한 없으면 무시 처리
-      } else { setHandledTab(t); if (TAB_LIST.includes(t)) setTab(t) }
+      setHandledTab(t); if (TAB_LIST.includes(t)) setTab(t)
     }
   }
   const [files, setFiles] = useState<ProjectFile[]>([])
   const [schedules, setSchedules] = useState<Schedule[]>([])
-  const [costs, setCosts] = useState<ProjectCost[]>([])
   const [loading, setLoading] = useState(true)
 
   const [showEditForm, setShowEditForm] = useState(false)
@@ -158,31 +154,22 @@ export default function ProjectDetail() {
   const [moving, setMoving] = useState(false)
   const [hoveredFileId, setHoveredFileId] = useState<string | null>(null)
 
-  const [ganttOpen, setGanttOpen] = useState(true) // 현황 탭 공정일정 접기/펴기
   const [showScheduleForm, setShowScheduleForm] = useState(false)
   const [sForm, setSForm] = useState(EMPTY_SFORM)
   const [vendorNames, setVendorNames] = useState<string[]>([]) // 연락처의 업체명 (외주업체 자동완성)
   const [savingS, setSavingS] = useState(false)
   const [editingSchedule, setEditingSchedule] = useState<Schedule | null>(null)
 
-  const [showCostForm, setShowCostForm] = useState(false)
-  const [cForm, setCForm] = useState({ month: '', amount: '', memo: '' })
-  const [costFile, setCostFile] = useState<File | null>(null)
-  const [savingC, setSavingC] = useState(false)
-  const [editingCost, setEditingCost] = useState<ProjectCost | null>(null)
-
   const fetchAll = useCallback(async () => {
     setLoading(true)
-    const [p, f, s, c] = await Promise.all([
+    const [p, f, s] = await Promise.all([
       supabase.from('projects').select('*').eq('id', id).single(),
       supabase.from('project_files').select('*').eq('project_id', id).order('created_at', { ascending: false }),
       supabase.from('schedules').select('*').eq('project_id', id).order('scheduled_date'),
-      supabase.from('project_costs').select('*').eq('project_id', id).order('month', { ascending: false }),
     ])
     setProject(p.data)
     setFiles(f.data || [])
     setSchedules(s.data || [])
-    setCosts(c.data || [])
     setLoading(false)
   }, [id])
 
@@ -762,18 +749,31 @@ export default function ProjectDetail() {
     setShowScheduleForm(true)
   }
 
+  // 현황 탭 · 사진 올리기: 현장 단계에 맞는 사진 분류로 업로드 창 열기
+  function openPhotoUpload() {
+    const category = project?.status === '시공중' ? '시공사진' : project?.status === '완료' ? '마감사진' : '공사전사진'
+    setFileForm({ category, memo: '', linkUrl: '', linkTitle: '' })
+    setShowFileForm(true)
+  }
+
+  // 현황 탭 · 공유: 폰은 공유 창(카카오톡 등), PC는 현장 링크 복사
+  async function shareProject() {
+    const url = `${window.location.origin}/projects/${id}`
+    if (navigator.share) {
+      try { await navigator.share({ title: project?.name || 'JM 현장', url }) } catch {}
+      return
+    }
+    try { await navigator.clipboard.writeText(url); toast('현장 링크를 복사했어요') }
+    catch { toast('링크 복사에 실패했어요') }
+  }
+
   async function deleteSchedule(s: Schedule) {
     if (!confirm(`"${s.task_name}" 공정을 삭제할까요?`)) return
     await supabase.from('schedules').delete().eq('id', s.id)
     fetchAll()
   }
 
-  async function setPhaseStatus(s: Schedule, status: '예정' | '진행중' | '완료') {
-    await supabase.from('schedules').update({ phase_status: status, is_done: status === '완료' }).eq('id', s.id)
-    fetchAll()
-  }
-
-  // 공정일정(현황 탭)에서 바로 상태 변경 — 화면 먼저 바꾸고 저장 (실패하면 되돌림)
+  // 공정 상태 바로 변경 — 화면 먼저 바꾸고 저장 (실패하면 되돌림)
   async function quickPhaseStatus(s: Schedule, status: '예정' | '진행중' | '완료') {
     setSchedules(prev => prev.map(x => x.id === s.id ? { ...x, phase_status: status, is_done: status === '완료' } : x))
     const { error } = await supabase.from('schedules').update({ phase_status: status, is_done: status === '완료' }).eq('id', s.id)
@@ -781,62 +781,6 @@ export default function ProjectDetail() {
       setSchedules(prev => prev.map(x => x.id === s.id ? s : x))
       toast('상태 변경 실패: ' + error.message)
     } else toast(`${s.task_name} → ${status}`)
-  }
-
-  async function handleCost(e: React.FormEvent) {
-    e.preventDefault()
-    if (!cForm.month) return
-    setSavingC(true)
-    let file_url = editingCost?.file_url || ''
-    let file_name = editingCost?.file_name || ''
-    if (costFile) {
-      const ext = costFile.name.split('.').pop() || 'bin'
-      const path = `costs/${id}/${Date.now()}.${ext}`
-      const { error: upErr } = await supabase.storage.from('uploads').upload(path, costFile, {
-        contentType: costFile.type || 'application/octet-stream',
-        upsert: true,
-      })
-      if (upErr) { toast('파일 업로드 실패: ' + upErr.message); setSavingC(false); return }
-      const { data: urlData } = supabase.storage.from('uploads').getPublicUrl(path)
-      file_url = urlData.publicUrl
-      file_name = costFile.name
-    }
-    const payload = {
-      month: cForm.month + '-01',
-      amount: Number(cForm.amount) || 0,
-      memo: cForm.memo,
-      file_url, file_name,
-    }
-    if (editingCost) {
-      await supabase.from('project_costs').update(payload).eq('id', editingCost.id)
-      setEditingCost(null)
-    } else {
-      await supabase.from('project_costs').insert([{ project_id: id, ...payload }])
-      // 금액은 알림에 노출하지 않음 (금액 숨김 대상 직원도 알림은 받으므로)
-      notifyOthers(profile?.id, { type: 'cost', title: `${project?.name || '현장'} · 비용 자료 등록`, body: `${cForm.month}${file_name ? ` · ${file_name}` : ''}`, link: `/projects/${id}?tab=비용` })
-    }
-    setCForm({ month: '', amount: '', memo: '' })
-    setCostFile(null)
-    setShowCostForm(false)
-    setSavingC(false)
-    fetchAll()
-  }
-
-  function openEditCost(c: ProjectCost) {
-    setEditingCost(c)
-    setCForm({ month: c.month ? c.month.slice(0, 7) : '', amount: String(c.amount), memo: c.memo || '' })
-    setCostFile(null)
-    setShowCostForm(true)
-  }
-
-  async function deleteCost(c: ProjectCost) {
-    if (!confirm(`${c.month?.slice(0,7)} 자료를 삭제할까요?`)) return
-    if (c.file_url) {
-      const path = c.file_url.split('/uploads/')[1]
-      if (path) await supabase.storage.from('uploads').remove([path])
-    }
-    await supabase.from('project_costs').delete().eq('id', c.id)
-    fetchAll()
   }
 
 
@@ -960,15 +904,14 @@ export default function ProjectDetail() {
     )
   }
 
-  const canSeeMoney = profile?.role !== 'field' && profile?.role !== 'partner'
   const readOnly = !canEdit(profile)
-  const visibleTabs = canSeeMoney ? TAB_LIST : TAB_LIST.filter(t => t !== '비용')
+  const visibleTabs = TAB_LIST
   const doneCount = schedules.filter(s => (s.phase_status || '예정') === '완료').length
-  const inProgressCount = schedules.filter(s => s.phase_status === '진행중').length
   const progressPct = schedules.length ? Math.round((doneCount / schedules.length) * 100) : 0
   const photos = files.filter(f => PHOTO_CATS.includes(f.category))
   const recentPhotos = photos.slice(0, 8)
-  const totalCost = costs.reduce((sum, c) => sum + (c.amount || 0), 0)
+  const today = todayStart()
+  const weekRows = project ? summarize(project, schedules, today).week : [] // 현황 탭 · 이번 주 공정
   // 기본 분류 + 직접 추가된(파일에 존재하는) 분류
   const allCategories = Array.from(new Set([...CATEGORY_LIST, ...files.map(f => f.category).filter(Boolean)]))
 
@@ -995,9 +938,10 @@ export default function ProjectDetail() {
           <div className="flex items-center gap-3 mb-1">
             <button onClick={() => router.back()} className="text-gray-400 hover:text-gray-600 text-sm">← 목록</button>
           </div>
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="flex items-center gap-3">
+          {/* 폰: 현장명 줄 아래에 버튼 (이름이 버튼에 밀려 끊기지 않게) */}
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+            <div className="min-w-0">
+              <div className="flex items-center gap-3 flex-wrap">
                 <h1 className="text-xl font-bold text-gray-900">{project.name}</h1>
                 <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${STATUS_COLOR[project.status]}`}>
                   {project.status}
@@ -1007,6 +951,7 @@ export default function ProjectDetail() {
                 {project.client_name && <p className="text-sm text-gray-500">고객: {project.client_name}</p>}
                 {project.manager && <p className="text-sm text-gray-500">담당: {project.manager}</p>}
                 <p className="text-sm text-gray-500">{project.address || <span className="text-gray-300">주소 미입력</span>}</p>
+                {(project.start_date || project.end_date) && <p className="text-sm text-gray-500">기간: {project.start_date || '?'} ~ {project.end_date || '?'}</p>}
               </div>
             </div>
             <div className="flex gap-2 flex-shrink-0">
@@ -1048,52 +993,63 @@ export default function ProjectDetail() {
           {/* 현황(대시보드) 탭 */}
           {tab === '현황' && (
             <div className="flex flex-col gap-4">
-              {/* 요약 카드 */}
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                <button onClick={() => setTab('공정')}
-                  className="bg-white rounded-xl border border-gray-200 p-4 text-left hover:border-green-400 transition-colors">
-                  <p className="text-xs text-gray-400 mb-1">공정 진행률</p>
-                  <p className="text-2xl font-bold text-gray-900">{progressPct}%</p>
-                  <p className="text-xs text-gray-400 mt-0.5">{doneCount}/{schedules.length} 완료 · 진행 {inProgressCount}</p>
-                </button>
-                <button onClick={() => setTab('자료')}
-                  className="bg-white rounded-xl border border-gray-200 p-4 text-left hover:border-green-400 transition-colors">
-                  <p className="text-xs text-gray-400 mb-1">등록 자료</p>
-                  <p className="text-2xl font-bold text-gray-900">{files.length}<span className="text-sm font-normal text-gray-400">개</span></p>
-                  <p className="text-xs text-gray-400 mt-0.5">사진 {photos.length} · 기타 {files.length - photos.length}</p>
-                </button>
-                <button onClick={() => setTab('자료')}
-                  className="bg-white rounded-xl border border-gray-200 p-4 text-left hover:border-green-400 transition-colors">
-                  <p className="text-xs text-gray-400 mb-1">사진</p>
-                  <p className="text-2xl font-bold text-gray-900">{photos.length}<span className="text-sm font-normal text-gray-400">장</span></p>
-                </button>
-                {canSeeMoney ? (
-                  <button onClick={() => setTab('비용')}
-                    className="bg-white rounded-xl border border-gray-200 p-4 text-left hover:border-green-400 transition-colors">
-                    <p className="text-xs text-gray-400 mb-1">누적 비용</p>
-                    <p className="text-2xl font-bold text-gray-900">{Math.round(totalCost / 10000).toLocaleString()}<span className="text-sm font-normal text-gray-400">만원</span></p>
+              {/* 바로 할 일 — 현장팀이 들어오자마자 누르는 버튼 */}
+              <div className={`grid gap-2 md:gap-3 ${readOnly ? 'grid-cols-1' : 'grid-cols-3'}`}>
+                {!readOnly && (
+                  <button onClick={openPhotoUpload}
+                    className="bg-green-600 text-white rounded-xl py-3.5 md:py-4 flex flex-col md:flex-row items-center justify-center gap-1 md:gap-2 font-semibold text-sm md:text-base hover:bg-green-700">
+                    <span className="text-xl md:text-lg">📷</span>사진 올리기
                   </button>
-                ) : (
-                  <div className="bg-white rounded-xl border border-gray-200 p-4">
-                    <p className="text-xs text-gray-400 mb-1">누적 비용</p>
-                    <p className="text-sm text-gray-300 mt-2">관리자만 열람</p>
-                  </div>
                 )}
+                {!readOnly && (
+                  <button onClick={() => setTab('공정')}
+                    className="bg-white border border-gray-200 text-gray-800 rounded-xl py-3.5 md:py-4 flex flex-col md:flex-row items-center justify-center gap-1 md:gap-2 font-semibold text-sm md:text-base hover:border-green-400">
+                    <span className="text-xl md:text-lg">✅</span>공정 체크
+                  </button>
+                )}
+                <button onClick={shareProject}
+                  className="bg-white border border-gray-200 text-gray-800 rounded-xl py-3.5 md:py-4 flex flex-col md:flex-row items-center justify-center gap-1 md:gap-2 font-semibold text-sm md:text-base hover:border-green-400">
+                  <span className="text-xl md:text-lg">🔗</span>공유
+                </button>
               </div>
 
-              {/* 공정일정 (간트) */}
+              {/* 이번 주 공정 — 지연 + 오늘 앞뒤 1주, 버튼으로 바로 완료/시작 */}
               <div className="bg-white rounded-xl border border-gray-200 p-4 md:p-5">
-                <div className={`flex items-center justify-between gap-2 ${ganttOpen ? 'mb-3' : ''}`}>
-                  <button onClick={() => setGanttOpen(o => !o)} className="flex items-center gap-2 text-left flex-1 min-w-0">
-                    <h3 className="text-sm font-semibold text-gray-700">공정일정 <span className="font-normal text-gray-400">· 진행률 {progressPct}%</span></h3>
-                    <span className="text-gray-400 text-xs">{ganttOpen ? '▲ 접기' : '▼ 펼치기'}</span>
-                  </button>
-                  <button onClick={() => setTab('공정')} className="text-xs text-green-600 hover:text-green-700 flex-shrink-0">공정 자세히 →</button>
+                <div className="flex items-center justify-between gap-2 mb-2">
+                  <h3 className="text-sm font-semibold text-gray-700">
+                    이번 주 공정 <span className="font-normal text-gray-400">· 진행률 {progressPct}% ({doneCount}/{schedules.length})</span>
+                  </h3>
+                  <button onClick={() => setTab('공정')} className="text-xs text-green-600 hover:text-green-700 flex-shrink-0">전체 공정 →</button>
                 </div>
-                {!ganttOpen ? null : schedules.length === 0 ? (
-                  <p className="text-sm text-gray-400 py-6 text-center">등록된 공정이 없어요</p>
+                {weekRows.length === 0 ? (
+                  <div className="py-5 text-center text-sm text-gray-400">
+                    {schedules.length === 0 ? '등록된 공정이 없어요' : '이번 2주 공정 없음'}
+                    {!readOnly && (
+                      <button onClick={() => setShowScheduleForm(true)}
+                        className="ml-2 text-xs text-green-600 border border-green-300 rounded-full px-2 py-0.5 hover:bg-green-50">+ 공정 추가</button>
+                    )}
+                  </div>
                 ) : (
-                  <ProjectGantt schedules={schedules} onEdit={readOnly ? undefined : openEditSchedule} onStatus={readOnly ? undefined : quickPhaseStatus} />
+                  <div className="flex flex-col">
+                    {weekRows.map(r => (
+                      <div key={r.s.id} className="flex items-center gap-2 py-2.5 border-t border-gray-100 first:border-t-0">
+                        <div className="flex-1 min-w-0">
+                          <p className={`text-sm font-medium break-keep ${r.status === '지연' ? 'text-red-600' : 'text-gray-800'}`}>{r.s.task_name}</p>
+                          <p className="text-xs text-gray-400">
+                            {chipWhen(r, today)}{r.s.manager ? ` · ${r.s.manager}` : ''}{r.s.vendor ? ` · ${r.s.vendor}${r.s.vendor_booked ? '' : '(미확정)'}` : ''}
+                          </p>
+                        </div>
+                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium flex-shrink-0 ${STYLE[r.status].chip}`}>{r.status}</span>
+                        {!readOnly && (
+                          r.status === '예정'
+                            ? <button onClick={() => quickPhaseStatus(r.s, '진행중')}
+                                className="flex-shrink-0 text-sm px-3 py-1.5 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50">시작</button>
+                            : <button onClick={() => quickPhaseStatus(r.s, '완료')}
+                                className="flex-shrink-0 text-sm px-3 py-1.5 rounded-lg bg-green-600 text-white hover:bg-green-700">완료</button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
                 )}
               </div>
 
@@ -1101,8 +1057,8 @@ export default function ProjectDetail() {
               <div>
                 <div className="bg-white rounded-xl border border-gray-200 p-4 md:p-5">
                   <div className="flex items-center justify-between mb-3">
-                    <h3 className="text-sm font-semibold text-gray-700">현장 자료</h3>
-                    <button onClick={() => setTab('자료')} className="text-xs text-green-600 hover:text-green-700">자료 자세히 →</button>
+                    <h3 className="text-sm font-semibold text-gray-700">최근 사진 <span className="font-normal text-gray-400">· {photos.length}장</span></h3>
+                    <button onClick={() => setTab('자료')} className="text-xs text-green-600 hover:text-green-700">자료 전체 →</button>
                   </div>
                   {recentPhotos.length === 0 ? (
                     <p className="text-sm text-gray-400 py-6 text-center">등록된 사진이 없어요</p>
@@ -1344,167 +1300,12 @@ export default function ProjectDetail() {
                   <p className="text-3xl mb-2">📅</p><p>등록된 공정이 없어요</p>
                 </div>
               ) : (
-                <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-                  <table className="w-full">
-                    <thead>
-                      <tr className="border-b border-gray-100 bg-gray-50">
-                        <th className="text-left text-xs font-semibold text-gray-400 px-6 py-3">공정</th>
-                        <th className="text-left text-xs font-semibold text-gray-400 px-4 py-3">시작일</th>
-                        <th className="text-left text-xs font-semibold text-gray-400 px-4 py-3">종료일</th>
-                        <th className="text-left text-xs font-semibold text-gray-400 px-4 py-3">담당자</th>
-                        <th className="text-left text-xs font-semibold text-gray-400 px-4 py-3">외주업체</th>
-                        <th className="text-left text-xs font-semibold text-gray-400 px-4 py-3">상태</th>
-                        <th className="px-4 py-3"></th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {schedules.map(s => {
-                        const ps = s.phase_status || '예정'
-                        return (
-                        <tr key={s.id} className={`border-b border-gray-50 hover:bg-gray-50 ${ps === '완료' ? 'opacity-60' : ''}`}>
-                          <td className={`px-6 py-3 text-sm font-medium ${ps === '완료' ? 'text-gray-400 line-through' : 'text-gray-800'}`}>
-                            {s.task_name}
-                          </td>
-                          <td className="px-4 py-3 text-sm text-gray-600">{s.scheduled_date || '-'}</td>
-                          <td className="px-4 py-3 text-sm text-gray-600">{s.end_date || '-'}</td>
-                          <td className="px-4 py-3 text-sm text-gray-600">{s.manager || '-'}</td>
-                          <td className="px-4 py-3 text-sm text-gray-700">
-                            {s.vendor ? (
-                              <span className="inline-flex items-center gap-1.5 flex-wrap">
-                                {s.vendor}
-                                {s.vendor_booked
-                                  ? <span className="text-xs px-1.5 py-0.5 rounded bg-green-100 text-green-700 font-medium">✔ 확정</span>
-                                  : <span className="text-xs px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 font-medium">미확정</span>}
-                              </span>
-                            ) : <span className="text-gray-300">-</span>}
-                          </td>
-                          <td className="px-4 py-3">
-                            {readOnly ? (
-                              <span className={`text-xs px-2 py-1 rounded-full font-medium border ${
-                                ps === '예정' ? 'bg-gray-200 text-gray-700 border-gray-300'
-                                  : ps === '진행중' ? 'bg-blue-100 text-blue-700 border-blue-300'
-                                  : 'bg-green-100 text-green-700 border-green-300'
-                              }`}>{ps}</span>
-                            ) : (
-                              <div className="flex gap-1">
-                                {(['예정', '진행중', '완료'] as const).map(st => (
-                                  <button key={st} onClick={() => setPhaseStatus(s, st)}
-                                    className={`text-xs px-2 py-1 rounded-full font-medium border transition-colors ${
-                                      ps === st
-                                        ? st === '예정' ? 'bg-gray-200 text-gray-700 border-gray-300'
-                                          : st === '진행중' ? 'bg-blue-100 text-blue-700 border-blue-300'
-                                          : 'bg-green-100 text-green-700 border-green-300'
-                                        : 'bg-white text-gray-400 border-gray-200 hover:border-gray-300'
-                                    }`}>
-                                    {st}
-                                  </button>
-                                ))}
-                              </div>
-                            )}
-                          </td>
-                          <td className="px-4 py-3">
-                            {!readOnly && (
-                              <div className="flex items-center gap-2">
-                                <button onClick={() => openEditSchedule(s)}
-                                  className="text-xs text-green-500 hover:text-green-700 hover:bg-green-50 px-2 py-1 rounded transition-colors">
-                                  수정
-                                </button>
-                                <button onClick={() => deleteSchedule(s)}
-                                  className="text-xs text-red-400 hover:text-red-600 hover:bg-red-50 px-2 py-1 rounded transition-colors">
-                                  삭제
-                                </button>
-                              </div>
-                            )}
-                          </td>
-                        </tr>
-                        )
-                      })}
-                    </tbody>
-                  </table>
+                <div className="bg-white rounded-xl border border-gray-200 p-4 md:p-5">
+                  <ProjectGantt schedules={schedules}
+                    onEdit={readOnly ? undefined : openEditSchedule}
+                    onStatus={readOnly ? undefined : quickPhaseStatus}
+                    onDelete={readOnly ? undefined : deleteSchedule} />
                 </div>
-              )}
-            </div>
-          )}
-
-          {/* 비용 탭 */}
-          {tab === '비용' && (
-            <div>
-              <div className="flex justify-end mb-4" style={{ display: readOnly ? 'none' : undefined }}>
-                <button onClick={() => setShowCostForm(true)}
-                  className="bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-700">
-                  + 월별 자료 추가
-                </button>
-              </div>
-              {costs.length === 0 ? (
-                <div className="bg-white rounded-xl border border-gray-200 text-center py-16 text-gray-400">
-                  <p className="text-3xl mb-2">💰</p><p>등록된 비용 자료가 없어요</p>
-                  <p className="text-xs mt-1">경리나라에서 정리한 월별 자료를 올려보세요</p>
-                </div>
-              ) : (
-                <>
-                  {/* 월별 추이 그래프 */}
-                  <div className="bg-white rounded-xl border border-gray-200 px-4 py-5 mb-4">
-                    <p className="text-sm font-semibold text-gray-700 mb-4">월별 비용 추이</p>
-                    {(() => {
-                      const sorted = [...costs].sort((a, b) => (a.month || '').localeCompare(b.month || ''))
-                      const max = Math.max(...sorted.map(c => c.amount), 1)
-                      return (
-                        <div className="flex items-end gap-2 h-40 overflow-x-auto pb-1">
-                          {sorted.map(c => (
-                            <div key={c.id} className="flex flex-col items-center gap-1 flex-shrink-0" style={{ minWidth: '52px' }}>
-                              <span className="text-[10px] text-gray-500 whitespace-nowrap">{(c.amount/10000).toFixed(0)}만</span>
-                              <div className="w-8 bg-green-500 rounded-t-md transition-all" style={{ height: `${Math.max((c.amount / max) * 110, 4)}px` }} />
-                              <span className="text-[10px] text-gray-400 whitespace-nowrap">{c.month?.slice(2,7).replace('-','.')}</span>
-                            </div>
-                          ))}
-                        </div>
-                      )
-                    })()}
-                  </div>
-
-                  <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-                    <table className="w-full">
-                      <thead>
-                        <tr className="border-b border-gray-100 bg-gray-50">
-                          <th className="text-left text-xs font-semibold text-gray-400 px-6 py-3">월</th>
-                          <th className="text-right text-xs font-semibold text-gray-400 px-4 py-3">금액</th>
-                          <th className="text-left text-xs font-semibold text-gray-400 px-4 py-3">첨부 자료</th>
-                          <th className="text-left text-xs font-semibold text-gray-400 px-4 py-3">메모</th>
-                          <th className="px-4 py-3"></th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {costs.map(c => (
-                          <tr key={c.id} className="border-b border-gray-50 hover:bg-gray-50">
-                            <td className="px-6 py-3 text-sm font-medium text-gray-800">{c.month?.slice(0,7) || '-'}</td>
-                            <td className="px-4 py-3 text-sm text-right font-semibold text-gray-800">{c.amount.toLocaleString()}원</td>
-                            <td className="px-4 py-3">
-                              {c.file_url ? (
-                                <button onClick={() => {
-                                  const name = c.file_name?.toLowerCase() || ''
-                                  if (name.endsWith('.pdf')) openPdfTitled(c.file_url, c.file_name || '')
-                                  else if (/\.(jpg|jpeg|png|gif|webp)$/.test(name)) setLightbox(c.file_url)
-                                  else window.open(c.file_url, '_blank')
-                                }} className="text-xs text-green-600 hover:underline truncate max-w-[160px] inline-block">📎 {c.file_name}</button>
-                              ) : <span className="text-xs text-gray-300">-</span>}
-                            </td>
-                            <td className="px-4 py-3 text-xs text-gray-400">{c.memo || '-'}</td>
-                            <td className="px-4 py-3">
-                              {!readOnly && (
-                              <div className="flex items-center gap-2 justify-end">
-                                <button onClick={() => openEditCost(c)}
-                                  className="text-xs text-green-500 hover:text-green-700 hover:bg-green-50 px-2 py-1 rounded transition-colors">수정</button>
-                                <button onClick={() => deleteCost(c)}
-                                  className="text-xs text-red-400 hover:text-red-600 hover:bg-red-50 px-2 py-1 rounded transition-colors">삭제</button>
-                              </div>
-                              )}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </>
               )}
             </div>
           )}
@@ -2052,53 +1853,6 @@ export default function ProjectDetail() {
         </div>
       )}
 
-      {/* 비용 추가 모달 */}
-      {showCostForm && (
-        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl w-full max-w-md shadow-xl max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between px-6 py-5 border-b border-gray-100 sticky top-0 bg-white">
-              <h2 className="text-lg font-bold">{editingCost ? '비용 자료 수정' : '월별 비용 자료 추가'}</h2>
-              <button onClick={() => { setShowCostForm(false); setEditingCost(null); setCForm({ month: '', amount: '', memo: '' }); setCostFile(null) }} className="text-gray-400 text-2xl">&times;</button>
-            </div>
-            <form onSubmit={handleCost} className="px-6 py-5 flex flex-col gap-4">
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-sm font-medium text-gray-700 block mb-1.5">월 *</label>
-                  <input required type="month" value={cForm.month} onChange={e => setCForm({...cForm, month: e.target.value})}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
-                </div>
-                <div>
-                  <label className="text-sm font-medium text-gray-700 block mb-1.5">총 금액 *</label>
-                  <input required type="number" value={cForm.amount} onChange={e => setCForm({...cForm, amount: e.target.value})}
-                    placeholder="5000000"
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
-                </div>
-              </div>
-              <div>
-                <label className="text-sm font-medium text-gray-700 block mb-1.5">
-                  경리나라 자료 첨부 {editingCost?.file_name && <span className="text-gray-400 font-normal">(현재: {editingCost.file_name})</span>}
-                </label>
-                <input type="file" onChange={e => setCostFile(e.target.files?.[0] || null)}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:bg-green-50 file:text-green-700 file:text-xs" />
-              </div>
-              <div>
-                <label className="text-sm font-medium text-gray-700 block mb-1.5">메모</label>
-                <input value={cForm.memo} onChange={e => setCForm({...cForm, memo: e.target.value})}
-                  placeholder="예) 자재비+인건비 합산"
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
-              </div>
-              <div className="flex gap-3 mt-2">
-                <button type="button" onClick={() => { setShowCostForm(false); setEditingCost(null); setCForm({ month: '', amount: '', memo: '' }); setCostFile(null) }}
-                  className="flex-1 border border-gray-300 text-gray-700 py-2.5 rounded-lg text-sm font-medium">취소</button>
-                <button type="submit" disabled={savingC}
-                  className="flex-1 bg-green-600 text-white py-2.5 rounded-lg text-sm font-medium disabled:opacity-50">
-                  {savingC ? '저장 중...' : editingCost ? '수정' : '추가'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
     </div>
   )
 }

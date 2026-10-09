@@ -44,7 +44,7 @@ export function summarize(p: Project, schedules: Schedule[], today: Date): Info 
 }
 
 // 칩에 쓸 짧은 날짜 설명
-function chipWhen(r: Row, today: Date) {
+export function chipWhen(r: Row, today: Date) {
   if (!r.start || !r.end) return ''
   if (r.status === '지연') return `${daysBetween(r.end, today)}일 지남`
   if (r.status === '진행중') return `~${md(r.end)}`
