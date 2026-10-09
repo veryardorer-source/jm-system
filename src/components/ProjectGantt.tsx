@@ -9,26 +9,26 @@ const VIEW_KEY = 'jm.ganttView'
 const WEEK = ['일', '월', '화', '수', '목', '금', '토']
 
 // 'YYYY-MM-DD'를 현지 자정으로 (new Date('YYYY-MM-DD')는 UTC 기준이라 하루 밀릴 수 있음)
-function parseDate(s?: string | null): Date | null {
+export function parseDate(s?: string | null): Date | null {
   const m = (s || '').match(/^(\d{4})-(\d{2})-(\d{2})/)
   return m ? new Date(+m[1], +m[2] - 1, +m[3]) : null
 }
-const md = (d: Date) => `${d.getMonth() + 1}/${d.getDate()}`
-const mdw = (d: Date) => `${md(d)}(${WEEK[d.getDay()]})`
-const todayStart = () => { const t = new Date(); t.setHours(0, 0, 0, 0); return t }
-const daysBetween = (a: Date, b: Date) => Math.round((b.getTime() - a.getTime()) / DAY)
+export const md = (d: Date) => `${d.getMonth() + 1}/${d.getDate()}`
+export const mdw = (d: Date) => `${md(d)}(${WEEK[d.getDay()]})`
+export const todayStart = () => { const t = new Date(); t.setHours(0, 0, 0, 0); return t }
+export const daysBetween = (a: Date, b: Date) => Math.round((b.getTime() - a.getTime()) / DAY)
 
-type Status = '완료' | '진행중' | '예정' | '지연'
+export type Status = '완료' | '진행중' | '예정' | '지연'
 type PhaseStatus = '예정' | '진행중' | '완료'
-const STYLE: Record<Status, { bar: string; text: string; chip: string }> = {
+export const STYLE: Record<Status, { bar: string; text: string; chip: string }> = {
   '완료':   { bar: 'bg-green-500', text: 'text-white',    chip: 'bg-green-100 text-green-700' },
   '진행중': { bar: 'bg-blue-500',  text: 'text-white',    chip: 'bg-blue-100 text-blue-700' },
   '예정':   { bar: 'bg-gray-300',  text: 'text-gray-700', chip: 'bg-gray-100 text-gray-600' },
   '지연':   { bar: 'bg-red-500',   text: 'text-white',    chip: 'bg-red-100 text-red-700' },
 }
 
-type Row = { s: Schedule; start: Date | null; end: Date | null; status: Status }
-function buildRows(schedules: Schedule[], today: Date): Row[] {
+export type Row = { s: Schedule; start: Date | null; end: Date | null; status: Status }
+export function buildRows(schedules: Schedule[], today: Date): Row[] {
   return schedules.map(s => {
     const start = parseDate(s.scheduled_date)
     let end = parseDate(s.end_date) || start
