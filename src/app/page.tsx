@@ -6,8 +6,8 @@ import Sidebar from '@/components/Sidebar'
 import { supabase, Project, ProjectAssignment, Schedule, PhaseStatus, STATUS_COLOR, HIDDEN_STATUSES } from '@/lib/supabase'
 import { useAuth, canEdit } from '@/lib/auth-context'
 import { toast } from '@/components/Toaster'
-import { todayStart } from '@/components/ProjectGantt'
-import { STAGES, type Filter, summarize, StatusBoard, DayGantt, AddPhaseModal } from '@/components/DashboardSites'
+import { todayStart, type Row } from '@/components/ProjectGantt'
+import { STAGES, type Filter, summarize, StatusBoard, PhaseQuickModal, AddPhaseModal } from '@/components/DashboardSites'
 
 export default function Dashboard() {
   const { profile } = useAuth()
@@ -18,6 +18,7 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState<Filter>('all')
   const [addFor, setAddFor] = useState<Project | null>(null)
+  const [picked, setPicked] = useState<{ r: Row; p: Project } | null>(null)
 
   useEffect(() => { fetchAll() }, [])
 
@@ -141,17 +142,9 @@ export default function Dashboard() {
                     <Link href="/projects" className="text-green-600 text-sm mt-2 inline-block">현장 등록하기 →</Link>
                   </div>
                 ) : (
-                  <StatusBoard infos={shown} today={today} readOnly={readOnly} onAdd={setAddFor} />
+                  <StatusBoard infos={shown} today={today} readOnly={readOnly} onAdd={setAddFor} onPick={(r, p) => setPicked({ r, p })} />
                 )}
               </div>
-
-              {/* 일 단위 공정표 */}
-              {activeProjects.length > 0 && (
-                <div className="mb-8">
-                  <h2 className="text-base font-bold text-gray-800 mb-3">공정표</h2>
-                  <DayGantt infos={shown} today={today} readOnly={readOnly} onStatus={changeStatus} onAdd={setAddFor} />
-                </div>
-              )}
 
               {/* 직원별 업무 현황 */}
               <div>
@@ -208,6 +201,10 @@ export default function Dashboard() {
           )}
         </div>
       </div>
+
+      {picked && (
+        <PhaseQuickModal r={picked.r} p={picked.p} readOnly={readOnly} onStatus={changeStatus} onClose={() => setPicked(null)} />
+      )}
 
       {addFor && (
         <AddPhaseModal project={addFor} onClose={() => setAddFor(null)} onSaved={() => { setAddFor(null); fetchAll() }} />

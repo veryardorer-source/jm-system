@@ -4,7 +4,7 @@ import type { Schedule } from '@/lib/supabase'
 
 // 현장 상세 · 현황 탭의 공정일정 — 목록 보기(폰 기본) / 일정표 보기(간트), 상태별 색 구분
 const DAY = 86400000
-const ZOOMS = [10, 16, 24, 36] // 일정표 하루 칸 너비(px) — 확대/축소 단계
+const SPANS = [14, 28, 56] // 일정표 한 화면에 보이는 날 수 — 2주 / 4주 / 8주
 const VIEW_KEY = 'jm.ganttView'
 const WEEK = ['일', '월', '화', '수', '목', '금', '토']
 
@@ -147,7 +147,7 @@ function Board({ schedules, view, setView, full, onFull, onPick }: {
   onFull?: () => void
   onPick: (s: Schedule) => void
 }) {
-  const [zoom, setZoom] = useState(full ? 2 : 1)
+  const [span, setSpan] = useState(28)
   const today = todayStart()
   const rows = buildRows(schedules, today)
   const counts = rows.reduce((acc, r) => { acc[r.status]++; return acc }, { '완료': 0, '진행중': 0, '예정': 0, '지연': 0 } as Record<Status, number>)
@@ -175,10 +175,12 @@ function Board({ schedules, view, setView, full, onFull, onPick }: {
             ))}
           </div>
           {view === 'chart' && hasDated && (
-            <>
-              <button onClick={() => setZoom(z => Math.max(0, z - 1))} disabled={zoom === 0} title="축소" className={`${btn} w-8 text-sm`}>−</button>
-              <button onClick={() => setZoom(z => Math.min(ZOOMS.length - 1, z + 1))} disabled={zoom === ZOOMS.length - 1} title="확대" className={`${btn} w-8 text-sm`}>+</button>
-            </>
+            <div className="flex rounded-md border border-gray-300 overflow-hidden text-xs">
+              {SPANS.map(n => (
+                <button key={n} onClick={() => setSpan(n)}
+                  className={`h-8 px-2.5 ${span === n ? 'bg-gray-800 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}>{n / 7}주</button>
+              ))}
+            </div>
           )}
           {onFull && <button onClick={onFull} title="크게 보기" className={`${btn} px-2.5 text-xs`}>⛶ 크게</button>}
         </div>
@@ -186,7 +188,7 @@ function Board({ schedules, view, setView, full, onFull, onPick }: {
 
       {view === 'list'
         ? <ListView rows={rows} today={today} full={full} onPick={onPick} />
-        : <ChartView rows={rows} today={today} full={full} dayW={ZOOMS[zoom]} onPick={onPick} />}
+        : <ChartView rows={rows} today={today} full={full} span={span} onPick={onPick} />}
     </div>
   )
 }
@@ -258,96 +260,121 @@ function ListView({ rows, today, full, onPick }: { rows: Row[]; today: Date; ful
   )
 }
 
-// ── 일정표 보기(간트): 모든 기기에서 같은 모양 — 왼쪽 공정명 칸 + 날짜 막대 ──
-function ChartView({ rows, today, full, dayW, onPick }: { rows: Row[]; today: Date; full: boolean; dayW: number; onPick: (s: Schedule) => void }) {
+// ── 일정표 보기(간트): 공정명은 막대 옆에 (왼쪽 공정명 칸 없음), 오늘 중심으로 열림 ──
+function ChartView({ rows, today, full, span, onPick }: { rows: Row[]; today: Date; full: boolean; span: number; onPick: (s: Schedule) => void }) {
   const scrollRef = useRef<HTMLDivElement>(null)
+  const [offset, setOffset] = useState(0) // 이전/다음으로 옮긴 날 수
+  const [hideDone, setHideDone] = useState(false)
   const dated = rows.filter(r => r.start && r.end) as (Row & { start: Date; end: Date })[]
   const undated = rows.filter(r => !r.start)
-  // 공정명 칸 폭: 기기 폭에 맞춰 단계적으로
-  const nameW = full ? 'w-36 sm:w-48 md:w-60' : 'w-28 sm:w-40 md:w-48'
 
-  // 표시 범위: 전체 공정 기간 앞뒤 3일 (오늘이 범위 밖이면 오늘까지 포함)
-  let rangeStart = today, rangeEnd = today
-  if (dated.length) {
-    rangeStart = new Date(Math.min(...dated.map(r => r.start.getTime()), today.getTime()))
-    rangeEnd = new Date(Math.max(...dated.map(r => r.end.getTime()), today.getTime()))
-  }
-  rangeStart = new Date(rangeStart.getTime() - 3 * DAY)
-  rangeEnd = new Date(rangeEnd.getTime() + 3 * DAY)
-  const totalDays = daysBetween(rangeStart, rangeEnd) + 1
-  const dayIdx = (d: Date) => daysBetween(rangeStart, d)
-  const todayIdx = dayIdx(today)
+  // 표시 범위: 오늘이 앞쪽 1/3쯤 오게 (지난 공정보다 앞으로 할 공정을 더 많이)
+  const winStart = new Date(today.getTime() + (offset - Math.round(span / 3)) * DAY)
+  const winEnd = new Date(winStart.getTime() + (span - 1) * DAY)
+  const idx = (d: Date) => daysBetween(winStart, d)
+  const todayIdx = idx(today)
+  const pct = (i: number) => (i / span) * 100
+  const days = Array.from({ length: span }, (_, i) => new Date(winStart.getTime() + i * DAY))
+  const minDay = span <= 14 ? 24 : span <= 28 ? 12 : 8 // 하루 칸 최소 너비(px) — 폰에서도 대부분 한 화면에 들어오게
 
-  const months: { label: string; days: number }[] = []
-  for (let i = 0; i < totalDays; i++) {
-    const d = new Date(rangeStart.getTime() + i * DAY)
-    const label = `${d.getFullYear() !== today.getFullYear() ? `${String(d.getFullYear()).slice(2)}년 ` : ''}${d.getMonth() + 1}월`
-    if (months.length && months[months.length - 1].label === label) months[months.length - 1].days++
-    else months.push({ label, days: 1 })
-  }
+  const inWin = dated.filter(r => r.start <= winEnd && r.end >= winStart)
+  const shown = inWin.filter(r => !(hideDone && r.status === '완료')).sort((a, b) => a.start.getTime() - b.start.getTime())
+  const before = dated.filter(r => r.end < winStart).length
+  const after = dated.filter(r => r.start > winEnd).length
 
-  // 오늘 위치가 화면 가운데쯤 오도록 가로 스크롤
+  // 폰처럼 가로로 밀어야 할 때는 오늘이 보이게
   useEffect(() => {
     const el = scrollRef.current
-    if (el) el.scrollLeft = Math.max(0, todayIdx * dayW - el.clientWidth / 2)
-  }, [todayIdx, dayW, dated.length])
+    if (el && el.scrollWidth > el.clientWidth) el.scrollLeft = Math.max(0, (todayIdx / span) * el.scrollWidth - el.clientWidth / 3)
+  }, [todayIdx, span])
+
+  const btn = 'h-8 px-2.5 text-xs rounded-md border border-gray-300 text-gray-600 hover:bg-gray-50'
 
   return (
     <div>
+      {/* 기간 이동 */}
+      <div className="flex items-center gap-1.5 flex-wrap mb-2">
+        <button onClick={() => setOffset(o => o - Math.round(span / 2))} className={btn}>‹ 이전</button>
+        <button onClick={() => setOffset(0)} className={`h-8 px-3 text-xs rounded-md border ${offset === 0 ? 'bg-green-600 border-green-600 text-white' : 'border-gray-300 text-gray-600 hover:bg-gray-50'}`}>오늘</button>
+        <button onClick={() => setOffset(o => o + Math.round(span / 2))} className={btn}>다음 ›</button>
+        <span className="text-xs text-gray-500 ml-1">{mdw(winStart)} ~ {mdw(winEnd)}</span>
+        <label className="ml-auto flex items-center gap-1.5 text-xs text-gray-600 cursor-pointer select-none">
+          <input type="checkbox" checked={hideDone} onChange={e => setHideDone(e.target.checked)} className="accent-green-600" />완료 숨김
+        </label>
+      </div>
+
       {dated.length > 0 && (
         <div ref={scrollRef} className="overflow-x-auto border border-gray-100 rounded-lg">
-          <div className="w-max">
-            {/* 월 · 날짜 헤더 */}
-            <div className="flex bg-gray-50 border-b border-gray-100">
-              <div className={`${nameW} flex-shrink-0 sticky left-0 z-20 bg-gray-50 border-r border-gray-100`} />
-              {months.map((m, i) => (
-                <div key={i} className="text-xs font-semibold text-gray-500 py-1 px-1.5 border-r border-gray-100 truncate"
-                  style={{ width: m.days * dayW }}>{m.label}</div>
-              ))}
-            </div>
-            <div className="flex bg-gray-50 border-b border-gray-200">
-              <div className={`${nameW} flex-shrink-0 sticky left-0 z-20 bg-gray-50 border-r border-gray-100 px-3 py-1 text-xs font-semibold text-gray-400`}>공정</div>
-              {Array.from({ length: totalDays }).map((_, i) => {
-                const d = new Date(rangeStart.getTime() + i * DAY)
+          <div style={{ minWidth: span * minDay }}>
+            {/* 날짜 헤더 */}
+            <div className="relative h-9 bg-gray-50 border-b border-gray-200">
+              {days.map((d, i) => {
                 const dow = d.getDay()
+                const first = i === 0 || d.getDate() === 1
+                const key = dow === 1 || first || i === todayIdx // 좁은 화면에서도 항상 보이는 날짜
+                const numCls = key ? '' : span <= 14 ? '' : span <= 28 ? 'hidden sm:inline' : 'hidden'
                 return (
-                  <div key={i} className={`flex-shrink-0 text-center py-1 border-r border-gray-100 ${i === todayIdx ? 'bg-red-50 font-bold text-red-500' : dow === 0 ? 'text-red-400' : dow === 6 ? 'text-blue-400' : 'text-gray-400'}`}
-                    style={{ width: dayW, fontSize: dayW < 14 ? 8 : 10 }}>{dayW < 14 && d.getDate() % 2 === 0 && i !== todayIdx ? '' : d.getDate()}</div>
+                  <div key={i} className={`absolute top-0 bottom-0 flex flex-col items-center justify-center leading-tight ${i === todayIdx ? 'bg-red-500 text-white font-bold rounded' : dow === 0 ? 'text-red-400' : dow === 6 ? 'text-blue-400' : 'text-gray-400'}`}
+                    style={{ left: `${pct(i)}%`, width: `${pct(1)}%` }}>
+                    {first && <span className={`text-[10px] font-semibold ${span > 14 ? 'hidden sm:block' : ''}`}>{d.getMonth() + 1}월</span>}
+                    <span className={`text-[11px] ${numCls}`}>{d.getDate()}</span>
+                  </div>
                 )
               })}
             </div>
 
-            {/* 공정 행 */}
-            {dated.map(({ s, start, end, status }) => {
-              const left = dayIdx(start) * dayW
-              const width = (dayIdx(end) - dayIdx(start) + 1) * dayW
-              const st = STYLE[status]
-              return (
-                <div key={s.id} className="flex border-b border-gray-50 hover:bg-gray-50/70 group">
-                  <button type="button" onClick={() => onPick(s)}
-                    className={`${nameW} flex-shrink-0 sticky left-0 z-20 bg-white group-hover:bg-gray-50 border-r border-gray-100 px-2 sm:px-3 py-1.5 flex items-center gap-1.5 text-left`}>
-                    <span className={`w-2 h-2 rounded-full flex-shrink-0 ${st.bar}`} />
-                    {/* 긴 공정명은 잘리지 않게 두 줄까지 줄바꿈 */}
-                    <span className={`${full ? 'text-sm' : 'text-xs'} leading-tight break-keep line-clamp-2 ${status === '완료' ? 'text-gray-400' : status === '지연' ? 'text-red-600 font-medium' : 'text-gray-800'}`} title={s.task_name}>{s.task_name}</span>
-                  </button>
-                  <div className="relative" style={{ width: totalDays * dayW, minHeight: full ? 40 : 36 }}>
-                    {/* 주말 음영 */}
-                    {Array.from({ length: totalDays }).map((_, i) => {
-                      const dow = new Date(rangeStart.getTime() + i * DAY).getDay()
-                      return (dow === 0 || dow === 6) ? <div key={i} className="absolute top-0 bottom-0 bg-gray-50" style={{ left: i * dayW, width: dayW }} /> : null
-                    })}
-                    <div className="absolute top-0 bottom-0 w-0.5 bg-red-400 z-10" style={{ left: todayIdx * dayW + dayW / 2 }} />
-                    <button type="button" onClick={() => onPick(s)}
-                      title={`${s.task_name}\n${md(start)} ~ ${md(end)} · ${status}`}
-                      className={`absolute top-1/2 -translate-y-1/2 h-[22px] rounded-md px-1.5 flex items-center overflow-hidden z-[5] cursor-pointer hover:brightness-95 ${st.bar} ${st.text}`}
-                      style={{ left, width }}>
-                      <span className="text-[10px] font-medium whitespace-nowrap">{width >= 66 ? `${md(start)}~${md(end)}` : ''}</span>
+            {/* 공정 막대 */}
+            <div className="relative">
+              {/* 주말 음영 · 오늘선 */}
+              {days.map((d, i) => (d.getDay() === 0 || d.getDay() === 6) && (
+                <div key={i} className="absolute top-0 bottom-0 bg-gray-50" style={{ left: `${pct(i)}%`, width: `${pct(1)}%` }} />
+              ))}
+              {todayIdx >= 0 && todayIdx < span && (
+                <div className="absolute top-0 bottom-0 w-0.5 bg-red-400 z-10" style={{ left: `${pct(todayIdx + 0.5)}%` }} />
+              )}
+
+              {shown.length === 0 && (
+                <p className="relative py-8 text-center text-sm text-gray-400">이 기간에 잡힌 공정이 없어요</p>
+              )}
+              {shown.map(({ s, start, end, status }) => {
+                const a = Math.max(0, idx(start)), b = Math.min(span - 1, idx(end))
+                const left = pct(a), right = pct(b + 1)
+                const st = STYLE[status]
+                const when = `${md(start)}${end > start ? `~${md(end)}` : ''}${status === '지연' ? ` · ${daysBetween(end, today)}일 지남` : ''}`
+                // 이름 자리: 막대 오른쪽 → 안 되면 왼쪽 → 둘 다 좁으면 막대 안
+                const place = right <= 70 ? 'right' : left >= 30 ? 'left' : 'inside'
+                const color = status === '지연' ? 'text-red-600' : status === '완료' ? 'text-gray-400' : 'text-gray-800'
+                const label = (
+                  <><span className="font-medium">{s.task_name}</span> <span className="opacity-70">{when}</span></>
+                )
+                return (
+                  <div key={s.id} className={`relative ${full ? 'h-10' : 'h-9'} border-b border-gray-50 hover:bg-gray-50/60`}>
+                    <button type="button" onClick={() => onPick(s)} title={`${s.task_name}\n${md(start)} ~ ${md(end)} · ${status}`}
+                      className={`absolute top-1/2 -translate-y-1/2 h-[22px] rounded-md px-1.5 flex items-center overflow-hidden z-[5] hover:brightness-95 ${st.bar} ${st.text}`}
+                      style={{ left: `calc(${left}% + 1px)`, width: `calc(${right - left}% - 2px)` }}>
+                      {place === 'inside' && <span className="text-xs whitespace-nowrap truncate">{label}</span>}
                     </button>
+                    {place !== 'inside' && (
+                      <button type="button" onClick={() => onPick(s)}
+                        className={`absolute top-1/2 -translate-y-1/2 z-20 bg-white/90 rounded px-1 whitespace-nowrap overflow-hidden text-ellipsis ${full ? 'text-sm' : 'text-xs'} ${color} hover:underline`}
+                        title={`${s.task_name} ${when}`}
+                        style={place === 'right' ? { left: `calc(${right}% + 3px)`, maxWidth: `calc(${100 - right}% - 4px)` } : { right: `calc(${100 - left}% + 3px)`, maxWidth: `calc(${left}% - 4px)` }}>
+                        {label}
+                      </button>
+                    )}
                   </div>
-                </div>
-              )
-            })}
+                )
+              })}
+            </div>
           </div>
+        </div>
+      )}
+
+      {/* 기간 밖 공정 안내 */}
+      {(before > 0 || after > 0) && (
+        <div className="flex items-center gap-3 mt-2 text-xs text-gray-400">
+          {before > 0 && <button onClick={() => setOffset(o => o - Math.round(span / 2))} className="hover:text-gray-700">‹ 이전 공정 {before}개</button>}
+          {after > 0 && <button onClick={() => setOffset(o => o + Math.round(span / 2))} className="ml-auto hover:text-gray-700">이후 공정 {after}개 ›</button>}
         </div>
       )}
 
