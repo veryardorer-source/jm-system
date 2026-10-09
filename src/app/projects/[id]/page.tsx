@@ -756,17 +756,6 @@ export default function ProjectDetail() {
     setShowFileForm(true)
   }
 
-  // 현황 탭 · 공유: 폰은 공유 창(카카오톡 등), PC는 현장 링크 복사
-  async function shareProject() {
-    const url = `${window.location.origin}/projects/${id}`
-    if (navigator.share) {
-      try { await navigator.share({ title: project?.name || 'JM 현장', url }) } catch {}
-      return
-    }
-    try { await navigator.clipboard.writeText(url); toast('현장 링크를 복사했어요') }
-    catch { toast('링크 복사에 실패했어요') }
-  }
-
   async function deleteSchedule(s: Schedule) {
     if (!confirm(`"${s.task_name}" 공정을 삭제할까요?`)) return
     await supabase.from('schedules').delete().eq('id', s.id)
@@ -994,24 +983,18 @@ export default function ProjectDetail() {
           {tab === '현황' && (
             <div className="flex flex-col gap-4">
               {/* 바로 할 일 — 현장팀이 들어오자마자 누르는 버튼 */}
-              <div className={`grid gap-2 md:gap-3 ${readOnly ? 'grid-cols-1' : 'grid-cols-3'}`}>
-                {!readOnly && (
+              {!readOnly && (
+                <div className="grid grid-cols-2 gap-2 md:gap-3">
                   <button onClick={openPhotoUpload}
-                    className="bg-green-600 text-white rounded-xl py-3.5 md:py-4 flex flex-col md:flex-row items-center justify-center gap-1 md:gap-2 font-semibold text-sm md:text-base hover:bg-green-700">
-                    <span className="text-xl md:text-lg">📷</span>사진 올리기
+                    className="bg-green-600 text-white rounded-xl py-4 flex items-center justify-center gap-2 font-semibold text-base hover:bg-green-700">
+                    <span className="text-xl">📷</span>사진 올리기
                   </button>
-                )}
-                {!readOnly && (
                   <button onClick={() => setTab('공정')}
-                    className="bg-white border border-gray-200 text-gray-800 rounded-xl py-3.5 md:py-4 flex flex-col md:flex-row items-center justify-center gap-1 md:gap-2 font-semibold text-sm md:text-base hover:border-green-400">
-                    <span className="text-xl md:text-lg">✅</span>공정 체크
+                    className="bg-white border border-gray-200 text-gray-800 rounded-xl py-4 flex items-center justify-center gap-2 font-semibold text-base hover:border-green-400">
+                    <span className="text-xl">✅</span>공정 체크
                   </button>
-                )}
-                <button onClick={shareProject}
-                  className="bg-white border border-gray-200 text-gray-800 rounded-xl py-3.5 md:py-4 flex flex-col md:flex-row items-center justify-center gap-1 md:gap-2 font-semibold text-sm md:text-base hover:border-green-400">
-                  <span className="text-xl md:text-lg">🔗</span>공유
-                </button>
-              </div>
+                </div>
+              )}
 
               {/* 이번 주 공정 — 지연 + 오늘 앞뒤 1주, 버튼으로 바로 완료/시작 */}
               <div className="bg-white rounded-xl border border-gray-200 p-4 md:p-5">
