@@ -140,7 +140,7 @@ export default function Dashboard() {
                     <Link href="/projects" className="text-green-600 text-sm mt-2 inline-block">현장 등록하기 →</Link>
                   </div>
                 ) : (
-                  <StatusBoard infos={shown} today={today} readOnly={readOnly} onAdd={setAddFor} onPick={(r, p) => setPicked({ r, p })} />
+                  <StatusBoard infos={shown} today={today} readOnly={readOnly} onAdd={setAddFor} onPick={(r, p) => setPicked({ r, p })} onStatus={changeStatus} />
                 )}
               </div>
 

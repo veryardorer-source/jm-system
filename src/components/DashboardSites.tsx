@@ -51,17 +51,114 @@ export function chipWhen(r: Row, today: Date) {
   return r.end > r.start ? `${md(r.start)}~${md(r.end)}` : md(r.start)
 }
 
-// ── 현황판: 현장마다 한 줄 (폰에서는 카드) ──
-export function StatusBoard({ infos, today, readOnly, onAdd, onPick }: {
+// ── 현황판: PC는 표(현장마다 한 줄), 폰은 현장마다 카드 + 공정 목록 ──
+export function StatusBoard(props: {
+  infos: Info[]
+  today: Date
+  readOnly: boolean
+  onAdd: (p: Project) => void
+  onPick: (r: Row, p: Project) => void
+  onStatus: (s: Schedule, st: PhaseStatus) => void
+}) {
+  if (props.infos.length === 0) {
+    return <div className="bg-white rounded-xl border border-gray-200 text-center py-8 text-sm text-gray-400">해당하는 현장이 없어요</div>
+  }
+  return (
+    <>
+      <div className="hidden md:block"><DesktopBoard {...props} /></div>
+      <div className="md:hidden"><MobileBoard {...props} /></div>
+    </>
+  )
+}
+
+const MOBILE_ROWS = 3 // 폰 카드에서 처음 보이는 공정 수
+
+function MobileBoard({ infos, today, readOnly, onAdd, onPick, onStatus }: {
+  infos: Info[]
+  today: Date
+  readOnly: boolean
+  onAdd: (p: Project) => void
+  onPick: (r: Row, p: Project) => void
+  onStatus: (s: Schedule, st: PhaseStatus) => void
+}) {
+  const [open, setOpen] = useState<Record<string, boolean>>({})
+  const withWork = infos.filter(i => i.week.length > 0)
+  const idle = infos.filter(i => i.week.length === 0)
+  const stage = (p: Project) => <span className={`text-xs px-2 py-0.5 rounded-full font-medium border whitespace-nowrap flex-shrink-0 ${STATUS_COLOR[p.status] || ''}`}>{p.status}</span>
+
+  return (
+    <div className="flex flex-col gap-3">
+      {withWork.map(({ p, week, kind }) => {
+        const end = parseDate(p.end_date)
+        const dday = end ? daysBetween(today, end) : null
+        const all = !!open[p.id]
+        const rows = all ? week : week.slice(0, MOBILE_ROWS)
+        return (
+          <div key={p.id} className="bg-white rounded-xl border border-gray-200 px-4 pt-3 pb-1">
+            {/* 현장명 · 단계 · 마감 — 누르면 현장 상세 */}
+            <Link href={`/projects/${p.id}`} className="flex items-center gap-2 pb-2">
+              <span className={`text-[15px] font-semibold truncate ${kind === 'late' ? 'text-red-600' : 'text-gray-900'}`}>{p.name}</span>
+              {stage(p)}
+              <DDay dday={dday} className="ml-auto" />
+            </Link>
+
+            {/* 이번 주 공정 — 버튼으로 바로 완료/시작 */}
+            {rows.map(r => (
+              <div key={r.s.id} className="flex items-center gap-2 py-2.5 border-t border-gray-100">
+                <button type="button" onClick={() => onPick(r, p)} className="flex-1 min-w-0 text-left">
+                  <p className={`text-sm font-medium break-keep ${r.status === '지연' ? 'text-red-600' : 'text-gray-800'}`}>{r.s.task_name}</p>
+                  <p className="text-xs text-gray-400 truncate">
+                    {chipWhen(r, today)}{r.s.manager ? ` · ${r.s.manager}` : ''}{r.s.vendor ? ` · ${r.s.vendor}${r.s.vendor_booked ? '' : '(미확정)'}` : ''}
+                  </p>
+                </button>
+                <span className={`text-xs px-2 py-0.5 rounded-full font-medium flex-shrink-0 ${STYLE[r.status].chip}`}>{r.status}</span>
+                {!readOnly && (
+                  r.status === '예정'
+                    ? <button onClick={() => onStatus(r.s, '진행중')}
+                        className="flex-shrink-0 text-sm px-3 py-1.5 rounded-lg border border-gray-300 text-gray-700 active:bg-gray-50">시작</button>
+                    : <button onClick={() => onStatus(r.s, '완료')}
+                        className="flex-shrink-0 text-sm px-3 py-1.5 rounded-lg bg-green-600 text-white active:bg-green-700">완료</button>
+                )}
+              </div>
+            ))}
+            {week.length > MOBILE_ROWS && (
+              <button onClick={() => setOpen(o => ({ ...o, [p.id]: !all }))}
+                className="w-full py-2.5 border-t border-gray-100 text-sm text-green-600">
+                {all ? '접기 ▴' : `이번 주 공정 ${week.length - MOBILE_ROWS}개 더 보기 ▾`}
+              </button>
+            )}
+          </div>
+        )
+      })}
+
+      {/* 이번 2주 공정 없는 현장 — 한 카드에 모아서 */}
+      {idle.length > 0 && (
+        <div className="bg-white rounded-xl border border-gray-200 px-4 pt-3 pb-1">
+          <p className="text-xs text-gray-400 pb-1">이번 2주 공정 없는 현장 {idle.length}</p>
+          {idle.map(({ p }) => (
+            <div key={p.id} className="flex items-center gap-2 py-2.5 border-t border-gray-100">
+              <Link href={`/projects/${p.id}`} className="flex-1 min-w-0 text-sm font-medium text-gray-800 truncate">{p.name}</Link>
+              {stage(p)}
+              {!readOnly && (
+                <button onClick={() => onAdd(p)}
+                  className="flex-shrink-0 text-sm px-3 py-1.5 rounded-lg border border-green-300 text-green-600 active:bg-green-50">+ 공정</button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// PC: 현장마다 한 줄 — 현장명 · 단계 · 이번 주 앞뒤 공정 칩 · 마감
+function DesktopBoard({ infos, today, readOnly, onAdd, onPick }: {
   infos: Info[]
   today: Date
   readOnly: boolean
   onAdd: (p: Project) => void
   onPick: (r: Row, p: Project) => void
 }) {
-  if (infos.length === 0) {
-    return <div className="bg-white rounded-xl border border-gray-200 text-center py-8 text-sm text-gray-400">해당하는 현장이 없어요</div>
-  }
   const cols = 'md:grid md:grid-cols-[minmax(160px,220px)_84px_minmax(0,1fr)_76px] md:items-center md:gap-4'
   const stop = (e: React.MouseEvent) => { e.preventDefault(); e.stopPropagation() }
   return (
