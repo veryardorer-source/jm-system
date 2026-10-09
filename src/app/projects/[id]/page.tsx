@@ -4,7 +4,7 @@ import { useEffect, useState, useRef, useCallback } from 'react'
 import { toast } from '@/components/Toaster'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import Sidebar from '@/components/Sidebar'
-import { supabase, Project, ProjectFile, Schedule, ProjectCost, ProjectAssignment, STATUS_LIST, STATUS_COLOR } from '@/lib/supabase'
+import { supabase, Project, ProjectFile, Schedule, ProjectCost, STATUS_LIST, STATUS_COLOR } from '@/lib/supabase'
 import { useAuth, canEdit } from '@/lib/auth-context'
 import { notifyOthers, notifyDM, notifyRoom } from '@/lib/notify'
 import { compressImage, makeThumbnail, hashFile, formatBytes, isCompressibleImage, mediaUploadName, toShareableBlob } from '@/lib/image'
@@ -116,7 +116,6 @@ export default function ProjectDetail() {
   const [files, setFiles] = useState<ProjectFile[]>([])
   const [schedules, setSchedules] = useState<Schedule[]>([])
   const [costs, setCosts] = useState<ProjectCost[]>([])
-  const [assignments, setAssignments] = useState<ProjectAssignment[]>([])
   const [loading, setLoading] = useState(true)
 
   const [showEditForm, setShowEditForm] = useState(false)
@@ -174,18 +173,16 @@ export default function ProjectDetail() {
 
   const fetchAll = useCallback(async () => {
     setLoading(true)
-    const [p, f, s, c, a] = await Promise.all([
+    const [p, f, s, c] = await Promise.all([
       supabase.from('projects').select('*').eq('id', id).single(),
       supabase.from('project_files').select('*').eq('project_id', id).order('created_at', { ascending: false }),
       supabase.from('schedules').select('*').eq('project_id', id).order('scheduled_date'),
       supabase.from('project_costs').select('*').eq('project_id', id).order('month', { ascending: false }),
-      supabase.from('project_assignments').select('*').eq('project_id', id),
     ])
     setProject(p.data)
     setFiles(f.data || [])
     setSchedules(s.data || [])
     setCosts(c.data || [])
-    setAssignments(a.data || [])
     setLoading(false)
   }, [id])
 
@@ -972,7 +969,6 @@ export default function ProjectDetail() {
   const photos = files.filter(f => PHOTO_CATS.includes(f.category))
   const recentPhotos = photos.slice(0, 8)
   const totalCost = costs.reduce((sum, c) => sum + (c.amount || 0), 0)
-  const staff = Array.from(new Set(assignments.map(a => a.employee_name).filter(Boolean)))
   // 기본 분류 + 직접 추가된(파일에 존재하는) 분류
   const allCategories = Array.from(new Set([...CATEGORY_LIST, ...files.map(f => f.category).filter(Boolean)]))
 
@@ -1101,8 +1097,8 @@ export default function ProjectDetail() {
                 )}
               </div>
 
-              {/* 자료 미리보기 + 비용 요약 */}
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              {/* 자료 미리보기 */}
+              <div>
                 <div className="bg-white rounded-xl border border-gray-200 p-4 md:p-5">
                   <div className="flex items-center justify-between mb-3">
                     <h3 className="text-sm font-semibold text-gray-700">현장 자료</h3>
@@ -1111,7 +1107,7 @@ export default function ProjectDetail() {
                   {recentPhotos.length === 0 ? (
                     <p className="text-sm text-gray-400 py-6 text-center">등록된 사진이 없어요</p>
                   ) : (
-                    <div className="grid grid-cols-4 gap-1.5">
+                    <div className="grid grid-cols-4 md:grid-cols-8 gap-1.5">
                       {recentPhotos.map(f => (
                         <div key={f.id} className="relative aspect-square cursor-pointer" onClick={() => setLightbox(f.file_url)}>
                           {isVideoFile(f) ? (
@@ -1139,50 +1135,6 @@ export default function ProjectDetail() {
                   </div>
                 </div>
 
-                <div className="bg-white rounded-xl border border-gray-200 p-4 md:p-5">
-                  <div className="flex items-center justify-between mb-3">
-                    <h3 className="text-sm font-semibold text-gray-700">배정 직원 · 비용</h3>
-                    {canSeeMoney && <button onClick={() => setTab('비용')} className="text-xs text-green-600 hover:text-green-700">비용 자세히 →</button>}
-                  </div>
-
-                  {/* 배정 직원 */}
-                  {staff.length === 0 && !project.manager ? (
-                    <p className="text-sm text-gray-400 mb-3">배정된 직원이 없어요</p>
-                  ) : (
-                    <div className="flex flex-wrap gap-1.5 mb-3">
-                      {project.manager && (
-                        <span className="inline-flex items-center gap-1.5 bg-green-50 border border-green-200 rounded-full px-2.5 py-1 text-sm text-green-700">
-                          <span className="w-5 h-5 rounded-full bg-green-200 text-green-800 flex items-center justify-center text-xs">{project.manager.slice(0, 1)}</span>
-                          {project.manager} <span className="text-green-500 text-xs">담당</span>
-                        </span>
-                      )}
-                      {staff.filter(n => n !== project.manager).map(name => (
-                        <span key={name} className="inline-flex items-center gap-1.5 bg-gray-50 border border-gray-200 rounded-full px-2.5 py-1 text-sm text-gray-700">
-                          <span className="w-5 h-5 rounded-full bg-gray-200 text-gray-600 flex items-center justify-center text-xs">{name.slice(0, 1)}</span>
-                          {name}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-
-                  {/* 비용 */}
-                  {canSeeMoney ? (
-                    <div className="border-t border-gray-100 pt-3">
-                      <div className="flex items-center justify-between mb-1.5">
-                        <span className="text-sm text-gray-500">누적 원가</span>
-                        <span className="text-lg font-bold text-gray-900">{totalCost.toLocaleString()}원</span>
-                      </div>
-                      {costs.slice(0, 3).map(c => (
-                        <div key={c.id} className="flex items-center justify-between text-sm mt-1">
-                          <span className="text-gray-400">{c.month?.slice(0, 7) || '-'}</span>
-                          <span className="text-gray-700">{c.amount.toLocaleString()}원</span>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="border-t border-gray-100 pt-3 text-sm text-gray-300">비용 정보는 관리자만 볼 수 있어요</div>
-                  )}
-                </div>
               </div>
             </div>
           )}
