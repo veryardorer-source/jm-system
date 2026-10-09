@@ -78,7 +78,7 @@ export function printUrl(url: string) {
 
 // 내보내기(공유) — 모바일은 공유 시트, 안 되면 다운로드로 폴백
 export async function shareUrl(url: string, name?: string) {
-  const filename = name || url.split('/').pop()?.split('?')[0] || 'file'
+  const filename = downloadName(name, url)
   try {
     if (typeof navigator !== 'undefined' && navigator.share) {
       try {
@@ -100,6 +100,20 @@ export async function shareUrl(url: string, name?: string) {
   await downloadUrl(url, filename)
 }
 
+// 받을 때 쓸 파일명 — 올린 이름 그대로 두되, 깨지는 두 경우만 바로잡는다.
+// ① 윈도우에서 못 쓰는 글자(\ / : * ? " < > |)가 있으면 브라우저·저장소가 이름을 버리고 숫자 이름(1785…pdf)으로 내려줌 → '_'로 바꿈
+// ② '자료 수정'에서 제목만 바꿔 확장자가 빠지면(예: 3층 평면도) PC에서 안 열림 → 저장 주소의 확장자를 붙임
+export function downloadName(name: string | null | undefined, url: string): string {
+  const urlName = (url || '').split('/').pop()?.split('?')[0] || ''
+  const urlExt = /\.([a-z0-9]{1,5})$/i.exec(urlName)?.[1]?.toLowerCase() || ''
+  let n = (name || '').trim()
+  if (!n) { try { n = decodeURIComponent(urlName) } catch { n = urlName } }
+  n = n.replace(/[\\/:*?"<>|\u0000-\u001f]/g, '_').replace(/[. ]+$/, '')
+  const hasExt = /\.[a-z][a-z0-9]{0,4}$/i.test(n) // 'v2.1' 같은 숫자 꼬리는 확장자로 안 봄
+  if (urlExt && !hasExt) n = `${n}.${urlExt}`
+  return n || 'file'
+}
+
 // 저장소(Supabase) 주소에 ?download=이름 을 붙이면 서버가 '그 이름으로 다운로드'(Content-Disposition, 한글 OK)로 내려준다.
 // <a download>는 다른 도메인 파일엔 무시되어(폰에서 특히) 저장소 숫자 이름(1785…_0.pdf)으로 받아지기 때문.
 export function namedDownloadUrl(url: string, name?: string) {
@@ -118,7 +132,7 @@ function clickLink(href: string, filename?: string) {
 
 // 저장(다운로드) — 어느 기기에서든 올린 사람이 올린 파일명 그대로
 export async function downloadUrl(url: string, name?: string) {
-  const filename = name || url.split('/').pop()?.split('?')[0] || 'file'
+  const filename = downloadName(name, url)
   const fromStorage = /\/storage\/v1\/object\//.test(url)
   try {
     // 저장소 파일은 내용 전체를 받지 않고 존재만 확인(HEAD) — 큰 파일도 폰 메모리 부담 없음

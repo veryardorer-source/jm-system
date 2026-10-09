@@ -9,7 +9,7 @@ import { useAuth, canEdit } from '@/lib/auth-context'
 import { notifyOthers, notifyDM, notifyRoom } from '@/lib/notify'
 import { compressImage, makeThumbnail, hashFile, formatBytes, isCompressibleImage, mediaUploadName, toShareableBlob } from '@/lib/image'
 import { FolderIndex, sha256Hex, uniqueByOriginal } from '@/lib/folder-dedupe'
-import { openPdfTitled, printUrl, downloadUrl } from '@/lib/media'
+import { openPdfTitled, printUrl, downloadUrl, downloadName } from '@/lib/media'
 import { normalizePdfTitle } from '@/lib/pdf'
 import Image from 'next/image'
 import FileDropInput from '@/components/FileDropInput'
@@ -790,7 +790,8 @@ export default function ProjectDetail() {
 
   // PC·NAS로 저장할 때의 파일명 — 사진·문서 모두 올린 이름 그대로 (날짜 접두어 안 붙임, 대표 지시 2026-10-01).
   // 폰 사진은 원래 이름에 촬영 날짜가 있어 그대로 날짜순 정렬된다.
-  const nasName = (f: ProjectFile): string => f.file_name || 'file'
+  // 받을 때 파일명 = 올린 이름 (확장자 빠짐·윈도우 금지 글자만 보정)
+  const nasName = (f: ProjectFile): string => downloadName(f.file_name, f.file_url)
 
   // 사진 분류에 섞인 문서(PDF·엑셀 등) 열기
   function openDocFile(f: ProjectFile) {
