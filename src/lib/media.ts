@@ -38,6 +38,9 @@ export async function removeStoredFile(url?: string | null) {
 // 저장 주소가 숫자 이름(1785…pdf)이라 그냥 열면 탭 제목이 숫자로 나와서, 제목을 붙인 래퍼 페이지로 연다.
 // 모바일은 내장 PDF 표시가 기기마다 달라 기존처럼 바로 연다.
 export function openPdfTitled(url: string, title?: string) {
+  // 저장소 파일은 주소 끝이 파일명인 우리 주소로 바로 연다 — 탭 제목·PDF 뷰어 다운로드 이름 모두 올린 이름
+  const named = viewUrl(url, title)
+  if (named !== url) { window.open(named, '_blank'); return }
   const name = (title || '').trim()
   const isMobile = typeof window !== 'undefined' && window.matchMedia('(hover: none)').matches
   if (isMobile || !name) { window.open(url, '_blank'); return }
@@ -52,11 +55,11 @@ export function openPdfTitled(url: string, title?: string) {
 export function viewInBrowser(url: string, name?: string) {
   const n = (name || url || '').toLowerCase().split('?')[0]
   if (/\.(xlsx|xls|xlsb|xlsm|doc|docx|ppt|pptx)$/.test(n)) {
-    window.open(`https://view.officeapps.live.com/op/view.aspx?src=${encodeURIComponent(url)}`, '_blank')
+    window.open(`https://view.officeapps.live.com/op/view.aspx?src=${encodeURIComponent(viewUrl(url, name, true))}`, '_blank')
   } else if (n.endsWith('.pdf')) {
     openPdfTitled(url, name)
   } else if (isImageUrl(n) || isVideoUrl(n) || /\.(txt|svg)$/.test(n)) {
-    window.open(url, '_blank') // 브라우저가 화면에 표시할 수 있는 형식
+    window.open(viewUrl(url, name), '_blank') // 브라우저가 화면에 표시할 수 있는 형식 (사진은 '다른 이름으로 저장'도 올린 이름)
   } else {
     // DWG·HWP·ZIP 등 표시 불가 형식은 어차피 다운로드되므로, 저장소 숫자 이름 대신 제 이름으로 받게
     downloadUrl(url, name)
@@ -112,6 +115,20 @@ export function downloadName(name: string | null | undefined, url: string): stri
   const hasExt = /\.[a-z][a-z0-9]{0,4}$/i.test(n) // 'v2.1' 같은 숫자 꼬리는 확장자로 안 봄
   if (urlExt && !hasExt) n = `${n}.${urlExt}`
   return n || 'file'
+}
+
+// 열어 보기용 주소 — 저장소 공개 파일을 '/sf/<저장소 경로>/<올린 파일명>'(우리 사이트, next.config.ts rewrites)로 바꾼다.
+// 브라우저 PDF 뷰어 다운로드·사진 '다른 이름으로 저장'·MS 뷰어가 주소 끝을 파일명으로 쓰므로 숫자 이름 대신 올린 이름이 된다.
+// 동영상은 용량이 커서 사이트를 거치지 않게 그대로 둔다. absolute=true는 MS 뷰어처럼 바깥 서비스에 넘길 때.
+export function viewUrl(url: string, name?: string | null, absolute = false): string {
+  const m = /\/storage\/v1\/object\/public\/([^?#]+)/.exec(url || '')
+  if (!m || isVideoUrl(url)) return url
+  let file = downloadName(name, url)
+  // 사진은 올릴 때 WebP로 줄여 저장되기도 해서(이름은 .jpg) 실제 형식 확장자로 맞춤 — 받은 뒤 안 열리는 일 방지
+  const ext = /\.([a-z0-9]{1,5})$/i.exec(m[1])?.[1]?.toLowerCase()
+  if (ext && isImageUrl(url) && !file.toLowerCase().endsWith('.' + ext)) file = file.replace(/\.[^.]+$/, '') + '.' + ext
+  const path = `/sf/${m[1]}/${encodeURIComponent(file)}`
+  return absolute && typeof window !== 'undefined' ? window.location.origin + path : path
 }
 
 // 저장소(Supabase) 주소에 ?download=이름 을 붙이면 서버가 '그 이름으로 다운로드'(Content-Disposition, 한글 OK)로 내려준다.

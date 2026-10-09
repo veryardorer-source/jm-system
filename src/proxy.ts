@@ -43,5 +43,6 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/((?!_next/static|_next/image|favicon.ico|.*\\.svg|.*\\.png|.*\\.jpg|.*\\.ico|manifest\\.json|sw\\.js|icons).*)'],
+  // sf/ = 파일 열기 프록시(next.config.ts rewrites) — 원래 공개 저장소 파일이라 로그인 검사 제외 (MS 엑셀 뷰어가 가져갈 수 있게)
+  matcher: ['/((?!_next/static|_next/image|favicon.ico|sf/|.*\\.svg|.*\\.png|.*\\.jpg|.*\\.ico|manifest\\.json|sw\\.js|icons).*)'],
 }

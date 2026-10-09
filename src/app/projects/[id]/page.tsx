@@ -9,7 +9,7 @@ import { useAuth, canEdit } from '@/lib/auth-context'
 import { notifyOthers, notifyDM, notifyRoom } from '@/lib/notify'
 import { compressImage, makeThumbnail, hashFile, formatBytes, isCompressibleImage, mediaUploadName, toShareableBlob } from '@/lib/image'
 import { FolderIndex, sha256Hex, uniqueByOriginal } from '@/lib/folder-dedupe'
-import { openPdfTitled, printUrl, downloadUrl, downloadName } from '@/lib/media'
+import { openPdfTitled, printUrl, downloadUrl, downloadName, viewUrl } from '@/lib/media'
 import { normalizePdfTitle } from '@/lib/pdf'
 import Image from 'next/image'
 import FileDropInput from '@/components/FileDropInput'
@@ -796,7 +796,7 @@ export default function ProjectDetail() {
   // 사진 분류에 섞인 문서(PDF·엑셀 등) 열기
   function openDocFile(f: ProjectFile) {
     const name = (f.file_name || f.file_url).toLowerCase()
-    if (/\.(xlsx|xls|xlsb|xlsm|doc|docx|ppt|pptx)$/.test(name)) window.open(`https://view.officeapps.live.com/op/view.aspx?src=${encodeURIComponent(f.file_url)}`, '_blank')
+    if (/\.(xlsx|xls|xlsb|xlsm|doc|docx|ppt|pptx)$/.test(name)) window.open(`https://view.officeapps.live.com/op/view.aspx?src=${encodeURIComponent(viewUrl(f.file_url, f.file_name, true))}`, '_blank')
     else if (name.endsWith('.pdf')) openPdfTitled(f.file_url, f.file_name)
     else downloadFile(f) // DWG·HWP 등 표시 불가 형식은 제 이름으로 다운로드
   }
@@ -1606,7 +1606,8 @@ export default function ProjectDetail() {
                 onClick={e => e.stopPropagation()}
                 className="max-w-full max-h-full rounded-lg" />
             ) : (
-              <HeicImg src={lightbox} alt="" onClick={e => e.stopPropagation()} className="max-w-full max-h-full object-contain rounded-lg" />
+              // 우리 주소(끝=올린 파일명)로 표시 — 오른쪽 클릭 '다른 이름으로 저장'도 올린 이름
+              <HeicImg src={viewUrl(lightbox, cur?.file_name)} alt="" onClick={e => e.stopPropagation()} className="max-w-full max-h-full object-contain rounded-lg" />
             )}
             {idx > 0 && (
               <button onClick={e => { e.stopPropagation(); go(-1) }}

@@ -1,6 +1,8 @@
 import type { NextConfig } from "next";
 
 const SUPABASE_HOST = "btpgmtuvtkhdifpaynes.supabase.co";
+// 파일 열기 프록시(/sf/…)가 가져올 저장소 — 로컬 미리보기에서만 바꿔 씀
+const STORAGE_ORIGIN = process.env.STORAGE_PROXY_ORIGIN || `https://${SUPABASE_HOST}`;
 
 // Content-Security-Policy — 아래 기능이 깨지지 않도록 예외를 명시한다:
 //  · Supabase API/Realtime(https+wss), Storage 이미지·동영상
@@ -17,8 +19,8 @@ const CSP = [
   `media-src 'self' blob: https://${SUPABASE_HOST}`,
   `connect-src 'self' https://${SUPABASE_HOST} wss://${SUPABASE_HOST}`,
   "font-src 'self' data:",
-  `object-src https://${SUPABASE_HOST}`,
-  `frame-src https://${SUPABASE_HOST}`,
+  `object-src 'self' https://${SUPABASE_HOST}`,
+  `frame-src 'self' https://${SUPABASE_HOST}`,
   "worker-src 'self' blob:",
   "base-uri 'self'",
   "form-action 'self'",
@@ -42,7 +44,17 @@ const nextConfig: NextConfig = {
     ],
   },
   async headers() {
-    return [{ source: "/(.*)", headers: securityHeaders }];
+    return [
+      // 앱 화면 전체 — 파일 프록시(/sf/…)는 제외: PDF·사진 자체를 브라우저 뷰어·MS 뷰어에 띄워야 해서 프레임 금지·CSP를 걸면 안 열림
+      { source: "/((?!sf/).*)", headers: securityHeaders },
+      { source: "/sf/:path*", headers: [{ key: "X-Content-Type-Options", value: "nosniff" }] },
+    ];
+  },
+  // 파일 열기 주소 끝을 '올린 파일명'으로 — /sf/<저장소 경로>/<파일명> → Supabase 공개 파일
+  // 저장소는 한글 경로를 못 써서 숫자 이름(1785…pdf)으로 보관 → 뷰어에서 다운로드·다른 이름으로 저장 시 숫자 이름이 되던 문제.
+  // 우리 주소로 열면 브라우저가 주소 끝(올린 파일명)을 이름으로 쓴다. (lib/media.ts viewUrl)
+  async rewrites() {
+    return [{ source: "/sf/:path*/:name", destination: `${STORAGE_ORIGIN}/storage/v1/object/public/:path*` }];
   },
 };
 
