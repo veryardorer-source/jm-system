@@ -30,13 +30,17 @@ export async function proxy(request: NextRequest) {
     if (request.nextUrl.pathname.startsWith('/api/')) {
       return NextResponse.json({ error: '인증 필요' }, { status: 401 })
     }
-    return NextResponse.redirect(new URL('/login', request.url))
+    // 공지 링크 등 원래 가려던 주소를 기억 — 로그인 후 그 화면으로 돌아감
+    const login = new URL('/login', request.url)
+    if (request.nextUrl.pathname !== '/') login.searchParams.set('next', request.nextUrl.pathname + request.nextUrl.search)
+    return NextResponse.redirect(login)
   }
 
   // 로그인된 사용자는 로그인/가입/초대 화면 대신 홈으로
   // (초대 링크를 즐겨찾기처럼 다시 여는 직원이 '이미 사용된 초대' 오류를 보지 않게)
   if (user && (['/login', '/signup'].includes(request.nextUrl.pathname) || request.nextUrl.pathname.startsWith('/invite'))) {
-    return NextResponse.redirect(new URL('/', request.url))
+    const next = request.nextUrl.searchParams.get('next') || ''
+    return NextResponse.redirect(new URL(next.startsWith('/') && !next.startsWith('//') ? next : '/', request.url))
   }
 
   return supabaseResponse

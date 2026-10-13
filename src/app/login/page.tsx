@@ -22,8 +22,10 @@ export default function LoginPage() {
       setError('이메일 또는 비밀번호가 올바르지 않습니다.')
       setLoading(false)
     } else {
+      // 공지 링크 등으로 들어왔다가 로그인한 경우 원래 보려던 화면으로 (내부 경로만 허용)
+      const next = new URLSearchParams(window.location.search).get('next') || ''
       router.refresh()
-      router.push('/')
+      router.push(next.startsWith('/') && !next.startsWith('//') ? next : '/')
     }
   }
 

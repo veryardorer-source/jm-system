@@ -72,8 +72,28 @@ export default function NoticesPage() {
   {
     const openId = searchParams.get('open')
     if (!loading && openId && openedId !== openId) {
-      const n = notices.find(x => x.id === openId)
-      if (n) { setOpenedId(openId); setSelected(n) }
+      setOpenedId(openId)
+      // 외부협력업체는 '사용법' 공지만 — 받은 링크로도 다른 공지는 열지 않음
+      const n = notices.find(x => x.id === openId && (!readOnly || x.category === '사용법'))
+      if (n) setSelected(n)
+      else setTimeout(() => toast('삭제되었거나 볼 수 없는 공지예요'))
+    }
+  }
+
+  // 공지 링크 보내기 — 폰은 공유창(카카오톡 등), PC는 링크 복사. 받은 직원은 로그인 후 그 공지가 바로 열림
+  async function shareNotice(n: Notice) {
+    const url = `${window.location.origin}/notices?open=${n.id}`
+    const isMobile = window.matchMedia('(hover: none)').matches
+    if (isMobile && navigator.share) {
+      try { await navigator.share({ title: `[JM 공지] ${n.title}`, text: `[JM 공지] ${n.title}`, url }); return }
+      catch (e) { if ((e as Error).name === 'AbortError') return }
+    }
+    try {
+      await navigator.clipboard.writeText(`[JM 공지] ${n.title}
+${url}`)
+      toast('공지 링크를 복사했어요. 카톡에 붙여넣기(Ctrl+V) 하세요')
+    } catch {
+      prompt('아래 링크를 복사해서 보내세요', url)
     }
   }
 
@@ -330,8 +350,12 @@ export default function NoticesPage() {
               <span className="text-xs text-gray-400">
                 {new Date(selected.created_at).toLocaleString('ko-KR')}
               </span>
-              {!readOnly && (
-                <div className="flex items-center gap-1.5">
+              <div className="flex items-center gap-1.5">
+                <button onClick={() => shareNotice(selected)}
+                  className="text-xs text-white bg-green-600 hover:bg-green-700 px-3 py-1.5 rounded-lg transition-colors">
+                  🔗 링크 보내기
+                </button>
+                {!readOnly && (<>
                   <button onClick={() => startEdit(selected)}
                     className="text-xs text-green-600 hover:text-green-700 hover:bg-green-50 px-3 py-1.5 rounded-lg transition-colors border border-green-200">
                     ✏ 수정
@@ -340,8 +364,8 @@ export default function NoticesPage() {
                     className="text-xs text-red-400 hover:text-red-600 hover:bg-red-50 px-3 py-1.5 rounded-lg transition-colors">
                     삭제
                   </button>
-                </div>
-              )}
+                </>)}
+              </div>
             </div>
           </div>
         </div>
