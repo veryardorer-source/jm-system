@@ -9,6 +9,7 @@ import { supabase } from '@/lib/supabase'
 import { useAuth, canEdit } from '@/lib/auth-context'
 import { notifyOthers } from '@/lib/notify'
 import { shareUrl, downloadUrl, isImageUrl, viewInBrowser, printUrl } from '@/lib/media'
+import PdfPreview, { isPdfUrl } from '@/components/PdfPreview'
 
 type Photo = {
   id: string
@@ -239,6 +240,8 @@ export default function WithdrawalsPage() {
                       <>
                         {isImageUrl(imgs[0]) ? (
                           <Image src={imgs[0]} alt="출금요청" width={400} height={400} unoptimized loading="lazy" className="w-full aspect-square object-cover" />
+                        ) : isPdfUrl(imgs[0]) ? (
+                          <PdfPreview url={imgs[0]} width={400} className="w-full aspect-square overflow-hidden bg-gray-50" />
                         ) : (
                           <div className="w-full aspect-square bg-gray-50 flex flex-col items-center justify-center gap-1.5 px-2">
                             <span className="text-3xl">📄</span>
@@ -346,6 +349,11 @@ export default function WithdrawalsPage() {
                     <div key={i} className="relative">
                       {isImageUrl(u) ? (
                         <Image src={u} alt="" width={800} height={600} unoptimized loading="lazy" className="w-full h-auto rounded-lg" />
+                      ) : isPdfUrl(u) ? (
+                        // PDF는 쪽을 그림으로 바로 표시, 누르면 크게(브라우저 뷰어)
+                        <button onClick={() => viewInBrowser(u, `출금자료_${i + 1}.pdf`)} className="block w-full text-left">
+                          <PdfPreview url={u} maxPages={5} width={1000} className="w-full rounded-lg overflow-hidden border border-gray-200 bg-gray-50 min-h-[160px]" />
+                        </button>
                       ) : (
                         <button onClick={() => viewInBrowser(u, `출금자료_${i + 1}`)}
                           className="w-full bg-gray-50 hover:bg-gray-100 border border-gray-200 rounded-lg py-8 flex flex-col items-center gap-2">
@@ -355,8 +363,8 @@ export default function WithdrawalsPage() {
                       )}
                       <div className="absolute bottom-2 left-2 flex gap-1.5">
                         <button onClick={() => printUrl(u)} className="bg-black/60 text-white text-xs px-2.5 py-1 rounded-full">🖨 인쇄</button>
-                        <button onClick={() => shareUrl(u, `출금_${i + 1}.jpg`)} className="bg-black/60 text-white text-xs px-2.5 py-1 rounded-full">내보내기</button>
-                        <button onClick={() => downloadUrl(u, `출금_${i + 1}.jpg`)} className="bg-black/60 text-white text-xs px-2.5 py-1 rounded-full">저장</button>
+                        <button onClick={() => shareUrl(u, `출금_${i + 1}`)} className="bg-black/60 text-white text-xs px-2.5 py-1 rounded-full">내보내기</button>
+                        <button onClick={() => downloadUrl(u, `출금_${i + 1}`)} className="bg-black/60 text-white text-xs px-2.5 py-1 rounded-full">저장</button>
                       </div>
                       {!readOnly && (
                         <button onClick={() => removeViewerImage(u)} disabled={viewerBusy}

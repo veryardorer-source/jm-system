@@ -10,6 +10,7 @@ import FileDropInput from '@/components/FileDropInput'
 import { supabase, CompanyDocument, DOC_CATEGORY_LIST, DocVisibility } from '@/lib/supabase'
 import { openPdfTitled, downloadUrl, viewUrl } from '@/lib/media'
 import { normalizePdfTitle } from '@/lib/pdf'
+import PdfPreview, { isPdfUrl } from '@/components/PdfPreview'
 
 const EMPTY_FORM = { title: '', category: DOC_CATEGORY_LIST[0] as string, visibility: '전체공개' as DocVisibility, memo: '' }
 
@@ -167,7 +168,14 @@ export default function DocumentsPage() {
                     <div>
                       {catDocs.map((d, i) => (
                         <div key={d.id} className={`flex items-center gap-3 px-4 py-3 hover:bg-gray-50 ${i > 0 ? 'border-t border-gray-100' : ''}`}>
-                          <span className="text-lg flex-shrink-0">📄</span>
+                          {d.file_url && (isPdfUrl(d.file_name || '') || isPdfUrl(d.file_url)) ? (
+                            // PDF는 첫 쪽 작은 미리보기 — 누르면 열기
+                            <button onClick={() => openDoc(d)} className="flex-shrink-0">
+                              <PdfPreview url={d.file_url} width={160} compact className="w-10 h-12 overflow-hidden rounded border border-gray-200 bg-gray-50" />
+                            </button>
+                          ) : (
+                            <span className="text-lg flex-shrink-0">📄</span>
+                          )}
                           <button onClick={() => openDoc(d)} className="flex-1 min-w-0 text-left">
                             <p className="text-sm font-medium text-gray-800 hover:text-green-600 truncate">{d.title}</p>
                             {d.memo && <p className="text-xs text-gray-400">{d.memo}</p>}

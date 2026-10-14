@@ -10,6 +10,7 @@ import { supabase, HIDDEN_STATUSES } from '@/lib/supabase'
 import { useAuth, canEdit } from '@/lib/auth-context'
 import { notifyOthers, notifyDM, notifyRoom } from '@/lib/notify'
 import { compressImage, makeThumbnail, hashFile, isCompressibleImage, mediaUploadName } from '@/lib/image'
+import PdfPreview from '@/components/PdfPreview'
 import { normalizePdfTitle } from '@/lib/pdf'
 
 const CATEGORY_LIST = ['공사전사진', '시공사진', '마감사진', '도면', '3D', '미팅내용', '고객요청', '기타']
@@ -567,6 +568,8 @@ export default function SharePage() {
                         <Image src={URL.createObjectURL(f)} alt="" width={160} height={160} unoptimized className="w-full h-full object-cover" />
                       ) : f.type.startsWith('video') ? (
                         <span className="text-2xl">🎬</span>
+                      ) : f.type === 'application/pdf' || /\.pdf$/i.test(f.name) ? (
+                        <PdfPreview file={f} lazy={false} compact width={240} className="w-full h-full bg-white" />
                       ) : (
                         <span className="text-2xl">📄</span>
                       )}

@@ -10,6 +10,7 @@ import { notifyOthers, notifyDM, notifyRoom } from '@/lib/notify'
 import { compressImage, makeThumbnail, hashFile, formatBytes, isCompressibleImage, mediaUploadName, toShareableBlob } from '@/lib/image'
 import { FolderIndex, sha256Hex, uniqueByOriginal } from '@/lib/folder-dedupe'
 import { openPdfTitled, printUrl, downloadUrl, downloadName, viewUrl } from '@/lib/media'
+import PdfPreview, { isPdfUrl } from '@/components/PdfPreview'
 import { normalizePdfTitle } from '@/lib/pdf'
 import Image from 'next/image'
 import FileDropInput from '@/components/FileDropInput'
@@ -812,12 +813,22 @@ export default function ProjectDetail() {
         {isDoc ? (
           <button
             onClick={() => (selectMode && !readOnly) ? toggleSelectFile(f.id) : openDocFile(f)}
-            className={`w-full h-full rounded-lg border flex flex-col items-center justify-center gap-1.5 px-2 bg-gray-50 hover:bg-gray-100 transition-all ${
+            className={`w-full h-full rounded-lg border flex flex-col items-center justify-center gap-1.5 bg-gray-50 hover:bg-gray-100 transition-all overflow-hidden ${
+              isPdfUrl(f.file_name || '') || isPdfUrl(f.file_url) ? 'relative' : 'px-2'
+            } ${
               isSelected ? 'border-green-500 ring-2 ring-green-500' : 'border-gray-200'
             }`}>
+            {isPdfUrl(f.file_name || '') || isPdfUrl(f.file_url) ? (
+              // PDF는 첫 쪽을 그림으로 — 파일명은 아래 띠로
+              <>
+                <PdfPreview url={f.file_url} width={400} className="absolute inset-0 bg-white" />
+                <span className="absolute inset-x-0 bottom-0 bg-black/55 text-white text-[11px] px-1.5 py-1 leading-snug line-clamp-2 break-all text-left">📄 {f.file_name}</span>
+              </>
+            ) : (<>
             <span className="text-3xl">{/\.pdf$/i.test(f.file_name || '') ? '📄' : /\.(xlsx?|xlsb|xlsm)$/i.test(f.file_name || '') ? '📊' : '📎'}</span>
             <span className="text-[11px] text-gray-600 text-center leading-snug line-clamp-3 break-all">{f.file_name}</span>
             <span className="text-[10px] text-green-600">눌러서 열기</span>
+            </>)}
           </button>
         ) : isVideoFile(f) ? (
           <video src={f.file_url} muted playsInline preload="metadata"
