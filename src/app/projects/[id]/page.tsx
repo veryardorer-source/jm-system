@@ -788,8 +788,17 @@ export default function ProjectDetail() {
     if (!d || isNaN(d.getTime())) return (iso || '').slice(0, 10)
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
   }
+  // 파일명 속 촬영 날짜 — 숫자 덩어리 한가운데(1760420641114 같은 저장 번호)에서 잘못 집지 않게 앞에 숫자가 없을 때만,
+  // 그리고 올린 날보다 미래인 날짜(2064년 등)는 버린다
+  const nameDateMatch = (f: ProjectFile) => {
+    const mt = (f.file_name || '').match(/(?<!\d)(20\d{2})[._-]?(0[1-9]|1[0-2])[._-]?(0[1-9]|[12]\d|3[01])(?:[ _T-]?([01]\d|2[0-3])[.:_-]?([0-5]\d))?/)
+    if (!mt) return null
+    const ymd = `${mt[1]}-${mt[2]}-${mt[3]}`
+    const limit = localYmd(f.created_at) || localYmd(new Date().toISOString())
+    return ymd > limit ? null : mt
+  }
   const fileDate = (f: ProjectFile): string => {
-    const mt = (f.file_name || '').match(/(20\d{2})[._-]?(0[1-9]|1[0-2])[._-]?(0[1-9]|[12]\d|3[01])/)
+    const mt = nameDateMatch(f)
     if (mt) return `${mt[1]}-${mt[2]}-${mt[3]}`
     return localYmd(f.created_at) // 한국 시간 기준 날짜 (UTC로 자르면 오전 9시 전 사진이 전날로 감)
   }
@@ -813,8 +822,8 @@ export default function ProjectDetail() {
     const ymd = fileDate(f)
     const { text } = dateLabel(ymd)
     let hh: number | null = null, mm = 0
-    const mt = (f.file_name || '').match(/20\d{2}[._-]?\d{2}[._-]?\d{2}[ _T-]?([01]\d|2[0-3])[.:_-]?([0-5]\d)/)
-    if (mt) { hh = Number(mt[1]); mm = Number(mt[2]) }
+    const mt = nameDateMatch(f)
+    if (mt?.[4]) { hh = Number(mt[4]); mm = Number(mt[5]) }
     else if (f.created_at && localYmd(f.created_at) === ymd) {
       const c = new Date(f.created_at); hh = c.getHours(); mm = c.getMinutes()
     }
