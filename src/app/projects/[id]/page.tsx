@@ -783,10 +783,43 @@ export default function ProjectDetail() {
   }
 
   // 파일명에 날짜(20260615 / 2026-06-15 등)가 있으면 그 날짜, 없으면 업로드 날짜로
+  const localYmd = (iso?: string | null): string => {
+    const d = iso ? new Date(iso) : null
+    if (!d || isNaN(d.getTime())) return (iso || '').slice(0, 10)
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  }
   const fileDate = (f: ProjectFile): string => {
     const mt = (f.file_name || '').match(/(20\d{2})[._-]?(0[1-9]|1[0-2])[._-]?(0[1-9]|[12]\d|3[01])/)
     if (mt) return `${mt[1]}-${mt[2]}-${mt[3]}`
-    return (f.created_at || '').slice(0, 10)
+    return localYmd(f.created_at) // 한국 시간 기준 날짜 (UTC로 자르면 오전 9시 전 사진이 전날로 감)
+  }
+
+  // '10월 12일 (월)' — 오늘·어제는 따로 표시
+  const dateLabel = (ymd: string): { text: string; rel: string } => {
+    const [y, m, d] = ymd.split('-').map(Number)
+    if (!y || !m || !d) return { text: '날짜 모름', rel: '' }
+    const dt = new Date(y, m - 1, d)
+    const today = new Date(); today.setHours(0, 0, 0, 0)
+    const diff = Math.round((today.getTime() - dt.getTime()) / 86400000)
+    const thisYear = y === today.getFullYear()
+    return {
+      text: `${thisYear ? '' : `${y}년 `}${m}월 ${d}일 (${'일월화수목금토'[dt.getDay()]})`,
+      rel: diff === 0 ? '오늘' : diff === 1 ? '어제' : '',
+    }
+  }
+
+  // 크게 보기용 '10월 12일 (월) 오후 2:31' — 파일명(20261012_143100)의 촬영 시각 우선, 없으면 올린 시각
+  const fileDateTimeLabel = (f: ProjectFile): string => {
+    const ymd = fileDate(f)
+    const { text } = dateLabel(ymd)
+    let hh: number | null = null, mm = 0
+    const mt = (f.file_name || '').match(/20\d{2}[._-]?\d{2}[._-]?\d{2}[ _T-]?([01]\d|2[0-3])[.:_-]?([0-5]\d)/)
+    if (mt) { hh = Number(mt[1]); mm = Number(mt[2]) }
+    else if (f.created_at && localYmd(f.created_at) === ymd) {
+      const c = new Date(f.created_at); hh = c.getHours(); mm = c.getMinutes()
+    }
+    if (hh === null) return text
+    return `${text} ${hh < 12 ? '오전' : '오후'} ${hh % 12 || 12}:${String(mm).padStart(2, '0')}`
   }
 
   // PC·NAS로 저장할 때의 파일명 — 사진·문서 모두 올린 이름 그대로 (날짜 접두어 안 붙임, 대표 지시 2026-10-01).
@@ -883,15 +916,45 @@ export default function ProjectDetail() {
 
   // 사진 격자를 30장씩 나눠 표시 (한 번에 다 그리면 느려져서) — 화면에 보이는 것만 lazy 로딩과 함께
   const PHOTOS_PER_PAGE = 30
-  function pagedGrid(key: string, arr: ProjectFile[]) {
+  // byDate=true면 날짜가 바뀌는 곳마다 '📅 10월 12일 (월) · 5장' 구분선 (arr는 날짜순 정렬된 상태로 받음)
+  function pagedGrid(key: string, arr: ProjectFile[], byDate = false) {
     const totalPages = Math.max(1, Math.ceil(arr.length / PHOTOS_PER_PAGE))
     const page = Math.min(photoPages[key] || 1, totalPages)
     const shown = arr.slice((page - 1) * PHOTOS_PER_PAGE, page * PHOTOS_PER_PAGE)
+    const gridCls = 'grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-2'
+    let body: React.ReactNode
+    if (byDate) {
+      const dayCount = new Map<string, number>()
+      arr.forEach(f => { const d = fileDate(f); dayCount.set(d, (dayCount.get(d) || 0) + 1) })
+      const runs: [string, ProjectFile[]][] = []
+      shown.forEach(f => {
+        const d = fileDate(f)
+        if (runs.length && runs[runs.length - 1][0] === d) runs[runs.length - 1][1].push(f)
+        else runs.push([d, [f]])
+      })
+      body = (
+        <div className="flex flex-col gap-3">
+          {runs.map(([d, fs]) => {
+            const { text, rel } = dateLabel(d)
+            return (
+              <div key={d}>
+                <div className="flex items-center gap-2 mb-2 text-sm">
+                  <span className="font-semibold text-green-800">📅 {text}</span>
+                  <span className="text-xs text-gray-400">{rel ? `${rel} · ` : ''}{dayCount.get(d)}장</span>
+                  <span className="flex-1 h-px bg-gray-200" />
+                </div>
+                <div className={gridCls}>{fs.map(f => renderPhotoTile(f))}</div>
+              </div>
+            )
+          })}
+        </div>
+      )
+    } else {
+      body = <div className={gridCls}>{shown.map(f => renderPhotoTile(f))}</div>
+    }
     return (
       <>
-        <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-2">
-          {shown.map(f => renderPhotoTile(f))}
-        </div>
+        {body}
         {totalPages > 1 && (
           <div className="flex items-center justify-center gap-3 mt-3 text-sm">
             <button disabled={page <= 1} onClick={() => setPhotoPages(p => ({ ...p, [key]: page - 1 }))}
@@ -1182,7 +1245,7 @@ export default function ProjectDetail() {
                                   if (d !== 0) return d
                                   const c = (b.created_at || '').localeCompare(a.created_at || '') // 같은 날짜면 나중에 올린 게 위
                                   return c !== 0 ? c : (a.file_name || '').localeCompare(b.file_name || '', undefined, { numeric: true })
-                                }))
+                                }), true)
                               ) : (() => {
                                 const zones = groupByZone(catFiles)
                                 if (zones.length === 1) {
@@ -1627,6 +1690,16 @@ export default function ProjectDetail() {
             {idx < gallery.length - 1 && (
               <button onClick={e => { e.stopPropagation(); go(1) }}
                 className="absolute right-2 md:right-6 top-1/2 -translate-y-1/2 w-11 h-11 rounded-full bg-white/20 hover:bg-white/30 text-white text-2xl flex items-center justify-center">›</button>
+            )}
+            {cur && (
+              <div className="absolute top-4 left-4 right-14 flex flex-wrap items-center gap-1.5 pointer-events-none">
+                <span className="bg-black/50 text-white text-xs px-3 py-1 rounded-full">
+                  {fileDateTimeLabel(cur)}{cur.uploaded_by ? ` · ${cur.uploaded_by}` : ''}
+                </span>
+                {PHOTO_CATS.includes(cur.category) && (cur.memo || '').trim() && (
+                  <span className="bg-black/50 text-white/80 text-xs px-3 py-1 rounded-full">📁 {cur.memo!.trim()}</span>
+                )}
+              </div>
             )}
             {gallery.length > 1 && (
               <div className="absolute bottom-5 left-1/2 -translate-x-1/2 bg-black/50 text-white text-xs px-3 py-1 rounded-full">{idx + 1} / {gallery.length}</div>
