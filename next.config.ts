@@ -38,7 +38,9 @@ const securityHeaders = [
 
 const nextConfig: NextConfig = {
   images: {
-    // Supabase 스토리지 사진을 Vercel이 자동 축소(썸네일)해 제공 — 모바일 로딩 속도 개선
+    // Vercel 이미지 최적화 끔 — 무료 한도(월 5,000 변환)를 현장 사진 격자가 다 써버려서 (2026-10-15 75% 경고 메일).
+    // 사진은 올릴 때 이미 WebP 압축 + 500px 썸네일(thumb_url)을 따로 만들어 두므로 Vercel 축소가 필요 없음.
+    unoptimized: true,
     remotePatterns: [
       { protocol: "https", hostname: SUPABASE_HOST },
     ],

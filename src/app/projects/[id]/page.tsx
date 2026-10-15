@@ -58,7 +58,7 @@ async function toBrowserSafeImage(file: File): Promise<{ file: File; ext: string
 // (업로드 자동변환을 거치지 않은 옛 파일도 이제 정상적으로 보임)
 function HeicImg({ src, alt, className, onClick, thumb }: {
   src: string; alt?: string; className?: string; onClick?: (e: React.MouseEvent) => void
-  thumb?: boolean // true=격자 썸네일 — 원본 대신 최적화된 작은 이미지 로드(모바일 속도)
+  thumb?: boolean // true=격자 썸네일 — 칸 크기에 맞춰 채우고 화면에 보일 때만 로드
 }) {
   const heicSrc = /\.(heic|heif)$/i.test((src || '').split('?')[0])
   // 변환 결과를 {원본, 변환주소} 쌍으로 저장 — 표시 주소는 파생 (src가 바뀌면 자동으로 '변환 중' 상태)
@@ -87,9 +87,9 @@ function HeicImg({ src, alt, className, onClick, thumb }: {
       <span className="text-[10px] text-gray-400 animate-pulse">사진 변환 중...</span>
     </div>
   )
-  // 썸네일 모드 + 일반 이미지 → Vercel 이미지 최적화(작은 파일)로 로드. HEIC 변환본(blob:)은 그대로.
+  // 썸네일 모드 — 올릴 때 만든 500px 썸네일(thumb_url)을 그대로 씀 (Vercel 이미지 최적화는 무료 한도 때문에 끔, next.config.ts)
   if (thumb && !url.startsWith('blob:')) {
-    return <Image src={url} alt={alt || ''} fill sizes="(max-width: 768px) 33vw, 200px"
+    return <Image src={url} alt={alt || ''} fill sizes="(max-width: 768px) 33vw, 200px" unoptimized loading="lazy"
       className={className} onClick={onClick} />
   }
   return <Image src={url} alt={alt || ''} width={800} height={600} unoptimized className={className} onClick={onClick} loading="lazy" />
