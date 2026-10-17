@@ -244,16 +244,17 @@ export default function ProjectDetail() {
       return
     }
 
-    // 미팅내용: 파일 없이 글만 저장 가능
-    if (selectedFiles.length === 0 && fileForm.category === '미팅내용' && fileForm.memo.trim()) {
+    // 미팅내용·고객요청: 파일 없이 글만 저장 가능
+    if (selectedFiles.length === 0 && isLongTextCat(fileForm.category) && fileForm.memo.trim()) {
+      const cat = fileForm.category
       const text = fileForm.memo.trim()
-      const title = text.split('\n')[0].slice(0, 30) || '미팅내용'
+      const title = text.split('\n')[0].slice(0, 30) || cat
       const { error } = await supabase.from('project_files').insert([{
         project_id: id, file_name: title, file_url: '', file_type: 'text',
-        category: '미팅내용', memo: text, uploaded_by: profile?.name || '',
+        category: cat, memo: text, uploaded_by: profile?.name || '',
       }])
       if (error) { toast('저장 실패: ' + error.message); return }
-      notifyOthers(profile?.id, { type: 'file', title: `${project?.name || '현장'} · 미팅내용 등록`, body: title, link: `/projects/${id}?tab=자료` })
+      notifyOthers(profile?.id, { type: 'file', title: `${project?.name || '현장'} · ${cat} 등록`, body: title, link: `/projects/${id}?tab=자료` })
       setFileForm({ category: '공사전사진', memo: '', linkUrl: '', linkTitle: '' })
       setShowFileForm(false)
       fetchAll()
@@ -1441,7 +1442,7 @@ export default function ProjectDetail() {
               ) : (
                 <div>
                   <label className="text-sm font-medium text-gray-700 block mb-1.5">
-                    파일 선택 {fileForm.category === '미팅내용' ? <span className="text-gray-400 font-normal">(선택 — 글만 저장도 가능)</span> : <>* <span className="text-gray-400 font-normal">(여러 장 동시 선택 가능)</span></>}
+                    파일 선택 {isLongTextCat(fileForm.category) ? <span className="text-gray-400 font-normal">(선택 — 글만 저장도 가능)</span> : <>* <span className="text-gray-400 font-normal">(여러 장 동시 선택 가능)</span></>}
                   </label>
                   <DropZone files={selectedFiles} onChange={setSelectedFiles} />
                   <p className="text-[11px] text-gray-400 mt-1.5">
@@ -1485,10 +1486,10 @@ export default function ProjectDetail() {
                 <button type="submit"
                   disabled={uploading
                     || (fileForm.category === '구매링크' && !fileForm.linkUrl.trim())
-                    || (fileForm.category === '미팅내용' && selectedFiles.length === 0 && !fileForm.memo.trim())
-                    || (fileForm.category !== '구매링크' && fileForm.category !== '미팅내용' && selectedFiles.length === 0)}
+                    || (isLongTextCat(fileForm.category) && selectedFiles.length === 0 && !fileForm.memo.trim())
+                    || (fileForm.category !== '구매링크' && !isLongTextCat(fileForm.category) && selectedFiles.length === 0)}
                   className="flex-1 bg-green-600 text-white py-2.5 rounded-lg text-sm font-medium disabled:opacity-50">
-                  {uploading ? `업로드 중...` : selectedFiles.length > 1 ? `${selectedFiles.length}개 업로드` : selectedFiles.length === 1 ? '업로드' : fileForm.category === '미팅내용' ? '글 저장' : '업로드'}
+                  {uploading ? `업로드 중...` : selectedFiles.length > 1 ? `${selectedFiles.length}개 업로드` : selectedFiles.length === 1 ? '업로드' : isLongTextCat(fileForm.category) ? '글 저장' : '업로드'}
                 </button>
               </div>
             </form>
