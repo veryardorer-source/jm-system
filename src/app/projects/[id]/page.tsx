@@ -130,6 +130,8 @@ export default function ProjectDetail() {
   const [uploading, setUploading] = useState(false)
   const [uploadProgress, setUploadProgress] = useState(0)
   const [uploadCurrent, setUploadCurrent] = useState(0)
+  // '전체 저장' 진행 표시 — NAS 저장은 오래 걸려서 어디까지 됐는지(어느 파일·단계에서 멈췄는지) 화면에 계속 보여 준다
+  const [saveProg, setSaveProg] = useState<{ done: number; total: number; step: string; name: string } | null>(null)
   const [lightbox, setLightbox] = useState<string | null>(null)
   const touchStartX = useRef(0)
   const pinchingRef = useRef(false) // 두 손가락 확대 중에는 스와이프(다음 장 넘기기) 금지
@@ -483,25 +485,37 @@ export default function ProjectDetail() {
       // 그땐 폴더 검사·다운로드로 클릭 직후가 지나 크롬이 묻지도 않고 막아서 전부 실패했다 (NAS 폴더에서 '작동 안 함')
       try { dir = await w.showDirectoryPicker({ mode: 'readwrite' }) } catch { return } // 사용자가 취소
       // NAS 중복 방지: 폴더에 이미 있는 것(이름이 달라도 내용이 같으면)과 시스템 안 같은 원본은 건너뛴다
-      toast('저장 폴더 확인 중… (이미 받은 사진은 건너뜁니다)')
-      let folder: FolderIndex
-      try { folder = await FolderIndex.scan(dir) } catch { toast('폴더를 읽지 못했어요 — 권한을 허용해 주세요', 'error'); return }
       const { keep, dropped } = uniqueByOriginal(fileList.filter(f => f.file_type !== 'link'))
+      // 한 단계가 NAS·네트워크에서 응답 없이 멈추면 전체가 끝나지 않으므로, 단계마다 시간 제한을 둔다
+      const limit = <T,>(p: Promise<T>, step: string, sec = 90) => Promise.race([
+        p, new Promise<never>((_, rej) => setTimeout(() => rej(new Error(`${step} ${sec}초 응답 없음`)), sec * 1000)),
+      ])
+      setSaveProg({ done: 0, total: keep.length, step: '저장 폴더 확인 중 (이미 받은 사진은 건너뜀)', name: '' })
+      let folder: FolderIndex
+      try { folder = await limit(FolderIndex.scan(dir), '폴더 확인', 180) } catch (e) {
+        setSaveProg(null)
+        toast(`폴더를 읽지 못했어요 — ${e instanceof Error ? e.message : '권한을 허용해 주세요'}`, 'error'); return
+      }
       let ok = 0, already = 0, fail = 0
       let firstErr = ''
-      toast(`${keep.length}개 받는 중… 끝나면 결과를 알려드려요`)
       for (let i = 0; i < keep.length; i++) {
         const f = keep[i]
+        const name = nasName(f) || `file_${i}`
+        const step = (s: string) => setSaveProg({ done: i, total: keep.length, step: s, name })
         try {
-          const res = await fetch(f.file_url, { mode: 'cors', credentials: 'omit' })
-          if (!res.ok) { fail++; firstErr ||= `다운로드 ${res.status}`; continue }
-          const conv = await toShareableBlob(await res.blob(), nasName(f) || `file_${i}`)
+          step('받는 중')
+          const res = await limit(fetch(f.file_url, { mode: 'cors', credentials: 'omit' }), '다운로드')
+          if (!res.ok) { fail++; firstErr ||= `${name}: 다운로드 ${res.status}`; continue }
+          const conv = await limit(toShareableBlob(await res.blob(), name), '변환')
+          step('중복 확인 중')
           const hash = await sha256Hex(conv.blob)
-          if (await folder.hasSameContent(conv.blob, hash)) { already++; continue }
-          await folder.write(folder.freeName(conv.name), conv.blob, hash)
+          if (await limit(folder.hasSameContent(conv.blob, hash), '중복 확인')) { already++; continue }
+          step('NAS에 쓰는 중')
+          await limit(folder.write(folder.freeName(conv.name), conv.blob, hash), 'NAS 쓰기')
           ok++
-        } catch (e) { fail++; firstErr ||= e instanceof Error ? `${e.name}: ${e.message}` : String(e) /* 개별 실패는 건너뜀 */ }
+        } catch (e) { fail++; firstErr ||= `${name}: ${e instanceof Error ? `${e.name === 'Error' ? '' : e.name + ' '}${e.message}` : String(e)}` /* 개별 실패는 건너뜀 */ }
       }
+      setSaveProg(null)
       const parts = [`새로 ${ok}개 저장`]
       if (already) parts.push(`이미 있는 ${already}개 건너뜀`)
       if (dropped) parts.push(`같은 사진 중복 ${dropped}개 제외`)
@@ -1009,6 +1023,18 @@ export default function ProjectDetail() {
   return (
     <div className="flex flex-col md:flex-row min-h-screen">
       <Sidebar />
+      {saveProg && (
+        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 w-[min(92vw,420px)] bg-white border border-gray-200 shadow-lg rounded-xl px-4 py-3 text-sm">
+          <div className="flex justify-between text-gray-700 mb-1">
+            <span className="font-medium">⤓ 전체 저장 {saveProg.done}/{saveProg.total}</span>
+            <span className="text-gray-500">{saveProg.step}</span>
+          </div>
+          <div className="w-full bg-gray-100 rounded-full h-2">
+            <div className="bg-green-500 h-2 rounded-full transition-all duration-300" style={{ width: `${saveProg.total ? (saveProg.done / saveProg.total) * 100 : 0}%` }} />
+          </div>
+          {saveProg.name && <p className="text-xs text-gray-400 mt-1 truncate">{saveProg.name}</p>}
+        </div>
+      )}
 
       <div className="flex-1 flex flex-col">
         {/* 헤더 */}
