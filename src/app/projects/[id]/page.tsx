@@ -476,32 +476,36 @@ export default function ProjectDetail() {
   // 폴더를 한 번만 고르면 그 안에 전부 저장 (PC 크롬 등). 미지원 시 기존 방식으로.
   async function saveAll(fileList: ProjectFile[]) {
     if (fileList.length === 0) return
-    const w = window as unknown as { showDirectoryPicker?: () => Promise<FileSystemDirectoryHandle> }
+    const w = window as unknown as { showDirectoryPicker?: (o?: { mode?: 'read' | 'readwrite' }) => Promise<FileSystemDirectoryHandle> }
     if (typeof w.showDirectoryPicker === 'function') {
       let dir: FileSystemDirectoryHandle
-      try { dir = await w.showDirectoryPicker() } catch { return } // 사용자가 취소
+      // 쓰기 권한을 폴더 고를 때 같이 받는다 — 읽기로만 고르면 첫 저장 때 권한을 다시 묻는데,
+      // 그땐 폴더 검사·다운로드로 클릭 직후가 지나 크롬이 묻지도 않고 막아서 전부 실패했다 (NAS 폴더에서 '작동 안 함')
+      try { dir = await w.showDirectoryPicker({ mode: 'readwrite' }) } catch { return } // 사용자가 취소
       // NAS 중복 방지: 폴더에 이미 있는 것(이름이 달라도 내용이 같으면)과 시스템 안 같은 원본은 건너뛴다
       toast('저장 폴더 확인 중… (이미 받은 사진은 건너뜁니다)')
       let folder: FolderIndex
       try { folder = await FolderIndex.scan(dir) } catch { toast('폴더를 읽지 못했어요 — 권한을 허용해 주세요', 'error'); return }
       const { keep, dropped } = uniqueByOriginal(fileList.filter(f => f.file_type !== 'link'))
       let ok = 0, already = 0, fail = 0
+      let firstErr = ''
+      toast(`${keep.length}개 받는 중… 끝나면 결과를 알려드려요`)
       for (let i = 0; i < keep.length; i++) {
         const f = keep[i]
         try {
           const res = await fetch(f.file_url, { mode: 'cors', credentials: 'omit' })
-          if (!res.ok) { fail++; continue }
+          if (!res.ok) { fail++; firstErr ||= `다운로드 ${res.status}`; continue }
           const conv = await toShareableBlob(await res.blob(), nasName(f) || `file_${i}`)
           const hash = await sha256Hex(conv.blob)
           if (await folder.hasSameContent(conv.blob, hash)) { already++; continue }
           await folder.write(folder.freeName(conv.name), conv.blob, hash)
           ok++
-        } catch { fail++ /* 개별 실패는 건너뜀 */ }
+        } catch (e) { fail++; firstErr ||= e instanceof Error ? `${e.name}: ${e.message}` : String(e) /* 개별 실패는 건너뜀 */ }
       }
       const parts = [`새로 ${ok}개 저장`]
       if (already) parts.push(`이미 있는 ${already}개 건너뜀`)
       if (dropped) parts.push(`같은 사진 중복 ${dropped}개 제외`)
-      if (fail) parts.push(`실패 ${fail}개`)
+      if (fail) parts.push(`실패 ${fail}개 (${firstErr})`)
       toast(parts.join(' · '), fail ? 'error' : 'ok')
       return
     }
