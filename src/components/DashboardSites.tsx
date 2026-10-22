@@ -65,8 +65,8 @@ export function StatusBoard(props: {
   }
   return (
     <>
-      <div className="hidden md:block"><DesktopBoard {...props} /></div>
-      <div className="md:hidden"><MobileBoard {...props} /></div>
+      <div className="hidden xl:block"><DesktopBoard {...props} /></div>
+      <div className="xl:hidden"><MobileBoard {...props} /></div>
     </>
   )
 }

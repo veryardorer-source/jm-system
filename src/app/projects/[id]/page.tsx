@@ -17,6 +17,7 @@ import FileDropInput from '@/components/FileDropInput'
 import ProjectGantt, { todayStart, STYLE } from '@/components/ProjectGantt'
 import { summarize, chipWhen } from '@/components/DashboardSites'
 import SnsTab from '@/components/SnsTab'
+import { SiteInfoCard, ScheduleShareModal } from '@/components/SiteShare'
 
 const EMPTY_SFORM = { task_name: '', scheduled_date: '', end_date: '', manager: '', vendor: '', vendor_booked: false }
 const TAB_LIST = ['현황', '공정', '자료', 'SNS']
@@ -116,7 +117,8 @@ export default function ProjectDetail() {
   const [loading, setLoading] = useState(true)
 
   const [showEditForm, setShowEditForm] = useState(false)
-  const [editForm, setEditForm] = useState({ name: '', client_name: '', manager: '', address: '', status: '상담중', start_date: '', end_date: '', memo: '' })
+  const [editForm, setEditForm] = useState({ name: '', client_name: '', manager: '', address: '', status: '상담중', start_date: '', end_date: '', memo: '', entry_code: '', door_code: '', site_notes: '' })
+  const [showShare, setShowShare] = useState(false)
   const [savingEdit, setSavingEdit] = useState(false)
 
   const [showFileForm, setShowFileForm] = useState(false)
@@ -132,6 +134,14 @@ export default function ProjectDetail() {
   const [uploadCurrent, setUploadCurrent] = useState(0)
   // '전체 저장' 진행 표시 — NAS 저장은 오래 걸려서 어디까지 됐는지(어느 파일·단계에서 멈췄는지) 화면에 계속 보여 준다
   const [saveProg, setSaveProg] = useState<{ done: number; total: number; step: string; name: string } | null>(null)
+  const [uploadTotal, setUploadTotal] = useState(0)
+  // 올리는 중에 새로고침·탭 닫기를 하면 멈추니 한 번 묻는다
+  useEffect(() => {
+    if (!uploading) return
+    const warn = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = '' }
+    window.addEventListener('beforeunload', warn)
+    return () => window.removeEventListener('beforeunload', warn)
+  }, [uploading])
   const [lightbox, setLightbox] = useState<string | null>(null)
   const touchStartX = useRef(0)
   const pinchingRef = useRef(false) // 두 손가락 확대 중에는 스와이프(다음 장 넘기기) 금지
@@ -205,6 +215,9 @@ export default function ProjectDetail() {
       start_date: project.start_date || '',
       end_date: project.end_date || '',
       memo: project.memo || '',
+      entry_code: project.entry_code || '',
+      door_code: project.door_code || '',
+      site_notes: project.site_notes || '',
     })
     setShowEditForm(true)
   }
@@ -212,11 +225,16 @@ export default function ProjectDetail() {
   async function handleUpdateProject(e: React.FormEvent) {
     e.preventDefault()
     setSavingEdit(true)
-    const { error } = await supabase.from('projects').update({
-      ...editForm,
-      start_date: editForm.start_date || null,
-      end_date: editForm.end_date || null,
+    const { entry_code, door_code, site_notes, ...base } = editForm
+    const row = { ...base, start_date: editForm.start_date || null, end_date: editForm.end_date || null }
+    let { error } = await supabase.from('projects').update({
+      ...row, entry_code: entry_code || null, door_code: door_code || null, site_notes: site_notes || null,
     }).eq('id', id)
+    // 출입 정보 칸 SQL(db/project_site_info.sql)을 아직 안 돌렸으면 나머지만 저장
+    if (error && /entry_code|door_code|site_notes/i.test(error.message)) {
+      ;({ error } = await supabase.from('projects').update(row).eq('id', id))
+      if (!error) toast('출입 정보 칸은 DB 설정 후 저장돼요 (나머지는 저장됨)')
+    }
     setSavingEdit(false)
     if (error) { toast('수정 실패: ' + error.message); return }
     setShowEditForm(false)
@@ -292,105 +310,120 @@ export default function ProjectDetail() {
       }
     }
 
-    setUploading(true)
+    // 큰 동영상은 데이터로 올리면 오래 걸린다 — 미리 알려준다
+    const bigVideos = uploadList.filter(f => (f.type || '').startsWith('video/') && f.size > 100 * 1024 * 1024)
+    if (bigVideos.length > 0 && !confirm(`동영상 ${bigVideos.length}개가 커서(${bigVideos.map(f => Math.round(f.size / 1024 / 1024) + 'MB').join(', ')}) 오래 걸릴 수 있어요.\n와이파이에서 올리시는 걸 권해요.\n\n지금 올릴까요?`)) return
 
-    // 같은 사진(내용이 완전히 동일한 파일) 중복 업로드 방지 — 원본 지문(SHA-256) 비교
-    const hashes = await Promise.all(uploadList.map(f => hashFile(f)))
+    // 고르면 창은 바로 닫고 화면 아래 진행바로 올린다 — 같은 앱 안에서는 다른 메뉴로 가도 계속 올라감
+    const list = [...uploadList]
+    const category = fileForm.category.trim() || '기타'
+    const memo = fileForm.memo || ''
+    setUploadTotal(list.length)
+    setUploadCurrent(0)
+    setUploadProgress(0)
+    setUploading(true)
+    setFileForm({ category: '공사전사진', memo: '', linkUrl: '', linkTitle: '' })
+    setSelectedFiles([])
+    setShowFileForm(false)
+
+    // 같은 사진(내용이 완전히 동일한 파일) 중복 업로드 방지 — 원본 지문(SHA-256)을 올리면서 바로바로 비교
     const existingHashes = new Set(files.map(f => f.file_hash).filter(Boolean))
     const seenInBatch = new Set<string>()
     const skipped: string[] = []
-    const dedupList: { file: File; hash: string }[] = []
-    uploadList.forEach((f, i) => {
-      const h = hashes[i]
-      if (h && (existingHashes.has(h) || seenInBatch.has(h))) { skipped.push(f.name); return }
-      if (h) seenInBatch.add(h)
-      dedupList.push({ file: f, hash: h })
-    })
-    if (skipped.length > 0) {
-      alert(`이미 올라간 것과 같은 사진 ${skipped.length}장은 건너뛰었어요:\n${skipped.slice(0, 5).map(n => '· ' + n).join('\n')}${skipped.length > 5 ? `\n외 ${skipped.length - 5}장` : ''}`)
-      if (dedupList.length === 0) { setUploading(false); setShowFileForm(false); setSelectedFiles([]); return }
-    }
-
-    // 3장씩 동시에 올려 속도 개선. HEIC 무거운 변환(heic2any)은 메모리 보호를 위해 한 장씩만.
-    const CONC = 3
     let done = 0
+    let uploaded = 0
+    let failCount = 0
     let failMsg = ''
+    // HEIC 무거운 변환(heic2any)은 메모리 보호를 위해 한 장씩만
     let heicChain: Promise<unknown> = Promise.resolve()
     const convertHeicSerial = (f: File) => {
       const run = heicChain.then(() => toBrowserSafeImage(f))
       heicChain = run.catch(() => {})
       return run as Promise<{ file: File; ext: string }>
     }
-    for (let i = 0; i < dedupList.length; i += CONC) {
-      const chunk = dedupList.slice(i, i + CONC)
-      await Promise.all(chunk.map(async ({ file: orig, hash }, j) => {
-        let file = orig
-        // 1) 사진은 자동 최적화: 긴 변 2400px 이하 + WebP 80% (아이폰 사파리는 HEIC도 여기서 즉시 변환 — 매우 빠름)
-        const c = await compressImage(orig)
-        if (c !== orig) file = c
-        // 2) 아직 HEIC 그대로면(내장 변환 미지원 브라우저) heic2any로 — 한 장씩 순차 처리
-        if (file === orig && isHeic(orig)) {
-          const r = await convertHeicSerial(orig)
-          file = r.file
-          const c2 = await compressImage(file)
-          if (c2 !== file) file = c2
-        }
-        // PDF는 문서 속성 제목을 파일명으로 교정 (복사해 만든 제안서에 남은 옛 현장 제목 제거)
-        if (/\.pdf$/i.test(file.name)) file = await normalizePdfTitle(file)
-        const ext = file.name.split('.').pop() || 'bin'
-        // 올린 이름 그대로 저장 — 사진이 WebP로 압축돼도 이름은 원본(20260915_123456.jpg) 유지.
-        // 폰 공유로 이름이 image.jpg 등으로 사라진 사진·동영상만 촬영시각 이름으로
-        const isMedia = (orig.type || '').startsWith('image/') || (orig.type || '').startsWith('video/') || isCompressibleImage(orig)
-        const displayName = isMedia ? mediaUploadName(orig, i + j) : file.name
-        const stamp = `${Date.now()}_${i + j}`
-        const path = `files/${id}/${stamp}.${ext}`
-        const { error: uploadError } = await supabase.storage.from('uploads').upload(path, file, {
-          contentType: file.type || 'application/octet-stream',
-          upsert: true,
-        })
-        if (uploadError) { failMsg = uploadError.message; return }
-        const { data: urlData } = supabase.storage.from('uploads').getPublicUrl(path)
-        // 3) 목록 표시용 500px 썸네일 별도 저장 (실패해도 업로드는 계속 — 원본으로 표시)
-        let thumb_url: string | null = null
-        if (isCompressibleImage(file)) {
-          const th = await makeThumbnail(file)
-          if (th) {
-            const tPath = `files/${id}/thumbs/${stamp}.${th.name.split('.').pop()}`
-            const { error: thErr } = await supabase.storage.from('uploads').upload(tPath, th, { contentType: th.type, upsert: true })
-            if (!thErr) thumb_url = supabase.storage.from('uploads').getPublicUrl(tPath).data.publicUrl
-          }
-        }
-        const baseRow = {
-          project_id: id,
-          file_name: displayName,
-          file_url: urlData.publicUrl,
-          file_type: file.type || '',
-          category: fileForm.category.trim() || '기타',
-          memo: fileForm.memo || '',
-          uploaded_by: profile?.name || '',
-        }
-        let { error: insertError } = await supabase.from('project_files').insert([{
-          ...baseRow, thumb_url, file_size: file.size, file_hash: hash || null,
-        }])
-        // 새 컬럼 SQL을 아직 안 돌린 상태라도 업로드는 되게 (컬럼 없음 오류면 기존 방식으로 재시도)
-        if (insertError && /column|thumb_url|file_size|file_hash/i.test(insertError.message)) {
-          ;({ error: insertError } = await supabase.from('project_files').insert([baseRow]))
-        }
-        if (insertError) { failMsg = insertError.message; return }
+    const upload = (path: string, body: File) =>
+      supabase.storage.from('uploads').upload(path, body, { contentType: body.type || 'application/octet-stream', upsert: true })
+
+    async function uploadOne(orig: File, idx: number) {
+      const hash = await hashFile(orig)
+      if (hash && (existingHashes.has(hash) || seenInBatch.has(hash))) { skipped.push(orig.name); return }
+      if (hash) seenInBatch.add(hash)
+      let file = orig
+      // 1) 사진은 자동 최적화: 긴 변 2400px 이하 + WebP 80% (아이폰 사파리는 HEIC도 여기서 즉시 변환 — 매우 빠름)
+      const c = await compressImage(orig)
+      if (c !== orig) file = c
+      // 2) 아직 HEIC 그대로면(내장 변환 미지원 브라우저) heic2any로 — 한 장씩 순차 처리
+      if (file === orig && isHeic(orig)) {
+        file = (await convertHeicSerial(orig)).file
+        const c2 = await compressImage(file)
+        if (c2 !== file) file = c2
+      }
+      // PDF는 문서 속성 제목을 파일명으로 교정 (복사해 만든 제안서에 남은 옛 현장 제목 제거)
+      if (/\.pdf$/i.test(file.name)) file = await normalizePdfTitle(file)
+      const ext = file.name.split('.').pop() || 'bin'
+      // 올린 이름 그대로 저장 — 사진이 WebP로 압축돼도 이름은 원본(20260915_123456.jpg) 유지.
+      // 폰 공유로 이름이 image.jpg 등으로 사라진 사진·동영상만 촬영시각 이름으로
+      const isMedia = (orig.type || '').startsWith('image/') || (orig.type || '').startsWith('video/') || isCompressibleImage(orig)
+      const displayName = isMedia ? mediaUploadName(orig, idx) : file.name
+      const stamp = `${Date.now()}_${idx}`
+      const path = `files/${id}/${stamp}.${ext}`
+      // 3) 본 사진과 목록용 500px 썸네일을 동시에 올린다 (썸네일은 실패해도 계속 — 원본으로 표시)
+      const thumbTask = (async () => {
+        if (!isCompressibleImage(file)) return null
+        const th = await makeThumbnail(file)
+        if (!th) return null
+        const tPath = `files/${id}/thumbs/${stamp}.${th.name.split('.').pop()}`
+        const { error: thErr } = await upload(tPath, th)
+        return thErr ? null : supabase.storage.from('uploads').getPublicUrl(tPath).data.publicUrl
+      })()
+      const { error: uploadError } = await upload(path, file)
+      const thumb_url = await thumbTask
+      if (uploadError) throw new Error(uploadError.message)
+      const { data: urlData } = supabase.storage.from('uploads').getPublicUrl(path)
+      const baseRow = {
+        project_id: id,
+        file_name: displayName,
+        file_url: urlData.publicUrl,
+        file_type: file.type || '',
+        category,
+        memo,
+        uploaded_by: profile?.name || '',
+      }
+      let { error: insertError } = await supabase.from('project_files').insert([{
+        ...baseRow, thumb_url, file_size: file.size, file_hash: hash || null,
+      }])
+      // 새 컬럼 SQL을 아직 안 돌린 상태라도 업로드는 되게 (컬럼 없음 오류면 기존 방식으로 재시도)
+      if (insertError && /column|thumb_url|file_size|file_hash/i.test(insertError.message)) {
+        ;({ error: insertError } = await supabase.from('project_files').insert([baseRow]))
+      }
+      if (insertError) throw new Error(insertError.message)
+      uploaded++
+    }
+
+    // 4장씩 동시에 — 묶음으로 기다리지 않고, 한 장 끝나면 바로 다음 장을 시작
+    const CONC = 4
+    let next = 0
+    const worker = async () => {
+      while (next < list.length) {
+        const idx = next++
+        try { await uploadOne(list[idx], idx) } catch (e) { failCount++; failMsg = (e as Error).message }
         done++
         setUploadCurrent(done)
-        setUploadProgress(Math.round((done / dedupList.length) * 100))
-      }))
+        setUploadProgress(Math.round((done / list.length) * 100))
+      }
     }
-    if (failMsg && done < dedupList.length) toast(`${dedupList.length - done}장 업로드 실패: ${failMsg}`)
-    setUploadProgress(100)
-    notifyOthers(profile?.id, { type: 'file', title: `${project?.name || '현장'} · 새 자료 ${dedupList.length}건`, body: `${fileForm.category} 자료가 업로드되었습니다`, link: `/projects/${id}?tab=자료` })
-    setFileForm({ category: '공사전사진', memo: '', linkUrl: '', linkTitle: '' })
-    setSelectedFiles([])
-    setShowFileForm(false)
+    await Promise.all(Array.from({ length: Math.min(CONC, list.length) }, worker))
+
+    if (failCount > 0) toast(`${failCount}개 업로드 실패: ${failMsg}`)
+    if (skipped.length > 0) toast(`이미 올라간 것과 같은 사진 ${skipped.length}장은 건너뛰었어요`)
+    if (uploaded > 0) {
+      toast(`${uploaded}개 올렸어요`)
+      notifyOthers(profile?.id, { type: 'file', title: `${project?.name || '현장'} · 새 자료 ${uploaded}건`, body: `${category} 자료가 업로드되었습니다`, link: `/projects/${id}?tab=자료` })
+    }
     setUploading(false)
     setUploadProgress(0)
     setUploadCurrent(0)
+    setUploadTotal(0)
     fetchAll()
   }
 
@@ -1111,6 +1144,9 @@ export default function ProjectDetail() {
                 </div>
               )}
 
+              {/* 현장정보 — 한 칸씩 복사 + 카톡으로 일정 보내기 */}
+              <SiteInfoCard project={project} readOnly={readOnly} onEdit={openEditProject} onShare={() => setShowShare(true)} />
+
               {/* 이번 주 공정 — 지연 + 오늘 앞뒤 1주, 버튼으로 바로 완료/시작 */}
               <div className="bg-white rounded-xl border border-gray-200 p-4 md:p-5">
                 <div className="flex items-center justify-between gap-2 mb-2">
@@ -1501,7 +1537,7 @@ export default function ProjectDetail() {
               {uploading && (
                 <div>
                   <div className="flex justify-between text-xs text-gray-500 mb-1">
-                    <span>{uploadCurrent}/{selectedFiles.length} 업로드 중...</span>
+                    <span>{uploadCurrent}/{uploadTotal} 업로드 중...</span>
                     <span>{uploadProgress}%</span>
                   </div>
                   <div className="w-full bg-gray-100 rounded-full h-2">
@@ -1524,6 +1560,20 @@ export default function ProjectDetail() {
               </div>
             </form>
           </div>
+        </div>
+      )}
+
+      {/* 백그라운드 업로드 진행바 — 창을 닫아도 계속 올라감 */}
+      {uploading && uploadTotal > 0 && (
+        <div className="fixed bottom-20 md:bottom-6 left-1/2 -translate-x-1/2 z-50 bg-white border border-gray-200 rounded-2xl shadow-2xl px-4 py-3 w-[min(92vw,360px)]">
+          <div className="flex items-center justify-between text-sm">
+            <span className="font-semibold text-gray-900">올리는 중 {uploadCurrent} / {uploadTotal}</span>
+            <span className="text-xs text-gray-400">다른 메뉴로 가도 돼요</span>
+          </div>
+          <div className="w-full bg-gray-100 rounded-full h-2 mt-2">
+            <div className="bg-green-500 h-2 rounded-full transition-all duration-300" style={{ width: `${Math.max(4, uploadProgress)}%` }} />
+          </div>
+          <p className="text-[11px] text-gray-400 mt-1.5">새로고침하거나 앱을 완전히 닫으면 멈춰요</p>
         </div>
       )}
 
@@ -1830,6 +1880,10 @@ export default function ProjectDetail() {
         </div>
       )}
 
+      {showShare && project && (
+        <ScheduleShareModal project={project} schedules={schedules} onClose={() => setShowShare(false)} />
+      )}
+
       {/* 현장 수정 모달 */}
       {showEditForm && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
@@ -1861,6 +1915,29 @@ export default function ProjectDetail() {
                 <input value={editForm.address} onChange={e => setEditForm({...editForm, address: e.target.value})}
                   placeholder="서울시 강남구 ..."
                   className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
+              </div>
+              <div className="bg-green-50/60 border border-green-100 rounded-xl p-3 flex flex-col gap-3">
+                <p className="text-xs text-green-800">반장님께 <b>카톡으로 일정 보내기</b> 할 때 같이 나가요</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-sm font-medium text-gray-700 block mb-1.5">공동현관 비밀번호</label>
+                    <input value={editForm.entry_code} onChange={e => setEditForm({...editForm, entry_code: e.target.value})}
+                      placeholder="예) #1234"
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-green-500" />
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-gray-700 block mb-1.5">세대 비밀번호</label>
+                    <input value={editForm.door_code} onChange={e => setEditForm({...editForm, door_code: e.target.value})}
+                      placeholder="예) 5678*"
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-green-500" />
+                  </div>
+                </div>
+                <div>
+                  <label className="text-sm font-medium text-gray-700 block mb-1.5">현장 주의사항</label>
+                  <textarea value={editForm.site_notes} onChange={e => setEditForm({...editForm, site_notes: e.target.value})}
+                    rows={2} placeholder="예) 엘리베이터 8~9시 사용 금지 / 주차는 지하 1층 B구역"
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-green-500 resize-none" />
+                </div>
               </div>
               <div>
                 <label className="text-sm font-medium text-gray-700 block mb-1.5">현재 단계</label>
@@ -2020,8 +2097,11 @@ function DropZone({ files, onChange }: { files: File[]; onChange: (f: File[]) =>
         ) : (
           <div className="text-center pointer-events-none">
             <p className="text-2xl mb-1">{dragging ? '📂' : '📁'}</p>
-            <p className="text-sm font-medium text-gray-600">{dragging ? '여기에 놓으세요!' : '드래그·클릭 또는 Ctrl+V 붙여넣기'}</p>
-            <p className="text-xs text-gray-400 mt-0.5">캡처 화면·복사한 파일도 붙여넣기 가능</p>
+            {/* 휴대폰엔 드래그·Ctrl+V가 없으니 문구를 나눠 보여준다 */}
+            <p className="text-sm font-medium text-gray-600 md:hidden">눌러서 사진·파일 고르기</p>
+            <p className="text-xs text-gray-400 mt-0.5 md:hidden">여러 장 한 번에 고를 수 있어요</p>
+            <p className="text-sm font-medium text-gray-600 hidden md:block">{dragging ? '여기에 놓으세요!' : '드래그·클릭 또는 Ctrl+V 붙여넣기'}</p>
+            <p className="text-xs text-gray-400 mt-0.5 hidden md:block">캡처 화면·복사한 파일도 붙여넣기 가능</p>
           </div>
         )}
       </div>

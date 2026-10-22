@@ -37,6 +37,9 @@ export type Project = {
   start_date: string
   end_date: string
   memo: string
+  entry_code?: string | null   // 공동현관 비밀번호 (db/project_site_info.sql)
+  door_code?: string | null    // 세대 비밀번호
+  site_notes?: string | null   // 현장 주의사항
   created_at: string
 }
 

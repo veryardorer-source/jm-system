@@ -302,14 +302,16 @@ export default function SharePage() {
     }
     setUploading(true)
     const who = profile?.name || ''
-    // 3장씩 동시에 올려 속도 개선 (원본 그대로, 순서 유지)
+    // 4장씩 동시에 — 묶음으로 기다리지 않고 한 장 끝나면 바로 다음 장 (순서는 wSlots로 유지)
     const wSlots: (string | null)[] = new Array(files.length).fill(null)  // 출금요청: 여러 장을 한 건으로 묶음
-    const CONC = 3
+    const CONC = 4
     let done = 0
-    for (let i = 0; i < files.length; i += CONC) {
-      const chunk = files.slice(i, i + CONC)
-      await Promise.all(chunk.map(async (file, j) => {
-        const idx = i + j
+    let next = 0
+    const worker = async () => {
+      while (next < files.length) {
+        const idx = next++
+        const file = files[idx]
+        await (async () => {
         if (dest === 'project') {
           // 현장 자료는 현장 상세와 같은 최적화 적용: 사진 자동 압축(2400px WebP) + 500px 썸네일 + 용량·지문 기록
           let up = file
@@ -318,20 +320,21 @@ export default function SharePage() {
           const ext = up.name.split('.').pop() || 'bin'
           const stamp = `${Date.now()}_${idx}`
           const path = `files/${projectId}/${stamp}.${ext}`
+          // 본 사진과 500px 썸네일을 동시에 올린다
+          const thumbTask = (async () => {
+            if (!isCompressibleImage(up)) return null
+            const th = await makeThumbnail(up)
+            if (!th) return null
+            const tPath = `files/${projectId}/thumbs/${stamp}.${th.name.split('.').pop()}`
+            const { error: thErr } = await supabase.storage.from('uploads').upload(tPath, th, { contentType: th.type, upsert: true })
+            return thErr ? null : supabase.storage.from('uploads').getPublicUrl(tPath).data.publicUrl
+          })()
           const { error: upErr } = await supabase.storage.from('uploads').upload(path, up, {
             contentType: up.type || 'application/octet-stream', upsert: true,
           })
+          const thumb_url = await thumbTask
           if (upErr) { toast('업로드 실패: ' + upErr.message); return }
           const url = supabase.storage.from('uploads').getPublicUrl(path).data.publicUrl
-          let thumb_url: string | null = null
-          if (isCompressibleImage(up)) {
-            const th = await makeThumbnail(up)
-            if (th) {
-              const tPath = `files/${projectId}/thumbs/${stamp}.${th.name.split('.').pop()}`
-              const { error: thErr } = await supabase.storage.from('uploads').upload(tPath, th, { contentType: th.type, upsert: true })
-              if (!thErr) thumb_url = supabase.storage.from('uploads').getPublicUrl(tPath).data.publicUrl
-            }
-          }
           // 올린 이름 그대로 — 폰 공유로 이름이 image.jpg 등으로 사라진 사진만 촬영시각 이름으로
           const isMedia = (file.type || '').startsWith('image/') || (file.type || '').startsWith('video/') || isCompressibleImage(file)
           const displayName = isMedia ? mediaUploadName(file, idx) : file.name
@@ -353,10 +356,12 @@ export default function SharePage() {
           const url = await uploadOne(file, idx, 'withdrawals')
           if (url) wSlots[idx] = url
         }
+        })()
         done++
         setProgress(Math.round((done / files.length) * 100))
-      }))
+      }
     }
+    await Promise.all(Array.from({ length: Math.min(CONC, files.length) }, worker))
     const wUrls = wSlots.filter(Boolean) as string[]
     if (dest === 'withdrawal' && wUrls.length > 0) {
       await supabase.from('withdrawal_requests').insert([{

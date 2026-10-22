@@ -6,8 +6,54 @@ import Sidebar from '@/components/Sidebar'
 import { supabase, Project, ProjectAssignment, Schedule, PhaseStatus, STATUS_COLOR, HIDDEN_STATUSES } from '@/lib/supabase'
 import { useAuth, canEdit } from '@/lib/auth-context'
 import { toast } from '@/components/Toaster'
-import { todayStart, type Row } from '@/components/ProjectGantt'
+import { todayStart, buildRows, parseDate, type Row } from '@/components/ProjectGantt'
 import { STAGES, type Filter, summarize, StatusBoard, PhaseQuickModal, AddPhaseModal } from '@/components/DashboardSites'
+import WeekCalendar, { type OfficeEvent, type PaymentDue } from '@/components/WeekCalendar'
+import OfficeEventModal from '@/components/OfficeEventModal'
+
+const WEEK = ['일', '월', '화', '수', '목', '금', '토']
+const BEFORE_STATUSES = ['상담중', '디자인중', '견적중', '계약완료']   // 착공 전
+
+function greeting(name?: string) {
+  const h = new Date().getHours()
+  const who = name ? `, ${name}님` : ''
+  if (h < 11) return `좋은 아침이에요${who}`
+  if (h < 17) return `오늘도 힘내세요${who}`
+  return `오늘 하루 고생 많으셨어요${who}`
+}
+const ymd = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+
+function ProjectCard({ p }: { p: Project }) {
+  return (
+    <Link href={`/projects/${p.id}`} className="block bg-white border border-gray-200 rounded-xl p-3.5 hover:border-green-400 hover:shadow-sm transition">
+      <div className="flex items-start justify-between gap-2">
+        <p className="font-semibold text-gray-900 text-sm truncate">{p.name}</p>
+        <span className={`text-[11px] px-2 py-0.5 rounded-full border flex-shrink-0 ${STATUS_COLOR[p.status]}`}>{p.status}</span>
+      </div>
+      <p className="text-xs text-gray-500 mt-1 truncate">{[p.client_name, p.address].filter(Boolean).join(' · ') || '고객·주소 미입력'}</p>
+      <p className="text-xs text-gray-400 mt-1">{p.start_date ? p.start_date.replaceAll('-', '.') : '착공일 미정'}{p.manager ? ` · ${p.manager}` : ''}</p>
+    </Link>
+  )
+}
+
+function ProjectColumn({ title, list, more }: { title: string; list: Project[]; more: string }) {
+  return (
+    <div className="bg-white rounded-2xl border border-gray-200 p-4 md:p-5">
+      <div className="flex items-center justify-between mb-3">
+        <h2 className="text-base font-bold text-gray-900">{title} <span className="text-gray-400 font-normal text-sm">({list.length})</span></h2>
+        <Link href="/projects" className="text-xs text-gray-500 hover:text-green-700">{more} →</Link>
+      </div>
+      {list.length === 0 ? (
+        <p className="text-sm text-gray-300 py-6 text-center">없음</p>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 2xl:grid-cols-3 gap-2.5">
+          {list.slice(0, 9).map(p => <ProjectCard key={p.id} p={p} />)}
+        </div>
+      )}
+      {list.length > 9 && <Link href="/projects" className="block text-center text-xs text-gray-400 mt-3 hover:text-green-700">외 {list.length - 9}곳 더 보기</Link>}
+    </div>
+  )
+}
 
 export default function Dashboard() {
   const { profile } = useAuth()
@@ -15,24 +61,42 @@ export default function Dashboard() {
   const [projects, setProjects] = useState<Project[]>([])
   const [assignments, setAssignments] = useState<ProjectAssignment[]>([])
   const [schedules, setSchedules] = useState<Schedule[]>([])
+  const [events, setEvents] = useState<OfficeEvent[]>([])
+  const [eventsReady, setEventsReady] = useState(true)
+  const [payments, setPayments] = useState<PaymentDue[]>([])
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState<Filter>('all')
   const [addFor, setAddFor] = useState<Project | null>(null)
   const [picked, setPicked] = useState<{ r: Row; p: Project } | null>(null)
+  const [eventModal, setEventModal] = useState<{ event: OfficeEvent | null; date: string } | null>(null)
+  const [addMenu, setAddMenu] = useState(false)
+  const [phasePick, setPhasePick] = useState(false)
 
   useEffect(() => { fetchAll() }, [])
 
   async function fetchAll() {
     setLoading(true)
-    const [p, a, s] = await Promise.all([
+    const [p, a, s, e, pay] = await Promise.all([
       supabase.from('projects').select('*').order('created_at', { ascending: false }),
       supabase.from('project_assignments').select('*'),
       supabase.from('schedules').select('*'),
+      supabase.from('office_events').select('*').order('event_date'),
+      // 수금은 관리자만 보임(RLS) — 다른 직원은 빈 목록
+      supabase.from('payments').select('id,project_name,type,amount,due_date,paid').eq('paid', false).not('due_date', 'is', null),
     ])
     setProjects(p.data || [])
     setAssignments(a.data || [])
     setSchedules(s.data || [])
+    // office_events SQL을 아직 안 돌렸으면 표가 없음 → 사무실 일정만 끄고 나머지는 정상 표시
+    setEventsReady(!e.error)
+    setEvents(e.data || [])
+    setPayments(pay.data || [])
     setLoading(false)
+  }
+
+  async function fetchEvents() {
+    const { data } = await supabase.from('office_events').select('*').order('event_date')
+    setEvents(data || [])
   }
 
   // 공정 상태 바로 변경 — 화면 먼저 바꾸고 저장 (실패하면 되돌림)
@@ -47,6 +111,8 @@ export default function Dashboard() {
 
   const activeProjects = projects.filter(p => !HIDDEN_STATUSES.includes(p.status as typeof HIDDEN_STATUSES[number]))
   const completedProjects = projects.filter(p => p.status === '완료')
+  const beforeProjects = activeProjects.filter(p => BEFORE_STATUSES.includes(p.status))
+  const buildingProjects = activeProjects.filter(p => p.status === '시공중')
 
   // 현황판 순서: 지연 → 오늘 작업 있는 현장 → 단계가 많이 진행된 현장
   const today = todayStart()
@@ -62,6 +128,16 @@ export default function Dashboard() {
     empty: infos.filter(i => i.kind === 'empty').length,
   }
   const shown = infos.filter(i => filter === 'all' ? true : filter === 'now' ? i.now.length > 0 : i.kind === filter)
+
+  // 오늘 일정 건수 (현장 공정 + 사무실 일정)
+  const onDay = (start?: string | null, end?: string | null) => {
+    const s = parseDate(start); if (!s) return false
+    const e = parseDate(end) || s
+    return s <= today && today <= (e >= s ? e : s)
+  }
+  const activeIds = new Set(activeProjects.map(p => p.id))
+  const todayCount = schedules.filter(s => activeIds.has(s.project_id) && onDay(s.scheduled_date, s.end_date)).length
+    + events.filter(e => onDay(e.event_date, e.end_date)).length
 
   // 직원별 업무 정리
   const employeeMap: Record<string, { project: Project; task: string; role: string; phaseStatus?: string }[]> = {}
@@ -100,30 +176,65 @@ export default function Dashboard() {
     { key: 'empty', label: '공정 미등록', on: 'bg-gray-600 text-white border-gray-600' },
   ]
 
+  const now = new Date()
+
   return (
     <div className="flex flex-col md:flex-row min-h-screen">
       <Sidebar />
-      <div className="flex-1 flex flex-col min-w-0">
-        <header className="bg-white border-b border-gray-200 px-8 py-5 flex-shrink-0">
-          <h1 className="text-xl font-bold text-gray-900">대시보드</h1>
-          <p className="text-sm text-gray-500 mt-0.5">진행중인 현장과 직원 업무 현황</p>
+      <div className="flex-1 flex flex-col min-w-0 bg-gray-50">
+        <header className="px-4 md:px-8 pt-5 md:pt-7 pb-2 flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h1 className="text-lg md:text-2xl font-bold text-gray-900 break-keep">{greeting(profile?.name)}</h1>
+            <p className="text-xs md:text-sm text-gray-500 mt-1">
+              {now.getFullYear()}년 {now.getMonth() + 1}월 {now.getDate()}일 ({WEEK[now.getDay()]})
+              {!loading && <> · 오늘 일정 {todayCount}건 · 진행 현장 {buildingProjects.length}곳</>}
+            </p>
+          </div>
+          {!readOnly && (
+            <div className="relative flex-shrink-0">
+              <button onClick={() => setAddMenu(!addMenu)} className="bg-green-600 hover:bg-green-700 text-white text-sm font-medium rounded-xl px-4 py-2.5 shadow-sm">+ 추가</button>
+              {addMenu && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setAddMenu(false)} />
+                  <div className="absolute right-0 mt-2 w-48 bg-white border border-gray-200 rounded-xl shadow-lg z-50 py-1 text-sm">
+                    <button disabled={!eventsReady} onClick={() => { setAddMenu(false); setEventModal({ event: null, date: ymd(today) }) }}
+                      className="w-full text-left px-4 py-2.5 hover:bg-gray-50 disabled:text-gray-300">📅 사무실 일정</button>
+                    <button onClick={() => { setAddMenu(false); setPhasePick(true) }} className="w-full text-left px-4 py-2.5 hover:bg-gray-50">🔨 현장 공정</button>
+                    <Link href="/projects" className="block px-4 py-2.5 hover:bg-gray-50">🏗️ 새 현장</Link>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
         </header>
 
-        <div className="flex-1 overflow-auto px-4 md:px-8 py-4 md:py-6 pb-20 md:pb-24">
+        <div className="flex-1 overflow-auto px-4 md:px-8 py-4 pb-24 flex flex-col gap-5 md:gap-6">
           {loading ? (
             <div className="text-center py-20 text-gray-400">불러오는 중...</div>
           ) : (
             <>
-              {/* 진행중인 현장 — 현황판 */}
-              <div className="mb-8">
-                <div className="flex items-center justify-between mb-3 gap-2">
-                  <h2 className="text-base font-bold text-gray-800">진행중인 현장</h2>
-                  <Link href="/projects" className="text-sm text-green-600 hover:underline flex-shrink-0">
-                    완료 {completedProjects.length} · 전체 {projects.length} →
-                  </Link>
-                </div>
+              <WeekCalendar
+                projects={activeProjects}
+                schedules={schedules}
+                events={events}
+                payments={payments}
+                eventsReady={eventsReady}
+                readOnly={readOnly}
+                onPickSchedule={(s, p) => setPicked({ r: buildRows([s], today)[0], p })}
+                onPickEvent={ev => setEventModal({ event: ev, date: ev.event_date })}
+                onAddEvent={date => setEventModal({ event: null, date })}
+              />
 
-                {/* 필터 (개수 0인 항목은 숨김) */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 md:gap-6">
+                <ProjectColumn title="착공 전 프로젝트" list={beforeProjects} more="전체" />
+                <ProjectColumn title="진행중 프로젝트" list={buildingProjects} more={`완료 ${completedProjects.length} · 전체 ${projects.length}`} />
+              </div>
+
+              {/* 공정 체크 — 현황판 (지연·오늘 작업 확인하고 바로 완료 처리) */}
+              <div>
+                <div className="flex items-center justify-between mb-3 gap-2">
+                  <h2 className="text-base font-bold text-gray-800">공정 체크</h2>
+                </div>
                 <div className="flex gap-2 flex-wrap mb-3">
                   {FILTERS.filter(f => f.key === 'all' || counts[f.key] > 0).map(f => (
                     <button key={f.key} onClick={() => setFilter(filter === f.key ? 'all' : f.key)}
@@ -132,7 +243,6 @@ export default function Dashboard() {
                     </button>
                   ))}
                 </div>
-
                 {activeProjects.length === 0 ? (
                   <div className="bg-white rounded-xl border border-gray-200 text-center py-12 text-gray-400">
                     <p className="text-3xl mb-2">🏗️</p>
@@ -207,7 +317,28 @@ export default function Dashboard() {
       {addFor && (
         <AddPhaseModal project={addFor} onClose={() => setAddFor(null)} onSaved={() => { setAddFor(null); fetchAll() }} />
       )}
+
+      {eventModal && (
+        <OfficeEventModal event={eventModal.event} date={eventModal.date} projects={activeProjects} who={profile?.name || ''} readOnly={readOnly}
+          onClose={() => setEventModal(null)} onSaved={() => { setEventModal(null); fetchEvents() }} />
+      )}
+
+      {phasePick && (
+        <div className="fixed inset-0 z-[60] bg-black/40 flex items-end sm:items-center justify-center p-0 sm:p-4" onClick={() => setPhasePick(false)}>
+          <div className="bg-white w-full sm:max-w-sm rounded-t-2xl sm:rounded-2xl shadow-xl p-5 max-h-[80vh] overflow-auto" onClick={e => e.stopPropagation()}>
+            <h3 className="text-base font-bold text-gray-900 mb-3">어느 현장에 공정을 넣을까요?</h3>
+            <div className="flex flex-col gap-1.5">
+              {activeProjects.map(p => (
+                <button key={p.id} onClick={() => { setPhasePick(false); setAddFor(p) }}
+                  className="flex items-center justify-between text-left px-3 py-2.5 rounded-lg border border-gray-200 hover:border-green-400 text-sm">
+                  <span className="truncate">{p.name}</span>
+                  <span className={`text-[11px] px-2 py-0.5 rounded-full border ${STATUS_COLOR[p.status]}`}>{p.status}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
-
