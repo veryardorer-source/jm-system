@@ -176,14 +176,14 @@ export default function WorkLogsPage() {
   }
 
   if (profile?.role === 'partner') return (
-    <div className="flex flex-col md:flex-row min-h-screen">
+    <div className="flex flex-col min-h-screen">
       <Sidebar />
       <div className="flex-1 flex items-center justify-center text-gray-400 text-sm">접근 권한이 없습니다.</div>
     </div>
   )
 
   return (
-    <div className="flex flex-col md:flex-row min-h-screen">
+    <div className="flex flex-col min-h-screen">
       <Sidebar />
       <div className="flex-1 flex flex-col">
         <header className="bg-white border-b border-gray-200 px-4 md:px-8 py-4 md:py-5 flex items-center justify-between flex-shrink-0">

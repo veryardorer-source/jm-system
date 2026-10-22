@@ -1041,20 +1041,20 @@ export default function ProjectDetail() {
   const allCategories = Array.from(new Set([...CATEGORY_LIST, ...files.map(f => f.category).filter(Boolean)]))
 
   if (loading) return (
-    <div className="flex h-screen">
+    <div className="flex flex-col h-screen">
       <Sidebar />
       <div className="flex-1 flex items-center justify-center text-gray-400">불러오는 중...</div>
     </div>
   )
   if (!project) return (
-    <div className="flex h-screen">
+    <div className="flex flex-col h-screen">
       <Sidebar />
       <div className="flex-1 flex items-center justify-center text-gray-400">현장을 찾을 수 없어요</div>
     </div>
   )
 
   return (
-    <div className="flex flex-col md:flex-row min-h-screen">
+    <div className="flex flex-col min-h-screen">
       <Sidebar />
       {saveProg && (
         <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 w-[min(92vw,420px)] bg-white border border-gray-200 shadow-lg rounded-xl px-4 py-3 text-sm">

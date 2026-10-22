@@ -745,7 +745,7 @@ export default function ChatPage() {
   }
 
   if (profile?.role === 'partner') return (
-    <div className="flex flex-col md:flex-row min-h-screen">
+    <div className="flex flex-col min-h-screen">
       <Sidebar />
       <div className="flex-1 flex items-center justify-center text-gray-400 text-sm">접근 권한이 없습니다.</div>
     </div>
@@ -757,11 +757,11 @@ export default function ChatPage() {
     : messages
 
   return (
-    <div className="flex flex-col md:flex-row min-h-screen">
+    <div className="flex flex-col min-h-screen">
       <Sidebar />
       {/* 모바일: flex-1이 지정 높이를 무시하고 늘려 입력창이 하단 메뉴 뒤에 깔리던 버그 →
           모바일은 flex-grow 없이 높이 고정(w-full), 데스크탑(가로배치)만 md:flex-1로 폭 채움 */}
-      <div className="w-full md:flex-1 flex flex-col h-[calc(100vh-3.5rem)] supports-[height:100dvh]:h-[calc(100dvh-3.5rem)] md:h-screen md:supports-[height:100dvh]:h-screen">
+      <div className="w-full md:flex-1 flex flex-col h-[calc(100vh-3.5rem)] supports-[height:100dvh]:h-[calc(100dvh-3.5rem)] md:h-[calc(100vh-4rem)] md:supports-[height:100dvh]:h-[calc(100dvh-4rem)]">
         <div className="flex-1 flex min-h-0">
 
           {/* 대화 목록 */}

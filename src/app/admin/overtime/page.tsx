@@ -237,7 +237,7 @@ export default function AdminOvertimePage() {
   }
 
   if (authLoading || !isAdmin) return (
-    <div className="flex h-screen">
+    <div className="flex flex-col h-screen">
       <Sidebar />
       <div className="flex-1 flex items-center justify-center text-gray-400">불러오는 중...</div>
     </div>
@@ -247,7 +247,7 @@ export default function AdminOvertimePage() {
   const filterName = filterEmp ? empById.get(filterEmp)?.name : null
 
   return (
-    <div className="flex flex-col md:flex-row min-h-screen">
+    <div className="flex flex-col min-h-screen">
       <Sidebar />
       <div className="flex-1 flex flex-col min-w-0">
         <header className="bg-white border-b border-gray-200 px-4 md:px-8 py-4 md:py-5">

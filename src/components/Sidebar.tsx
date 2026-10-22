@@ -61,9 +61,13 @@ export default function Sidebar() {
   const [unread, setUnread] = useState(0)
   const [chatUnread, setChatUnread] = useState(0)
   const [moreOpen, setMoreOpen] = useState(false)
+  const [adminOpen, setAdminOpen] = useState(false)
+  const [adminLeft, setAdminLeft] = useState(0) // 펼침 위치 = 관리자 버튼 왼쪽
+  const [userOpen, setUserOpen] = useState(false)
   // 급여대장은 관리자 중에서도 지정된 열람자(대표·이사)만 — DB 함수로 확인
   const [payrollViewer, setPayrollViewer] = useState(false)
   const adminItems = ADMIN_ITEMS.filter(i => i.href !== '/admin/payroll' || payrollViewer)
+  const adminActive = pathname.startsWith('/admin')
 
   useEffect(() => {
     if (!isAdmin) return
@@ -98,27 +102,22 @@ export default function Sidebar() {
 
   return (
     <>
-      {/* 데스크탑 사이드바 */}
-      <aside className="hidden md:flex w-56 bg-green-800 min-h-screen flex-col flex-shrink-0">
-        <div className="px-5 py-5 border-b border-green-700">
-          <Image src="/logo.png" alt="JM Architecture Interior" width={140} height={48} className="brightness-0 invert" />
-        </div>
-        <nav className="flex-1 px-3 py-4 flex flex-col gap-1">
-          {navItems.map(item => {
+      {/* 데스크탑 상단 메뉴 (수플렉스식 가로 메뉴) */}
+      <header className="hidden md:flex sticky top-0 z-40 h-16 bg-white border-b border-gray-200 items-center gap-3 lg:gap-6 px-4 lg:px-6 flex-shrink-0">
+        <Link href="/" className="flex-shrink-0">
+          <Image src="/logo.png" alt="JM Architecture Interior" width={104} height={36} />
+        </Link>
+        <nav className="flex-1 min-w-0 flex items-stretch h-full overflow-x-auto [scrollbar-width:none]">
+          {navItems.filter(i => i.href !== '/notifications').map(item => {
             const active = pathname === item.href || (item.href !== '/' && pathname.startsWith(item.href))
             return (
               <Link key={item.href} href={item.href}
-                className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors ${
-                  active ? 'bg-green-600 text-white' : 'text-green-100 hover:bg-green-700 hover:text-white'
+                className={`relative flex items-center px-2 lg:px-3 xl:px-4 text-sm lg:text-[15px] whitespace-nowrap border-b-2 transition-colors ${
+                  active ? 'border-green-600 text-gray-900 font-semibold' : 'border-transparent text-gray-500 hover:text-gray-900'
                 }`}>
-                <span>{item.label}</span>
-                {item.href === '/notifications' && unread > 0 && (
-                  <span className="ml-auto bg-red-500 text-white text-xs rounded-full min-w-[20px] h-5 px-1.5 flex items-center justify-center">
-                    {unread > 99 ? '99+' : unread}
-                  </span>
-                )}
+                {item.label}
                 {item.href === '/chat' && chatUnread > 0 && (
-                  <span className="ml-auto bg-red-500 text-white text-xs rounded-full min-w-[20px] h-5 px-1.5 flex items-center justify-center">
+                  <span className="ml-1.5 bg-red-500 text-white text-[10px] rounded-full min-w-[18px] h-[18px] px-1 flex items-center justify-center">
                     {chatUnread > 99 ? '99+' : chatUnread}
                   </span>
                 )}
@@ -126,36 +125,64 @@ export default function Sidebar() {
             )
           })}
           {isAdmin && (
-            <>
-              <div className="mt-3 mb-1 px-3 text-xs text-green-400 font-semibold uppercase tracking-wide">관리자</div>
-              {adminItems.map(item => {
-                const active = pathname.startsWith(item.href)
-                return (
-                  <Link key={item.href} href={item.href}
-                    className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors ${
-                      active ? 'bg-green-600 text-white' : 'text-green-100 hover:bg-green-700 hover:text-white'
-                    }`}>
-                    <span>{item.icon}</span>
-                    <span>{item.label}</span>
-                  </Link>
-                )
-              })}
-            </>
-          )}
-        </nav>
-        <div className="px-4 py-4 border-t border-gray-700">
-          {profile && (
-            <div className="mb-3">
-              <p className="text-white text-sm font-medium">{profile.name}</p>
-              <p className="text-green-200 text-xs mt-0.5">{ROLE_LABEL[profile.role] || profile.role}</p>
+            <div className="relative flex items-stretch">
+              <button onClick={e => { setAdminLeft(e.currentTarget.getBoundingClientRect().left); setAdminOpen(v => !v) }}
+                className={`flex items-center gap-1 px-2 lg:px-3 xl:px-4 text-sm lg:text-[15px] whitespace-nowrap border-b-2 transition-colors ${
+                  adminActive ? 'border-green-600 text-gray-900 font-semibold' : 'border-transparent text-gray-500 hover:text-gray-900'
+                }`}>
+                관리자 <span className="text-xs">▾</span>
+              </button>
             </div>
           )}
-          <button onClick={handleSignOut}
-            className="w-full text-left text-green-300 hover:text-white text-xs transition-colors">
-            로그아웃
-          </button>
+        </nav>
+        <div className="flex items-center gap-4 flex-shrink-0">
+          <Link href="/notifications" className="relative text-gray-500 hover:text-gray-900" aria-label="알림">
+            <span className="text-xl">🔔</span>
+            {unread > 0 && (
+              <span className="absolute -top-1.5 -right-2 bg-red-500 text-white text-[10px] rounded-full min-w-[18px] h-[18px] px-1 flex items-center justify-center">
+                {unread > 99 ? '99+' : unread}
+              </span>
+            )}
+          </Link>
+          {profile && (
+            <div className="relative">
+              <button onClick={() => setUserOpen(v => !v)} className="flex items-center gap-2 text-sm text-gray-700 hover:text-gray-900">
+                <span className="w-8 h-8 rounded-full bg-green-700 text-white flex items-center justify-center font-semibold">{profile.name?.[0] || '?'}</span>
+                <span className="hidden lg:inline">{profile.name}</span>
+              </button>
+              {userOpen && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setUserOpen(false)} />
+                  <div className="absolute right-0 mt-2 w-44 bg-white border border-gray-200 rounded-xl shadow-lg z-50 py-2 text-sm">
+                    <div className="px-4 pb-2 mb-1 border-b border-gray-100">
+                      <p className="font-semibold text-gray-900">{profile.name}</p>
+                      <p className="text-xs text-gray-400">{ROLE_LABEL[profile.role] || profile.role}</p>
+                    </div>
+                    <button onClick={handleSignOut} className="w-full text-left px-4 py-2 text-red-500 hover:bg-gray-50">로그아웃</button>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
         </div>
-      </aside>
+      </header>
+
+      {/* 관리자 메뉴 펼침 (메뉴 줄이 가로 스크롤돼도 잘리지 않게 바깥에 띄움) */}
+      {isAdmin && adminOpen && (
+        <div className="hidden md:block fixed inset-0 z-40" onClick={() => setAdminOpen(false)}>
+          <div style={{ left: Math.min(adminLeft, window.innerWidth - 200) }} className="absolute top-16 w-48 bg-white border border-gray-200 rounded-xl shadow-lg py-1 text-sm" onClick={e => e.stopPropagation()}>
+            {adminItems.map(item => {
+              const active = pathname.startsWith(item.href)
+              return (
+                <Link key={item.href} href={item.href} onClick={() => setAdminOpen(false)}
+                  className={`flex items-center gap-2 px-4 py-2.5 hover:bg-gray-50 ${active ? 'text-green-700 font-semibold' : 'text-gray-700'}`}>
+                  <span>{item.icon}</span><span>{item.label}</span>
+                </Link>
+              )
+            })}
+          </div>
+        </div>
+      )}
 
       {/* 모바일 하단 탭바 — 핵심 4개 + 더보기 */}
       <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-green-800 border-t border-green-700 z-50 flex h-14">

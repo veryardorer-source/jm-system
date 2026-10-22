@@ -73,11 +73,11 @@ export default function AdminAuditPage() {
   const fmt = (iso: string) => new Date(iso).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })
 
   if (authLoading || loading) return (
-    <div className="flex h-screen"><Sidebar /><div className="flex-1 flex items-center justify-center text-gray-400">불러오는 중...</div></div>
+    <div className="flex flex-col h-screen"><Sidebar /><div className="flex-1 flex items-center justify-center text-gray-400">불러오는 중...</div></div>
   )
 
   return (
-    <div className="flex flex-col md:flex-row min-h-screen">
+    <div className="flex flex-col min-h-screen">
       <Sidebar />
       <div className="flex-1 flex flex-col">
         <header className="bg-white border-b border-gray-200 px-4 md:px-8 py-4 md:py-5">

@@ -7,7 +7,7 @@ import { supabase, Project, ProjectAssignment, Schedule, PhaseStatus, STATUS_COL
 import { useAuth, canEdit } from '@/lib/auth-context'
 import { toast } from '@/components/Toaster'
 import { todayStart, buildRows, parseDate, type Row } from '@/components/ProjectGantt'
-import { STAGES, type Filter, summarize, StatusBoard, PhaseQuickModal, AddPhaseModal } from '@/components/DashboardSites'
+import { PhaseQuickModal, AddPhaseModal } from '@/components/DashboardSites'
 import WeekCalendar, { type OfficeEvent, type PaymentDue } from '@/components/WeekCalendar'
 import OfficeEventModal from '@/components/OfficeEventModal'
 
@@ -47,10 +47,12 @@ function ProjectColumn({ title, list, more }: { title: string; list: Project[]; 
         <p className="text-sm text-gray-300 py-6 text-center">없음</p>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 2xl:grid-cols-3 gap-2.5">
-          {list.slice(0, 9).map(p => <ProjectCard key={p.id} p={p} />)}
+          {/* 휴대폰은 4개까지만 — 아래 이번주 일정이 너무 밀리지 않게 */}
+          {list.slice(0, 9).map((p, i) => <div key={p.id} className={i >= 4 ? 'hidden sm:block' : ''}><ProjectCard p={p} /></div>)}
         </div>
       )}
-      {list.length > 9 && <Link href="/projects" className="block text-center text-xs text-gray-400 mt-3 hover:text-green-700">외 {list.length - 9}곳 더 보기</Link>}
+      {list.length > 4 && <Link href="/projects" className="sm:hidden block text-center text-xs text-gray-400 mt-3 hover:text-green-700">외 {list.length - 4}곳 더 보기</Link>}
+      {list.length > 9 && <Link href="/projects" className="hidden sm:block text-center text-xs text-gray-400 mt-3 hover:text-green-700">외 {list.length - 9}곳 더 보기</Link>}
     </div>
   )
 }
@@ -65,7 +67,6 @@ export default function Dashboard() {
   const [eventsReady, setEventsReady] = useState(true)
   const [payments, setPayments] = useState<PaymentDue[]>([])
   const [loading, setLoading] = useState(true)
-  const [filter, setFilter] = useState<Filter>('all')
   const [addFor, setAddFor] = useState<Project | null>(null)
   const [picked, setPicked] = useState<{ r: Row; p: Project } | null>(null)
   const [eventModal, setEventModal] = useState<{ event: OfficeEvent | null; date: string } | null>(null)
@@ -114,20 +115,7 @@ export default function Dashboard() {
   const beforeProjects = activeProjects.filter(p => BEFORE_STATUSES.includes(p.status))
   const buildingProjects = activeProjects.filter(p => p.status === '시공중')
 
-  // 현황판 순서: 지연 → 오늘 작업 있는 현장 → 단계가 많이 진행된 현장
   const today = todayStart()
-  const infos = activeProjects.map(p => summarize(p, schedules, today)).sort((a, b) =>
-    (+(b.kind === 'late') - +(a.kind === 'late')) ||
-    (+(b.now.length > 0) - +(a.now.length > 0)) ||
-    (STAGES.indexOf(b.p.status) - STAGES.indexOf(a.p.status)) ||
-    a.p.name.localeCompare(b.p.name, 'ko'))
-  const counts = {
-    all: infos.length,
-    now: infos.filter(i => i.now.length).length,
-    late: infos.filter(i => i.kind === 'late').length,
-    empty: infos.filter(i => i.kind === 'empty').length,
-  }
-  const shown = infos.filter(i => filter === 'all' ? true : filter === 'now' ? i.now.length > 0 : i.kind === filter)
 
   // 오늘 일정 건수 (현장 공정 + 사무실 일정)
   const onDay = (start?: string | null, end?: string | null) => {
@@ -169,17 +157,10 @@ export default function Dashboard() {
     if (!already) employeeMap[s.manager].push({ project, task: s.task_name, role: '공정', phaseStatus: s.phase_status || '예정' })
   })
 
-  const FILTERS: { key: Filter; label: string; on: string }[] = [
-    { key: 'all', label: '진행중', on: 'bg-green-600 text-white border-green-600' },
-    { key: 'now', label: '오늘 작업', on: 'bg-green-600 text-white border-green-600' },
-    { key: 'late', label: '지연', on: 'bg-red-500 text-white border-red-500' },
-    { key: 'empty', label: '공정 미등록', on: 'bg-gray-600 text-white border-gray-600' },
-  ]
-
   const now = new Date()
 
   return (
-    <div className="flex flex-col md:flex-row min-h-screen">
+    <div className="flex flex-col min-h-screen">
       <Sidebar />
       <div className="flex-1 flex flex-col min-w-0 bg-gray-50">
         <header className="px-4 md:px-8 pt-5 md:pt-7 pb-2 flex items-start justify-between gap-3">
@@ -213,6 +194,11 @@ export default function Dashboard() {
             <div className="text-center py-20 text-gray-400">불러오는 중...</div>
           ) : (
             <>
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 md:gap-6">
+                <ProjectColumn title="착공 전 프로젝트" list={beforeProjects} more="전체" />
+                <ProjectColumn title="진행중 프로젝트" list={buildingProjects} more={`완료 ${completedProjects.length} · 전체 ${projects.length}`} />
+              </div>
+
               <WeekCalendar
                 projects={activeProjects}
                 schedules={schedules}
@@ -224,35 +210,6 @@ export default function Dashboard() {
                 onPickEvent={ev => setEventModal({ event: ev, date: ev.event_date })}
                 onAddEvent={date => setEventModal({ event: null, date })}
               />
-
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 md:gap-6">
-                <ProjectColumn title="착공 전 프로젝트" list={beforeProjects} more="전체" />
-                <ProjectColumn title="진행중 프로젝트" list={buildingProjects} more={`완료 ${completedProjects.length} · 전체 ${projects.length}`} />
-              </div>
-
-              {/* 공정 체크 — 현황판 (지연·오늘 작업 확인하고 바로 완료 처리) */}
-              <div>
-                <div className="flex items-center justify-between mb-3 gap-2">
-                  <h2 className="text-base font-bold text-gray-800">공정 체크</h2>
-                </div>
-                <div className="flex gap-2 flex-wrap mb-3">
-                  {FILTERS.filter(f => f.key === 'all' || counts[f.key] > 0).map(f => (
-                    <button key={f.key} onClick={() => setFilter(filter === f.key ? 'all' : f.key)}
-                      className={`text-sm px-3 py-1.5 rounded-full border font-medium transition-colors ${filter === f.key ? f.on : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}>
-                      {f.label} <span className="ml-0.5">{counts[f.key]}</span>
-                    </button>
-                  ))}
-                </div>
-                {activeProjects.length === 0 ? (
-                  <div className="bg-white rounded-xl border border-gray-200 text-center py-12 text-gray-400">
-                    <p className="text-3xl mb-2">🏗️</p>
-                    <p>진행중인 현장이 없어요</p>
-                    <Link href="/projects" className="text-green-600 text-sm mt-2 inline-block">현장 등록하기 →</Link>
-                  </div>
-                ) : (
-                  <StatusBoard infos={shown} today={today} readOnly={readOnly} onAdd={setAddFor} onPick={(r, p) => setPicked({ r, p })} onStatus={changeStatus} />
-                )}
-              </div>
 
               {/* 직원별 업무 현황 */}
               <div>
