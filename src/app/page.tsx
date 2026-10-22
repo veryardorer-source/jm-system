@@ -36,9 +36,9 @@ function ProjectCard({ p }: { p: Project }) {
   )
 }
 
-function ProjectColumn({ title, list, more }: { title: string; list: Project[]; more: string }) {
+function ProjectColumn({ title, list, more, className = '' }: { title: string; list: Project[]; more: string; className?: string }) {
   return (
-    <div className="bg-white rounded-2xl border border-gray-200 p-4 md:p-5">
+    <div className={`bg-white rounded-2xl border border-gray-200 p-4 md:p-5 ${className}`}>
       <div className="flex items-center justify-between mb-3">
         <h2 className="text-base font-bold text-gray-900">{title} <span className="text-gray-400 font-normal text-sm">({list.length})</span></h2>
         <Link href="/projects" className="text-xs text-gray-500 hover:text-green-700">{more} →</Link>
@@ -196,7 +196,7 @@ export default function Dashboard() {
             <>
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 md:gap-6">
                 <ProjectColumn title="착공 전 프로젝트" list={beforeProjects} more="전체" />
-                <ProjectColumn title="진행중 프로젝트" list={buildingProjects} more={`완료 ${completedProjects.length} · 전체 ${projects.length}`} />
+                <ProjectColumn title="진행중 프로젝트" className="order-first lg:order-none" list={buildingProjects} more={`완료 ${completedProjects.length} · 전체 ${projects.length}`} />
               </div>
 
               <WeekCalendar
