@@ -271,6 +271,8 @@ export default function SharePage() {
     const path = `${folder}/${Date.now()}_${i}.${ext}`
     // 출금 사진(신분증·통장 사본 등)은 잠금 보관함에 — 출금 요청 화면과 같은 방식
     if (folder === 'withdrawals') {
+      // 출금 요청 화면과 같이 사진은 긴 변 2000px로 줄여서
+      file = await compressImage(file, 2000, 0.82)
       const { error } = await supabase.storage.from('secure').upload(path, file, { contentType: file.type || 'application/octet-stream', upsert: true })
       if (error) { toast('업로드 실패: ' + error.message); return null }
       return SECURE_PREFIX + path
@@ -327,21 +329,22 @@ export default function SharePage() {
           const ext = up.name.split('.').pop() || 'bin'
           const stamp = `${Date.now()}_${idx}`
           const path = `files/${projectId}/${stamp}.${ext}`
+          const secure = category === '견적서' || category === '계약서' // 현장 상세와 같이 잠금 보관함
           // 본 사진과 500px 썸네일을 동시에 올린다
           const thumbTask = (async () => {
-            if (!isCompressibleImage(up)) return null
+            if (secure || !isCompressibleImage(up)) return null
             const th = await makeThumbnail(up)
             if (!th) return null
             const tPath = `files/${projectId}/thumbs/${stamp}.${th.name.split('.').pop()}`
             const { error: thErr } = await supabase.storage.from('uploads').upload(tPath, th, { contentType: th.type, upsert: true })
             return thErr ? null : supabase.storage.from('uploads').getPublicUrl(tPath).data.publicUrl
           })()
-          const { error: upErr } = await supabase.storage.from('uploads').upload(path, up, {
+          const { error: upErr } = await supabase.storage.from(secure ? 'secure' : 'uploads').upload(path, up, {
             contentType: up.type || 'application/octet-stream', upsert: true,
           })
           const thumb_url = await thumbTask
           if (upErr) { toast('업로드 실패: ' + upErr.message); return }
-          const url = supabase.storage.from('uploads').getPublicUrl(path).data.publicUrl
+          const url = secure ? SECURE_PREFIX + path : supabase.storage.from('uploads').getPublicUrl(path).data.publicUrl
           // 올린 이름 그대로 — 폰 공유로 이름이 image.jpg 등으로 사라진 사진만 촬영시각 이름으로
           const isMedia = (file.type || '').startsWith('image/') || (file.type || '').startsWith('video/') || isCompressibleImage(file)
           const displayName = isMedia ? mediaUploadName(file, idx) : file.name

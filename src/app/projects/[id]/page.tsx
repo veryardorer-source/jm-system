@@ -9,7 +9,7 @@ import { useAuth, canEdit } from '@/lib/auth-context'
 import { notifyOthers, notifyDM, notifyRoom } from '@/lib/notify'
 import { compressImage, makeThumbnail, hashFile, formatBytes, isCompressibleImage, mediaUploadName, toShareableBlob } from '@/lib/image'
 import { FolderIndex, sha256Hex, uniqueByOriginal } from '@/lib/folder-dedupe'
-import { openPdfTitled, printUrl, downloadUrl, downloadName, viewUrl } from '@/lib/media'
+import { openPdfTitled, printUrl, downloadUrl, downloadName, viewUrl, SECURE_PREFIX, isSecureUrl, signSecureUrls } from '@/lib/media'
 import PdfPreview, { isPdfUrl } from '@/components/PdfPreview'
 import { normalizePdfTitle } from '@/lib/pdf'
 import Image from 'next/image'
@@ -18,6 +18,7 @@ import ProjectGantt, { todayStart, STYLE } from '@/components/ProjectGantt'
 import { summarize, chipWhen } from '@/components/DashboardSites'
 import SnsTab from '@/components/SnsTab'
 import { SiteInfoCard, ScheduleShareModal } from '@/components/SiteShare'
+import VendorPicker, { VendorMark, needsVendor } from '@/components/VendorPicker'
 
 const EMPTY_SFORM = { task_name: '', scheduled_date: '', end_date: '', manager: '', vendor: '', vendor_booked: false }
 const TAB_LIST = ['현황', '공정', '자료', 'SNS']
@@ -30,6 +31,10 @@ const isVideoFile = (f: ProjectFile) => (f.file_type || '').startsWith('video') 
 // 사진 분류에 섞인 PDF·문서를 구분 (이미지가 아니면 문서 카드로 표시)
 const isImageFile = (f: ProjectFile) =>
   (f.file_type || '').startsWith('image') || /\.(jpg|jpeg|png|gif|webp|heic|heif|bmp)$/i.test(f.file_name || f.file_url || '')
+// 계약서·견적서는 금액·개인정보가 있어 잠금 보관함(비공개)에 — 볼 때마다 1시간짜리 주소 (db/secure_project_docs.sql)
+const SECURE_CATS = ['견적서', '계약서']
+const fileStamp = () => String(Date.now()) // 저장 파일 이름용 시각
+
 const CATEGORY_LIST = ['공사전사진', '시공사진', '마감사진', '도면', '3D', '견적서', '계약서', '미팅내용', '고객요청', '구매링크', '기타']
 
 function isHeic(file: File) {
@@ -119,6 +124,7 @@ export default function ProjectDetail() {
   const [showEditForm, setShowEditForm] = useState(false)
   const [editForm, setEditForm] = useState({ name: '', client_name: '', manager: '', address: '', status: '상담중', start_date: '', end_date: '', memo: '', entry_code: '', door_code: '', site_notes: '' })
   const [showShare, setShowShare] = useState(false)
+  const [vendorFor, setVendorFor] = useState<Schedule | null>(null) // '+ 업체' 눌러 연 공정
   const [savingEdit, setSavingEdit] = useState(false)
 
   const [showFileForm, setShowFileForm] = useState(false)
@@ -181,7 +187,9 @@ export default function ProjectDetail() {
       supabase.from('schedules').select('*').eq('project_id', id).order('scheduled_date'),
     ])
     setProject(p.data)
-    setFiles(f.data || [])
+    const list = (f.data || []) as ProjectFile[]
+    const signed = await signSecureUrls(list.map(x => x.file_url))
+    setFiles(list.map(x => isSecureUrl(x.file_url) ? { ...x, stored_url: x.file_url, file_url: signed[x.file_url] || '' } : x))
     setSchedules(s.data || [])
     setLoading(false)
   }, [id])
@@ -300,8 +308,7 @@ export default function ProjectDetail() {
       )
       if (overwrite) {
         const toRemove = files.filter(f => dupes.some(d => d.name === f.file_name))
-        const paths = toRemove.flatMap(f => [f.file_url, f.thumb_url].map(u => (u || '').split('/uploads/')[1]).filter(Boolean)) as string[]
-        if (paths.length) await supabase.storage.from('uploads').remove(paths)
+        await removeStorageOf(toRemove)
         const ids = toRemove.map(f => f.id)
         if (ids.length) await supabase.from('project_files').delete().in('id', ids)
       } else {
@@ -367,23 +374,26 @@ export default function ProjectDetail() {
       const displayName = isMedia ? mediaUploadName(orig, idx) : file.name
       const stamp = `${Date.now()}_${idx}`
       const path = `files/${id}/${stamp}.${ext}`
+      const secure = SECURE_CATS.includes(category) // 계약서·견적서는 잠금 보관함
       // 3) 본 사진과 목록용 500px 썸네일을 동시에 올린다 (썸네일은 실패해도 계속 — 원본으로 표시)
       const thumbTask = (async () => {
-        if (!isCompressibleImage(file)) return null
+        if (secure || !isCompressibleImage(file)) return null
         const th = await makeThumbnail(file)
         if (!th) return null
         const tPath = `files/${id}/thumbs/${stamp}.${th.name.split('.').pop()}`
         const { error: thErr } = await upload(tPath, th)
         return thErr ? null : supabase.storage.from('uploads').getPublicUrl(tPath).data.publicUrl
       })()
-      const { error: uploadError } = await upload(path, file)
+      const { error: uploadError } = secure
+        ? await supabase.storage.from('secure').upload(path, file, { contentType: file.type || 'application/octet-stream', upsert: true })
+        : await upload(path, file)
       const thumb_url = await thumbTask
       if (uploadError) throw new Error(uploadError.message)
       const { data: urlData } = supabase.storage.from('uploads').getPublicUrl(path)
       const baseRow = {
         project_id: id,
         file_name: displayName,
-        file_url: urlData.publicUrl,
+        file_url: secure ? SECURE_PREFIX + path : urlData.publicUrl,
         file_type: file.type || '',
         category,
         memo,
@@ -578,7 +588,7 @@ export default function ProjectDetail() {
       category: editFileForm.category.trim() || '기타',
       memo: editFileForm.memo,
     }
-    let oldPathsToRemove: string[] = [] // 교체 성공 후 정리할 옛 파일
+    let oldFileToRemove: ProjectFile | null = null // 교체 성공 후 정리할 옛 파일
     if (editFile.file_type === 'link') {
       if (!editFileForm.url.trim()) { toast('링크 URL을 입력하세요'); setSavingFileEdit(false); return }
       payload.file_url = editFileForm.url.trim()
@@ -589,16 +599,17 @@ export default function ProjectDetail() {
       if ((up.type || '').startsWith('image/')) up = await compressImage(up)
       if (/\.pdf$/i.test(up.name)) up = await normalizePdfTitle(up, editFileForm.title.trim())
       const ext = up.name.split('.').pop() || 'bin'
-      const stamp = `${Date.now()}`
+      const stamp = fileStamp()
       const path = `files/${id}/${stamp}.${ext}`
-      const { error: upErr } = await supabase.storage.from('uploads').upload(path, up, { contentType: up.type || 'application/octet-stream', upsert: true })
+      const secure = SECURE_CATS.includes(String(payload.category)) // 계약서·견적서는 잠금 보관함
+      const { error: upErr } = await supabase.storage.from(secure ? 'secure' : 'uploads').upload(path, up, { contentType: up.type || 'application/octet-stream', upsert: true })
       if (upErr) { toast('파일 업로드 실패: ' + upErr.message); setSavingFileEdit(false); return }
-      payload.file_url = supabase.storage.from('uploads').getPublicUrl(path).data.publicUrl
+      payload.file_url = secure ? SECURE_PREFIX + path : supabase.storage.from('uploads').getPublicUrl(path).data.publicUrl
       payload.file_type = up.type || ''
       payload.file_size = up.size
       payload.file_hash = await hashFile(replaceFile) || null
       payload.thumb_url = null
-      if (isCompressibleImage(up)) {
+      if (!secure && isCompressibleImage(up)) {
         const th = await makeThumbnail(up)
         if (th) {
           const tPath = `files/${id}/thumbs/${stamp}.${th.name.split('.').pop()}`
@@ -607,7 +618,7 @@ export default function ProjectDetail() {
         }
       }
       // 옛 파일 삭제는 DB 업데이트가 성공한 뒤에 (업데이트가 실패하면 옛 파일이 사라져 링크가 깨지므로)
-      oldPathsToRemove = [editFile.file_url, editFile.thumb_url].map(u => (u || '').split('/uploads/')[1]).filter(Boolean) as string[]
+      oldFileToRemove = editFile
     }
     let { error } = await supabase.from('project_files').update(payload).eq('id', editFile.id)
     // 새 컬럼 SQL을 아직 안 돌린 상태 대비: 컬럼 없음 오류면 기존 필드만으로 재시도
@@ -617,7 +628,7 @@ export default function ProjectDetail() {
     }
     setSavingFileEdit(false)
     if (error) { toast('수정 실패: ' + error.message); return }
-    if (oldPathsToRemove.length) await supabase.storage.from('uploads').remove(oldPathsToRemove)
+    if (oldFileToRemove) await removeStorageOf([oldFileToRemove])
     // 파일을 실제로 교체한 경우엔 알림 (제목·메모만 고친 건 조용히 — 소음 방지)
     if (replaceFile && editFile.file_type !== 'link' && editFile.file_type !== 'text') {
       notifyOthers(profile?.id, {
@@ -631,14 +642,21 @@ export default function ProjectDetail() {
     fetchAll()
   }
 
-  // 파일이 지워질 때 썸네일도 같이 지워 저장 공간이 새지 않게
+  // 파일이 지워질 때 썸네일도 같이 지워 저장 공간이 새지 않게 (잠금 보관함 파일은 stored_url 기준)
   const storagePathsOf = (f: ProjectFile) =>
-    [f.file_url, f.thumb_url].map(u => (u || '').split('/uploads/')[1]).filter(Boolean) as string[]
+    [f.stored_url ? '' : f.file_url, f.thumb_url].map(u => (u || '').split('/uploads/')[1]).filter(Boolean) as string[]
+  const securePathsOf = (f: ProjectFile) => f.stored_url ? [f.stored_url.slice(SECURE_PREFIX.length)] : []
+  async function removeStorageOf(list: ProjectFile[]) {
+    const pub = list.flatMap(storagePathsOf), sec = list.flatMap(securePathsOf)
+    await Promise.all([
+      pub.length ? supabase.storage.from('uploads').remove(pub) : null,
+      sec.length ? supabase.storage.from('secure').remove(sec) : null,
+    ])
+  }
 
   async function deleteFile(file: ProjectFile) {
     if (!confirm(`"${file.file_name}" 을 삭제할까요?`)) return
-    const paths = storagePathsOf(file)
-    if (paths.length) await supabase.storage.from('uploads').remove(paths)
+    await removeStorageOf([file])
     await supabase.from('project_files').delete().eq('id', file.id)
     fetchAll()
   }
@@ -647,8 +665,7 @@ export default function ProjectDetail() {
     if (selectedFileIds.size === 0) return
     if (!confirm(`선택한 ${selectedFileIds.size}장을 삭제할까요?`)) return
     const toDelete = files.filter(f => selectedFileIds.has(f.id))
-    const paths = toDelete.flatMap(storagePathsOf)
-    if (paths.length > 0) await supabase.storage.from('uploads').remove(paths)
+    await removeStorageOf(toDelete)
     const ids = Array.from(selectedFileIds)
     const { error } = await supabase.from('project_files').delete().in('id', ids)
     if (error) { toast('삭제 실패: ' + error.message); return }
@@ -695,6 +712,40 @@ export default function ProjectDetail() {
     setAccessBusy(false)
   }
 
+  // ── 예전 계약서·견적서를 잠금 보관함으로 (관리자 1회 작업, 전체 현장 대상) ──
+  const [publicDocs, setPublicDocs] = useState<ProjectFile[]>([])
+  const [movingDocs, setMovingDocs] = useState('')
+  useEffect(() => {
+    if (profile?.role !== 'admin') return
+    supabase.from('project_files').select('*').in('category', SECURE_CATS).like('file_url', '%/storage/v1/object/public/uploads/%')
+      .then(({ data }) => setPublicDocs((data || []) as ProjectFile[]))
+  }, [profile?.role, files])
+  async function moveDocsToSecure() {
+    if (!confirm(`전체 현장의 예전 계약서·견적서 ${publicDocs.length}개를 잠금 보관함으로 옮길까요?\n옮기고 나면 예전 주소(카톡 등에 붙여 둔 링크)로는 열리지 않아요.`)) return
+    let ok = 0, fail = 0
+    for (const d of publicDocs) {
+      setMovingDocs(`${ok + fail + 1} / ${publicDocs.length}`)
+      const path = decodeURIComponent(d.file_url.split('/uploads/')[1].split('?')[0])
+      let moved = !(await supabase.storage.from('uploads').move(path, path, { destinationBucket: 'secure' })).error
+      if (!moved) {
+        const blob = await fetch(d.file_url).then(r => r.ok ? r.blob() : null).catch(() => null)
+        if (blob) {
+          const { error } = await supabase.storage.from('secure').upload(path, blob, { contentType: blob.type || d.file_type || 'application/octet-stream', upsert: true })
+          if (!error) { await supabase.storage.from('uploads').remove([path]); moved = true }
+        }
+      }
+      if (!moved) { fail++; continue }
+      // 썸네일(공개)은 지우고 비움 — 잠금 파일은 목록에서 파일 아이콘으로 보임
+      const th = (d.thumb_url || '').split('/uploads/')[1]
+      if (th) await supabase.storage.from('uploads').remove([th])
+      await supabase.from('project_files').update({ file_url: SECURE_PREFIX + path, thumb_url: null }).eq('id', d.id)
+      ok++
+    }
+    setMovingDocs('')
+    toast(fail ? `${ok}개 옮김 · ${fail}개 실패(그대로 둠)` : `${ok}개 모두 잠금 보관함으로 옮겼어요`)
+    fetchAll()
+  }
+
   // ── 선택 자료 이동/공유 ──
   useEffect(() => {
     if (!showMove) return
@@ -729,6 +780,7 @@ export default function ProjectDetail() {
   // 파일 하나를 바로 채팅으로 전달 — 그 파일만 선택된 상태로 대상 선택창 열기
   function chatShareOne(f: ProjectFile) {
     if (f.file_type === 'link' || f.file_type === 'text' || !f.file_url) { toast('링크·글 항목은 채팅 전달이 안 돼요'); return }
+    if (f.stored_url) { toast('계약서·견적서는 채팅 대신 [내보내기]로 보내 주세요'); return }
     setSelectedFileIds(new Set([f.id]))
     setShowChatShare(true)
   }
@@ -736,8 +788,8 @@ export default function ProjectDetail() {
   // 선택 자료를 채팅으로 보내기 — 파일을 다시 올리지 않고 기존 URL 그대로 메시지로 전송
   async function sendToChat(target: { kind: 'all' | 'dm' | 'room'; id?: string; name: string }) {
     if (moving || !profile?.id) return
-    const sel = files.filter(f => selectedFileIds.has(f.id) && f.file_type !== 'link' && f.file_url)
-    if (!sel.length) { toast('보낼 수 있는 파일이 없어요 (링크 항목은 제외됩니다)'); return }
+    const sel = files.filter(f => selectedFileIds.has(f.id) && f.file_type !== 'link' && f.file_url && !f.stored_url)
+    if (!sel.length) { toast('보낼 수 있는 파일이 없어요 (링크·계약서·견적서는 제외됩니다)'); return }
     setMoving(true)
     const isImg = (f: ProjectFile) => (f.file_type || '').startsWith('image') || /\.(jpg|jpeg|png|gif|webp|heic)$/i.test(f.file_name || '')
     const recipient_id = target.kind === 'dm' ? target.id : null
@@ -813,6 +865,17 @@ export default function ProjectDetail() {
     if (!confirm(`"${s.task_name}" 공정을 삭제할까요?`)) return
     await supabase.from('schedules').delete().eq('id', s.id)
     fetchAll()
+  }
+
+  // 협력업체·확정을 작은 창에서 바꾼 뒤 화면 반영 (저장은 VendorPicker가 함)
+  const updateScheduleLocal = (s: Schedule) => setSchedules(prev => prev.map(x => x.id === s.id ? s : x))
+
+  // 목록의 [확정하기] — 업체가 있으면 바로 확정 켜고 끄기
+  async function toggleVendorBooked(s: Schedule) {
+    const next = !s.vendor_booked
+    updateScheduleLocal({ ...s, vendor_booked: next })
+    const { error } = await supabase.from('schedules').update({ vendor_booked: next }).eq('id', s.id)
+    if (error) { updateScheduleLocal(s); toast('저장 실패: ' + error.message) } else toast(next ? `${s.vendor} 확정` : `${s.vendor} 확정 풀었어요`)
   }
 
   // 공정 상태 바로 변경 — 화면 먼저 바꾸고 저장 (실패하면 되돌림)
@@ -1170,9 +1233,17 @@ export default function ProjectDetail() {
                         <div className="flex-1 min-w-0">
                           <p className={`text-sm font-medium break-keep ${r.status === '지연' ? 'text-red-600' : 'text-gray-800'}`}>{r.s.task_name}</p>
                           <p className="text-xs text-gray-400">
-                            {chipWhen(r, today)}{r.s.manager ? ` · ${r.s.manager}` : ''}{r.s.vendor ? ` · ${r.s.vendor}${r.s.vendor_booked ? '' : '(미확정)'}` : ''}
+                            {chipWhen(r, today)}{r.s.manager ? ` · ${r.s.manager}` : ''} <VendorMark s={r.s} small />
                           </p>
                         </div>
+                        {!readOnly && r.status !== '완료' && (
+                          !r.s.vendor
+                            ? needsVendor(r.s) && <button onClick={() => setVendorFor(r.s)} className="flex-shrink-0 text-xs px-2.5 py-1.5 rounded-full border border-gray-300 text-gray-600">+ 업체</button>
+                            : <button onClick={() => toggleVendorBooked(r.s)}
+                                className={`flex-shrink-0 text-xs px-2.5 py-1.5 rounded-full border font-medium ${r.s.vendor_booked ? 'bg-green-50 border-green-300 text-green-700' : 'bg-amber-50 border-amber-300 text-amber-700'}`}>
+                                {r.s.vendor_booked ? '✓ 확정' : '확정하기'}
+                              </button>
+                        )}
                         <span className={`text-xs px-2 py-0.5 rounded-full font-medium flex-shrink-0 ${STYLE[r.status].chip}`}>{r.status}</span>
                         {!readOnly && (
                           r.status === '예정'
@@ -1250,7 +1321,13 @@ export default function ProjectDetail() {
                       className={`px-3 py-2 font-medium border-l border-gray-200 ${photoGroup === 'zone' ? 'bg-green-600 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}>📁 구역별</button>
                   </div>
                 </div>
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-3 flex-wrap">
+                  {publicDocs.length > 0 && (
+                    <button onClick={moveDocsToSecure} disabled={!!movingDocs}
+                      className="text-xs bg-amber-50 border border-amber-300 text-amber-800 rounded-lg px-3 py-1.5 font-medium disabled:opacity-60">
+                      {movingDocs ? `🔒 옮기는 중 ${movingDocs}` : `🔓 공개 저장소의 계약서·견적서 ${publicDocs.length}개 → 잠금 보관함으로`}
+                    </button>
+                  )}
                   {(() => { const sz = files.reduce((s, f) => s + (f.file_size || 0), 0); return sz > 0 ? <span className="text-xs text-gray-400">이 현장 자료 용량 {formatBytes(sz)}</span> : null })()}
                   {!readOnly && (
                     <button onClick={() => setShowFileForm(true)}
@@ -1438,7 +1515,8 @@ export default function ProjectDetail() {
                   <ProjectGantt schedules={schedules}
                     onEdit={readOnly ? undefined : openEditSchedule}
                     onStatus={readOnly ? undefined : quickPhaseStatus}
-                    onDelete={readOnly ? undefined : deleteSchedule} />
+                    onDelete={readOnly ? undefined : deleteSchedule}
+                    onUpdate={readOnly ? undefined : updateScheduleLocal} />
                 </div>
               )}
             </div>
@@ -1876,6 +1954,19 @@ export default function ProjectDetail() {
                 {savingFileEdit ? '저장 중...' : '수정 저장'}
               </button>
             </form>
+          </div>
+        </div>
+      )}
+
+      {vendorFor && (
+        <div className="fixed inset-0 z-[60] bg-black/40 flex items-end sm:items-center justify-center p-0 sm:p-4" onClick={() => setVendorFor(null)}>
+          <div className="bg-white w-full sm:max-w-sm rounded-t-2xl sm:rounded-2xl shadow-xl p-5" onClick={e => e.stopPropagation()}>
+            <div className="flex items-start justify-between gap-2">
+              <h3 className="text-base font-bold text-gray-900 break-keep">{vendorFor.task_name}</h3>
+              <button onClick={() => setVendorFor(null)} className="text-gray-400 text-2xl leading-none">&times;</button>
+            </div>
+            <VendorPicker schedule={vendorFor} onUpdate={s => { updateScheduleLocal(s); setVendorFor(s) }} />
+            <button onClick={() => setVendorFor(null)} className="mt-3 w-full py-2.5 rounded-lg bg-green-600 text-white text-sm font-medium">닫기</button>
           </div>
         </div>
       )}

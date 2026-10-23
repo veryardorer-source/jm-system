@@ -64,6 +64,7 @@ export type ProjectFile = {
   thumb_url?: string | null   // 목록용 500px 썸네일 (없으면 원본으로 표시)
   file_size?: number | null   // 저장된 파일 용량(바이트)
   file_hash?: string | null   // 원본 지문(SHA-256) — 같은 사진 중복 업로드 방지
+  stored_url?: string         // 화면용: 잠금 보관함 파일의 원래 저장값(secure://…) — file_url엔 1시간짜리 볼 주소가 들어감
   created_at: string
 }
 

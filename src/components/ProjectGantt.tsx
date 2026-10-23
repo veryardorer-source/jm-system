@@ -1,5 +1,6 @@
 'use client'
 import { useEffect, useRef, useState } from 'react'
+import VendorPicker, { VendorMark } from '@/components/VendorPicker'
 import type { Schedule } from '@/lib/supabase'
 
 // 현장 상세 · 현황 탭의 공정일정 — 목록 보기(폰 기본) / 일정표 보기(간트), 상태별 색 구분
@@ -45,9 +46,10 @@ type Props = {
   onEdit?: (s: Schedule) => void                       // 공정 수정 창 열기
   onStatus?: (s: Schedule, st: PhaseStatus) => void    // 상태 바로 변경
   onDelete?: (s: Schedule) => void                     // 공정 삭제 (확인 창은 부르는 쪽에서)
+  onUpdate?: (s: Schedule) => void                     // 협력업체·확정을 바로 바꾼 뒤 화면 반영
 }
 
-export default function ProjectGantt({ schedules, onEdit, onStatus, onDelete }: Props) {
+export default function ProjectGantt({ schedules, onEdit, onStatus, onDelete, onUpdate }: Props) {
   // 보기 방식: 저장된 선택 → 없으면 폰(640px 미만)은 목록, 태블릿·PC는 일정표
   const [view, setViewState] = useState<'list' | 'chart'>(() => {
     try {
@@ -104,7 +106,7 @@ export default function ProjectGantt({ schedules, onEdit, onStatus, onDelete }: 
                 {start ? mdw(start) : '날짜 미정'}{end && start && end > start ? ` ~ ${mdw(end)}` : ''}
                 {pickedS.manager ? ` · 담당 ${pickedS.manager}` : ''}
               </p>
-              {pickedS.vendor && <p className="text-sm text-gray-500">업체 {pickedS.vendor} {pickedS.vendor_booked ? '(확정)' : '(미확정)'}</p>}
+              {!onUpdate && pickedS.vendor && <p className="text-sm text-gray-500">업체 {pickedS.vendor} {pickedS.vendor_booked ? '(확정)' : '(미확정)'}</p>}
               {status === '지연' && <p className="mt-2 text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2">종료일이 지났는데 아직 완료로 체크되지 않았어요</p>}
 
               {onStatus ? (
@@ -126,6 +128,7 @@ export default function ProjectGantt({ schedules, onEdit, onStatus, onDelete }: 
               ) : (
                 <p className="mt-4 text-sm">현재 상태: <b>{status}</b></p>
               )}
+              {onUpdate && <VendorPicker key={pickedS.id} schedule={pickedS} onUpdate={onUpdate} />}
               {onEdit && (
                 <button onClick={() => { setPicked(null); setFull(false); onEdit(pickedS) }}
                   className="mt-3 w-full py-2.5 rounded-lg text-sm border border-gray-300 text-gray-700 hover:bg-gray-50">
@@ -252,8 +255,8 @@ function ListView({ rows, today, full, onPick }: { rows: Row[]; today: Date; ful
                         <span className="block text-xs text-gray-500 mt-0.5">
                           {r.start ? <>{mdw(r.start)}{r.end && r.end > r.start ? ` ~ ${mdw(r.end)}` : ''} · {days}일</> : '날짜 미정'}
                           {r.s.manager ? ` · ${r.s.manager}` : ''}
-                          {r.s.vendor ? ` · ${r.s.vendor}${r.s.vendor_booked ? '' : '(미확정)'}` : ''}
                         </span>
+                        <VendorMark s={r.s} small />
                       </span>
                     </button>
                   )
@@ -352,7 +355,7 @@ function ChartView({ rows, today, full, span, onPick }: { rows: Row[]; today: Da
                 const place = right <= 70 ? 'right' : left >= 30 ? 'left' : 'inside'
                 const color = status === '지연' ? 'text-red-600' : status === '완료' ? 'text-gray-400' : 'text-gray-800'
                 const label = (
-                  <><span className="font-medium">{s.task_name}</span> <span className="opacity-70">{when}</span></>
+                  <><span className="font-medium">{s.task_name}</span> <VendorMark s={s} small /> <span className="opacity-70">{when}</span></>
                 )
                 return (
                   <div key={s.id} className={`relative ${full ? 'h-10' : 'h-9'} border-b border-gray-50 hover:bg-gray-50/60`}>

@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import VendorPicker from '@/components/VendorPicker'
 import Link from 'next/link'
 import { supabase, Project, Schedule, PhaseStatus, STATUS_LIST, STATUS_COLOR, HIDDEN_STATUSES } from '@/lib/supabase'
 import { notifyOthers } from '@/lib/notify'
@@ -222,12 +223,13 @@ function DDay({ dday, className = '' }: { dday: number | null; className?: strin
 }
 
 // ── 공정 누르면: 정보 + 상태 바로 변경 ──
-export function PhaseQuickModal({ r, p, readOnly, onStatus, onClose }: {
+export function PhaseQuickModal({ r, p, readOnly, onStatus, onClose, onUpdate }: {
   r: Row
   p: Project
   readOnly: boolean
   onStatus: (s: Schedule, st: PhaseStatus) => void
   onClose: () => void
+  onUpdate?: (s: Schedule) => void   // 협력업체·확정 바로 바꾼 뒤 화면 반영
 }) {
   const ps = (r.s.phase_status || '예정') as PhaseStatus
   return (
@@ -244,7 +246,7 @@ export function PhaseQuickModal({ r, p, readOnly, onStatus, onClose }: {
           {r.start ? mdw(r.start) : '날짜 미정'}{r.start && r.end && r.end > r.start ? ` ~ ${mdw(r.end)}` : ''}
           {r.s.manager ? ` · 담당 ${r.s.manager}` : ''}
         </p>
-        {r.s.vendor && <p className="text-sm text-gray-500">업체 {r.s.vendor} {r.s.vendor_booked ? '(확정)' : '(미확정)'}</p>}
+        {(readOnly || !onUpdate) && r.s.vendor && <p className="text-sm text-gray-500">업체 {r.s.vendor} {r.s.vendor_booked ? '(확정)' : '(미확정)'}</p>}
         {r.status === '지연' && <p className="mt-2 text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2">종료일이 지났는데 아직 완료로 체크되지 않았어요</p>}
 
         {!readOnly ? (
@@ -266,6 +268,7 @@ export function PhaseQuickModal({ r, p, readOnly, onStatus, onClose }: {
         ) : (
           <p className="mt-4 text-sm">현재 상태: <b>{r.status}</b></p>
         )}
+        {!readOnly && onUpdate && <VendorPicker key={r.s.id} schedule={r.s} onUpdate={onUpdate} />}
         <Link href={`/projects/${p.id}?tab=공정`}
           className="mt-3 block text-center w-full py-2.5 rounded-lg text-sm border border-gray-300 text-gray-700 hover:bg-gray-50">
           현장 전체 공정 보기 →

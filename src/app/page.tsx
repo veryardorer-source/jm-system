@@ -268,7 +268,8 @@ export default function Dashboard() {
       </div>
 
       {picked && (
-        <PhaseQuickModal r={picked.r} p={picked.p} readOnly={readOnly} onStatus={changeStatus} onClose={() => setPicked(null)} />
+        <PhaseQuickModal r={picked.r} p={picked.p} readOnly={readOnly} onStatus={changeStatus} onClose={() => setPicked(null)}
+          onUpdate={s => setSchedules(prev => prev.map(x => x.id === s.id ? s : x))} />
       )}
 
       {addFor && (

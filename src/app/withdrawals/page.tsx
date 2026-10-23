@@ -8,6 +8,7 @@ import Sidebar from '@/components/Sidebar'
 import { supabase } from '@/lib/supabase'
 import { useAuth, canEdit } from '@/lib/auth-context'
 import { notifyOthers } from '@/lib/notify'
+import { compressImage } from '@/lib/image'
 import { shareUrl, downloadUrl, isImageUrl, viewInBrowser, printUrl, SECURE_PREFIX, isSecureUrl, signSecureUrls, removeStoredFile } from '@/lib/media'
 import PdfPreview, { isPdfUrl } from '@/components/PdfPreview'
 
@@ -25,7 +26,9 @@ const isDone = (p: Photo) => p.status === '처리완료'
 
 // 출금 사진은 신분증·통장 사본이 섞여 있어 잠금 보관함(비공개)에 둔다 — 볼 때마다 1시간짜리 주소 발급
 // DB에는 'secure://withdrawals/...' 로 저장 (db/secure_withdrawals.sql: 승인 직원만 열람)
-async function uploadWithdrawalFile(file: File, i: number): Promise<string | null> {
+async function uploadWithdrawalFile(orig: File, i: number): Promise<string | null> {
+  // 사진은 긴 변 2000px로 줄여 저장 — 신분증·통장 글자는 그대로 읽히고 용량은 1/5 수준 (PDF 등 문서는 그대로)
+  const file = await compressImage(orig, 2000, 0.82)
   const ext = file.name.split('.').pop() || 'jpg'
   const path = `withdrawals/${Date.now()}_${i}.${ext}`
   const { error } = await supabase.storage.from('secure').upload(path, file, { contentType: file.type || 'image/jpeg' })
