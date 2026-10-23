@@ -33,6 +33,28 @@ export async function signSecureUrls(urls: string[], seconds = 3600): Promise<Re
   return map
 }
 
+// 올린 원래 이름으로 저장·내보내기 — 줄여 저장한 사진(WebP)은 JPG로 바꿔서 (카톡·윈도우 뷰어 호환)
+// 출금 요청·영수증처럼 저장 경로가 숫자 이름인 곳에서 씀. 이름이 없으면 fallback 이름.
+export async function saveAsOriginal(url: string, name: string | null | undefined, fallback: string, mode: 'download' | 'share') {
+  const want = (name || '').trim() || fallback
+  const isWebp = /\.webp$/i.test((url || '').split('?')[0])
+  if (!isWebp) { await (mode === 'share' ? shareUrl(url, want) : downloadUrl(url, want)); return }
+  try {
+    const blob = await fetch(url, { mode: 'cors', credentials: 'omit' }).then(r => { if (!r.ok) throw new Error(); return r.blob() })
+    const { toShareableBlob } = await import('./image')
+    const out = await toShareableBlob(blob, want.includes('.') ? want : want + '.webp')
+    const file = new File([out.blob], out.name, { type: out.blob.type || 'image/jpeg' })
+    if (mode === 'share' && typeof navigator !== 'undefined' && navigator.canShare?.({ files: [file] })) {
+      try { await navigator.share({ files: [file], title: out.name }); return } catch (e) { if (e instanceof Error && e.name === 'AbortError') return }
+    }
+    const u = URL.createObjectURL(file)
+    clickLink(u, out.name)
+    setTimeout(() => URL.revokeObjectURL(u), 4000)
+  } catch {
+    await downloadUrl(url, want)
+  }
+}
+
 // 저장소 파일 삭제 — 공개(uploads)·잠금(secure) 양쪽 다 처리
 export async function removeStoredFile(url?: string | null) {
   if (!url) return

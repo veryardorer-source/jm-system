@@ -313,6 +313,7 @@ export default function SharePage() {
     const who = profile?.name || ''
     // 4장씩 동시에 — 묶음으로 기다리지 않고 한 장 끝나면 바로 다음 장 (순서는 wSlots로 유지)
     const wSlots: (string | null)[] = new Array(files.length).fill(null)  // 출금요청: 여러 장을 한 건으로 묶음
+    const wNames: (string | null)[] = new Array(files.length).fill(null)
     const CONC = 4
     let done = 0
     let next = 0
@@ -364,7 +365,7 @@ export default function SharePage() {
           if (url) await supabase.from('receipts').insert([{ image_url: url, memo: reason || '', uploaded_by: who }])
         } else {
           const url = await uploadOne(file, idx, 'withdrawals')
-          if (url) wSlots[idx] = url
+          if (url) { wSlots[idx] = url; wNames[idx] = mediaUploadName(file, idx) } // 원래 이름도 같이
         }
         })()
         done++
@@ -373,9 +374,10 @@ export default function SharePage() {
     }
     await Promise.all(Array.from({ length: Math.min(CONC, files.length) }, worker))
     const wUrls = wSlots.filter(Boolean) as string[]
+    const wImageNames = wSlots.map((u, i) => u ? wNames[i] : undefined).filter(n => n !== undefined)
     if (dest === 'withdrawal' && wUrls.length > 0) {
       await supabase.from('withdrawal_requests').insert([{
-        image_url: wUrls[0], images: wUrls, reason: reason || '', requested_by: who, status: '요청', amount: 0, recipient: '',
+        image_url: wUrls[0], images: wUrls, image_names: wImageNames, reason: reason || '', requested_by: who, status: '요청', amount: 0, recipient: '',
       }])
     }
     setProgress(100)

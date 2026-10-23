@@ -8,14 +8,15 @@ import Sidebar from '@/components/Sidebar'
 import { supabase } from '@/lib/supabase'
 import { useAuth, canEdit } from '@/lib/auth-context'
 import { notifyOthers } from '@/lib/notify'
-import { compressImage } from '@/lib/image'
-import { shareUrl, downloadUrl, isImageUrl, viewInBrowser, printUrl, SECURE_PREFIX, isSecureUrl, signSecureUrls, removeStoredFile } from '@/lib/media'
+import { compressImage, mediaUploadName } from '@/lib/image'
+import { isImageUrl, viewInBrowser, printUrl, SECURE_PREFIX, isSecureUrl, signSecureUrls, removeStoredFile, saveAsOriginal } from '@/lib/media'
 import PdfPreview, { isPdfUrl } from '@/components/PdfPreview'
 
 type Photo = {
   id: string
   image_url: string
   images?: string[] | null
+  image_names?: (string | null)[] | null   // images 와 같은 순서의 원래 파일 이름 (db/upload_names.sql)
   reason: string
   requested_by: string
   status?: string | null   // '요청'(대기) | '처리완료'
@@ -26,17 +27,21 @@ const isDone = (p: Photo) => p.status === '처리완료'
 
 // 출금 사진은 신분증·통장 사본이 섞여 있어 잠금 보관함(비공개)에 둔다 — 볼 때마다 1시간짜리 주소 발급
 // DB에는 'secure://withdrawals/...' 로 저장 (db/secure_withdrawals.sql: 승인 직원만 열람)
-async function uploadWithdrawalFile(orig: File, i: number): Promise<string | null> {
+async function uploadWithdrawalFile(orig: File, i: number): Promise<{ url: string; name: string } | null> {
   // 사진은 긴 변 2000px로 줄여 저장 — 신분증·통장 글자는 그대로 읽히고 용량은 1/5 수준 (PDF 등 문서는 그대로)
   const file = await compressImage(orig, 2000, 0.82)
   const ext = file.name.split('.').pop() || 'jpg'
   const path = `withdrawals/${Date.now()}_${i}.${ext}`
   const { error } = await supabase.storage.from('secure').upload(path, file, { contentType: file.type || 'image/jpeg' })
   if (error) { toast('사진 저장 실패: ' + error.message); return null }
-  return SECURE_PREFIX + path
+  // 원래 이름은 표에 따로 (저장 경로는 한글을 못 써서 숫자 이름)
+  return { url: SECURE_PREFIX + path, name: mediaUploadName(orig, i) }
 }
 const isPublicWithdrawal = (u: string) => u.includes('/uploads/withdrawals/')
 const imgsOf = (p: Photo) => (p.images && p.images.length ? p.images : [p.image_url]).filter(Boolean)
+// {저장값: 원래 이름} — 예전 건은 이름이 없어 '출금_1' 식으로 받아짐
+const namesOf = (p: Photo): Record<string, string> =>
+  Object.fromEntries(imgsOf(p).map((u, i) => [u, p.image_names?.[i] || '']))
 
 export default function WithdrawalsPage() {
   const { profile } = useAuth()
@@ -56,6 +61,7 @@ export default function WithdrawalsPage() {
   const [viewer, setViewer] = useState<Photo | null>(null)
   const [viewerReason, setViewerReason] = useState('')
   const [viewerImages, setViewerImages] = useState<string[]>([])
+  const [viewerNames, setViewerNames] = useState<Record<string, string>>({})
   const [savingReason, setSavingReason] = useState(false)
   const [viewerBusy, setViewerBusy] = useState(false)
   const viewerFileRef = useRef<HTMLInputElement>(null)
@@ -81,15 +87,17 @@ export default function WithdrawalsPage() {
     setViewer(p)
     setViewerReason(p.reason || '')
     setViewerImages(imgsOf(p))
+    setViewerNames(namesOf(p))
   }
 
   // 출금 건의 사진/글을 DB에 반영 + 화면 갱신
-  async function applyViewer(nextImages: string[], nextReason: string) {
+  async function applyViewer(nextImages: string[], nextReason: string, names: Record<string, string> = viewerNames) {
     if (!viewer) return
+    const image_names = nextImages.map(u => names[u] || null)
     await supabase.from('withdrawal_requests').update({
-      images: nextImages, image_url: nextImages[0] || '', reason: nextReason,
+      images: nextImages, image_url: nextImages[0] || '', reason: nextReason, image_names,
     }).eq('id', viewer.id)
-    setPhotos(ps => ps.map(x => x.id === viewer.id ? { ...x, images: nextImages, image_url: nextImages[0] || '', reason: nextReason } : x))
+    setPhotos(ps => ps.map(x => x.id === viewer.id ? { ...x, images: nextImages, image_url: nextImages[0] || '', reason: nextReason, image_names } : x))
   }
 
   async function saveViewerReason() {
@@ -115,14 +123,16 @@ export default function WithdrawalsPage() {
     if (!viewer || !files || files.length === 0) return
     setViewerBusy(true)
     const added: string[] = []
+    const names = { ...viewerNames }
     for (let i = 0; i < files.length; i++) {
-      const u = await uploadWithdrawalFile(files[i], i)
-      if (u) added.push(u)
+      const r = await uploadWithdrawalFile(files[i], i)
+      if (r) { added.push(r.url); names[r.url] = r.name }
     }
     if (added.length) { const m = await signSecureUrls(added); setSigned(s => ({ ...s, ...m })) }
     const next = [...viewerImages, ...added]
     setViewerImages(next)
-    await applyViewer(next, viewerReason)
+    setViewerNames(names)
+    await applyViewer(next, viewerReason, names)
     if (added.length) notifyOthers(profile?.id, { type: 'withdrawal', title: `출금요청 사진 ${added.length}장 추가`, body: (viewer.reason || '').slice(0, 40), link: `/withdrawals?open=${viewer.id}` })
     setViewerBusy(false)
   }
@@ -142,7 +152,7 @@ export default function WithdrawalsPage() {
     if (selectedFiles.length === 0 && !reason.trim()) return
     setUploading(true)
     // 3장씩 동시에 올려 속도 개선 (원본 그대로, 순서 유지)
-    const slots: (string | null)[] = new Array(selectedFiles.length).fill(null)
+    const slots: ({ url: string; name: string } | null)[] = new Array(selectedFiles.length).fill(null)
     const CONC = 3
     let done = 0
     for (let i = 0; i < selectedFiles.length; i += CONC) {
@@ -153,10 +163,12 @@ export default function WithdrawalsPage() {
         setUploadCurrent(done)
       }))
     }
-    const urls = slots.filter(Boolean) as string[]
+    const done2 = slots.filter(Boolean) as { url: string; name: string }[]
+    const urls = done2.map(s => s.url)
+    const image_names = done2.map(s => s.name)
     if (urls.length > 0 || reason.trim()) {
       const { data: created } = await supabase.from('withdrawal_requests').insert([{
-        image_url: urls[0] || '', images: urls, reason, requested_by: requestedBy, status: '요청', amount: 0, recipient: '',
+        image_url: urls[0] || '', images: urls, image_names, reason, requested_by: requestedBy, status: '요청', amount: 0, recipient: '',
       }]).select('id').single()
       notifyOthers(profile?.id, { type: 'withdrawal', title: '새 출금요청', body: `${requestedBy || ''} ${reason || '출금요청이 등록되었습니다'}`.trim(), link: created?.id ? `/withdrawals?open=${created.id}` : '/withdrawals' })
     }
@@ -411,8 +423,8 @@ export default function WithdrawalsPage() {
                       )}
                       <div className="absolute bottom-2 left-2 flex gap-1.5">
                         <button onClick={() => printUrl(view(u))} className="bg-black/60 text-white text-xs px-2.5 py-1 rounded-full">🖨 인쇄</button>
-                        <button onClick={() => shareUrl(view(u), `출금_${i + 1}`)} className="bg-black/60 text-white text-xs px-2.5 py-1 rounded-full">내보내기</button>
-                        <button onClick={() => downloadUrl(view(u), `출금_${i + 1}`)} className="bg-black/60 text-white text-xs px-2.5 py-1 rounded-full">저장</button>
+                        <button onClick={() => saveAsOriginal(view(u), viewerNames[u], `출금_${i + 1}`, 'share')} className="bg-black/60 text-white text-xs px-2.5 py-1 rounded-full">내보내기</button>
+                        <button onClick={() => saveAsOriginal(view(u), viewerNames[u], `출금_${i + 1}`, 'download')} className="bg-black/60 text-white text-xs px-2.5 py-1 rounded-full">저장</button>
                       </div>
                       {!readOnly && (
                         <button onClick={() => removeViewerImage(u)} disabled={viewerBusy}

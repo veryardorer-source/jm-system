@@ -8,8 +8,8 @@ import Sidebar from '@/components/Sidebar'
 import { toast } from '@/components/Toaster'
 import { supabase, HIDDEN_STATUSES, type Project } from '@/lib/supabase'
 import { useAuth, canEdit } from '@/lib/auth-context'
-import { compressImage } from '@/lib/image'
-import { SECURE_PREFIX, signSecureUrls, removeStoredFile, shareUrl, downloadUrl } from '@/lib/media'
+import { compressImage, mediaUploadName } from '@/lib/image'
+import { SECURE_PREFIX, signSecureUrls, removeStoredFile, saveAsOriginal } from '@/lib/media'
 
 type ReceiptRow = {
   id: string
@@ -17,6 +17,7 @@ type ReceiptRow = {
   image_url: string
   memo: string | null
   category: string | null
+  file_name?: string | null   // 사진 원래 이름 (db/upload_names.sql)
   uploaded_by: string
   is_processed: boolean
   created_at: string
@@ -194,8 +195,8 @@ export default function ReceiptsPage() {
               <p className="text-xs text-gray-500 mt-0.5">{viewer.uploaded_by} · {dayLabel(viewer.created_at)} {timeLabel(viewer.created_at)}</p>
               {viewer.memo && <p className="text-sm text-gray-700 mt-1 whitespace-pre-wrap">{viewer.memo}</p>}
               <div className="flex gap-2 mt-3">
-                <button onClick={() => shareUrl(view(viewer.image_url), '영수증')} className="flex-1 border border-gray-300 rounded-lg py-2 text-sm">내보내기</button>
-                <button onClick={() => downloadUrl(view(viewer.image_url), '영수증')} className="flex-1 border border-gray-300 rounded-lg py-2 text-sm">저장</button>
+                <button onClick={() => saveAsOriginal(view(viewer.image_url), viewer.file_name, '영수증', 'share')} className="flex-1 border border-gray-300 rounded-lg py-2 text-sm">내보내기</button>
+                <button onClick={() => saveAsOriginal(view(viewer.image_url), viewer.file_name, '영수증', 'download')} className="flex-1 border border-gray-300 rounded-lg py-2 text-sm">저장</button>
                 {(isAdmin || viewer.uploaded_by === profile?.name) && (
                   <button onClick={() => remove(viewer)} className="px-4 border border-red-200 text-red-500 rounded-lg py-2 text-sm">삭제</button>
                 )}
@@ -249,9 +250,10 @@ function UploadForm({ projects, who, onClose, onSaved }: { projects: Project[]; 
     await Promise.all(Array.from({ length: Math.min(4, files.length) }, worker))
     const ok = urls.filter(Boolean) as string[]
     if (ok.length) {
-      const { error } = await supabase.from('receipts').insert(ok.map(u => ({
-        image_url: u, project_id: projectId === OFFICE ? null : projectId, category, memo: memo.trim(), uploaded_by: who, amount: 0,
-      })))
+      const rows = urls.flatMap((u, i) => u ? [{
+        image_url: u, file_name: mediaUploadName(files[i], i), project_id: projectId === OFFICE ? null : projectId, category, memo: memo.trim(), uploaded_by: who, amount: 0,
+      }] : [])
+      const { error } = await supabase.from('receipts').insert(rows)
       if (error) { setSaving(false); toast('저장 실패: ' + error.message); return }
     }
     setSaving(false)
