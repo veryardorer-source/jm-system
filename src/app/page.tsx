@@ -23,7 +23,7 @@ function greeting(name?: string) {
 }
 const ymd = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 
-function ProjectCard({ p }: { p: Project }) {
+function ProjectCard({ p, before }: { p: Project; before?: boolean }) {
   return (
     <Link href={`/projects/${p.id}`} className="block bg-white border border-gray-200 rounded-xl p-3.5 hover:border-green-400 hover:shadow-sm transition">
       <div className="flex items-start justify-between gap-2">
@@ -31,12 +31,17 @@ function ProjectCard({ p }: { p: Project }) {
         <span className={`text-[11px] px-2 py-0.5 rounded-full border flex-shrink-0 ${STATUS_COLOR[p.status]}`}>{p.status}</span>
       </div>
       <p className="text-xs text-gray-500 mt-1 truncate">{[p.client_name, p.address].filter(Boolean).join(' · ') || '고객·주소 미입력'}</p>
-      <p className="text-xs text-gray-400 mt-1">{p.start_date ? p.start_date.replaceAll('-', '.') : '착공일 미정'}{p.manager ? ` · ${p.manager}` : ''}</p>
+      {/* 착공 전(첫 미팅~계약)은 착공일 의미 없음 — 담당자만 */}
+      {before
+        ? p.manager && <p className="text-xs text-gray-400 mt-1">{p.manager}</p>
+        : <p className="text-xs text-gray-400 mt-1">{p.start_date ? p.start_date.replaceAll('-', '.') : '착공일 미정'}{p.manager ? ` · ${p.manager}` : ''}</p>}
     </Link>
   )
 }
 
-function ProjectColumn({ title, list, more }: { title: string; list: Project[]; more: string }) {
+// before=착공 전: 개수 제한 없이 전부 보여줌
+function ProjectColumn({ title, list, more, before }: { title: string; list: Project[]; more: string; before?: boolean }) {
+  const max = before ? list.length : 9, phoneMax = before ? list.length : 4
   return (
     <div className="bg-white rounded-2xl border border-gray-200 p-4 md:p-5">
       <div className="flex items-center justify-between mb-3">
@@ -48,11 +53,11 @@ function ProjectColumn({ title, list, more }: { title: string; list: Project[]; 
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 2xl:grid-cols-3 gap-2.5">
           {/* 휴대폰은 4개까지만 — 아래 이번주 일정이 너무 밀리지 않게 */}
-          {list.slice(0, 9).map((p, i) => <div key={p.id} className={i >= 4 ? 'hidden sm:block' : ''}><ProjectCard p={p} /></div>)}
+          {list.slice(0, max).map((p, i) => <div key={p.id} className={i >= phoneMax ? 'hidden sm:block' : ''}><ProjectCard p={p} before={before} /></div>)}
         </div>
       )}
-      {list.length > 4 && <Link href="/projects" className="sm:hidden block text-center text-xs text-gray-400 mt-3 hover:text-green-700">외 {list.length - 4}곳 더 보기</Link>}
-      {list.length > 9 && <Link href="/projects" className="hidden sm:block text-center text-xs text-gray-400 mt-3 hover:text-green-700">외 {list.length - 9}곳 더 보기</Link>}
+      {list.length > phoneMax && <Link href="/projects" className="sm:hidden block text-center text-xs text-gray-400 mt-3 hover:text-green-700">외 {list.length - phoneMax}곳 더 보기</Link>}
+      {list.length > max && <Link href="/projects" className="hidden sm:block text-center text-xs text-gray-400 mt-3 hover:text-green-700">외 {list.length - max}곳 더 보기</Link>}
     </div>
   )
 }
@@ -112,7 +117,9 @@ export default function Dashboard() {
 
   const activeProjects = projects.filter(p => !HIDDEN_STATUSES.includes(p.status as typeof HIDDEN_STATUSES[number]))
   const completedProjects = projects.filter(p => p.status === '완료')
+  // 착공 전은 계약에 가까운 단계부터 (계약완료 → 견적중 → 디자인중 → 상담중)
   const beforeProjects = activeProjects.filter(p => BEFORE_STATUSES.includes(p.status))
+    .sort((a, b) => BEFORE_STATUSES.indexOf(b.status) - BEFORE_STATUSES.indexOf(a.status))
   const buildingProjects = activeProjects.filter(p => p.status === '시공중')
 
   const today = todayStart()
@@ -196,7 +203,7 @@ export default function Dashboard() {
             <>
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 md:gap-6">
                 <ProjectColumn title="진행중 프로젝트" list={buildingProjects} more={`완료 ${completedProjects.length} · 전체 ${projects.length}`} />
-                <ProjectColumn title="착공 전 프로젝트" list={beforeProjects} more="전체" />
+                <ProjectColumn title="착공 전 프로젝트" list={beforeProjects} more="전체" before />
               </div>
 
               <WeekCalendar
