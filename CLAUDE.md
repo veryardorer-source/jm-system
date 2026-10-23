@@ -46,7 +46,7 @@ npx vercel --prod  # 배포 (jm-system 폴더에서 실행)
   - **partner**: **공개 지정된 현장만**(project_access, 현장 등록 시 선택 + 현장 상세 🔒 외부공개에서 초대/내보내기) 보기 전용 — 미지정 현장은 목록·직접 URL 모두 차단. 채팅/금전/서류 insert·update 불가, 화면도 숨김. 수금(payments)은 admin 전용
   - **pending(미승인)**: 업무 데이터 접근 불가(읽기·쓰기 모두)
   - ⚠️ 운영 DB에 rls_* SQL 적용 전 **스냅샷/백업 권장**. 파일별 적용 상태는 `../관리시스템/docs/security_status.md` 참고
-- **⚠️ TODO — Storage(uploads) public 버킷**: 계약서·손익표·매출매입·출금 등 민감 파일도 public URL(URL만 알면 무로그인 열람). **추후 민감 파일부터 private bucket + signed URL로 전환할 것**(카테고리별 버킷 분리 권장, 사진 표시·공유 로직 영향 큼). 또한 엑셀/PDF "바로 열기"는 MS Office/Google 뷰어에 파일 URL을 전달하므로 민감 재무 파일은 뷰어 대신 다운로드 열람 정책 검토. (db/*.sql 구버전 전체허용 정책은 2026-07-07 전부 최신 RLS 기준으로 정리됨 — 재실행 안전)
+- **⚠️ TODO — Storage(uploads) public 버킷**: 계약서·손익표·매출매입·출금 등 민감 파일도 public URL(URL만 알면 무로그인 열람). **추후 민감 파일부터 private bucket + signed URL로 전환할 것**(카테고리별 버킷 분리 권장, 사진 표시·공유 로직 영향 큼). 또한 엑셀/PDF "바로 열기"는 MS Office/Google 뷰어에 파일 URL을 전달하므로 민감 재무 파일은 뷰어 대신 다운로드 열람 정책 검토. (db/*.sql 구버전 전체허용 정책은 2026-07-07 전부 최신 RLS 기준으로 정리됨 — 재실행 안전) **진행 상황**: 경영관리 파일(2026-08-25)·출금 요청 사진(2026-10-23, 예전 48장 이전 완료)은 secure 버킷(`secure://` + `signSecureUrls`/`resolveFileUrl`)으로 전환됨. 남은 것: 현장 자료의 계약서·견적서 카테고리 등.
 - **새 DB 세팅 시 SQL 실행 순서** (Supabase SQL Editor):
   1. `db/rls_helpers.sql` — 공통 함수(my_role 등). **가장 먼저, 다른 파일들이 의존**
   2. `db/security_and_realtime.sql` — 기본 테이블 + 공용 정책 + realtime
