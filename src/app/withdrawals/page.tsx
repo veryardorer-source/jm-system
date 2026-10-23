@@ -8,7 +8,7 @@ import Sidebar from '@/components/Sidebar'
 import { supabase } from '@/lib/supabase'
 import { useAuth, canEdit } from '@/lib/auth-context'
 import { notifyOthers } from '@/lib/notify'
-import { shareUrl, downloadUrl, isImageUrl, viewInBrowser, printUrl } from '@/lib/media'
+import { shareUrl, downloadUrl, isImageUrl, viewInBrowser, printUrl, SECURE_PREFIX, isSecureUrl, signSecureUrls, removeStoredFile } from '@/lib/media'
 import PdfPreview, { isPdfUrl } from '@/components/PdfPreview'
 
 type Photo = {
@@ -22,6 +22,18 @@ type Photo = {
 }
 
 const isDone = (p: Photo) => p.status === '처리완료'
+
+// 출금 사진은 신분증·통장 사본이 섞여 있어 잠금 보관함(비공개)에 둔다 — 볼 때마다 1시간짜리 주소 발급
+// DB에는 'secure://withdrawals/...' 로 저장 (db/secure_withdrawals.sql: 승인 직원만 열람)
+async function uploadWithdrawalFile(file: File, i: number): Promise<string | null> {
+  const ext = file.name.split('.').pop() || 'jpg'
+  const path = `withdrawals/${Date.now()}_${i}.${ext}`
+  const { error } = await supabase.storage.from('secure').upload(path, file, { contentType: file.type || 'image/jpeg' })
+  if (error) { toast('사진 저장 실패: ' + error.message); return null }
+  return SECURE_PREFIX + path
+}
+const isPublicWithdrawal = (u: string) => u.includes('/uploads/withdrawals/')
+const imgsOf = (p: Photo) => (p.images && p.images.length ? p.images : [p.image_url]).filter(Boolean)
 
 export default function WithdrawalsPage() {
   const { profile } = useAuth()
@@ -44,6 +56,10 @@ export default function WithdrawalsPage() {
   const [savingReason, setSavingReason] = useState(false)
   const [viewerBusy, setViewerBusy] = useState(false)
   const viewerFileRef = useRef<HTMLInputElement>(null)
+  // 잠금 보관함 사진의 볼 주소 {저장값: 서명 주소}
+  const [signed, setSigned] = useState<Record<string, string>>({})
+  const view = (u: string) => isSecureUrl(u) ? (signed[u] || '') : u
+  const [moving, setMoving] = useState('')
 
   useEffect(() => { fetchPhotos() }, [])
 
@@ -56,10 +72,6 @@ export default function WithdrawalsPage() {
       const p = photos.find(x => x.id === oid)
       if (p) { setOpenedId(oid); openViewer(p) }
     }
-  }
-
-  function imgsOf(p: Photo) {
-    return (p.images && p.images.length ? p.images : [p.image_url]).filter(Boolean)
   }
 
   function openViewer(p: Photo) {
@@ -89,8 +101,7 @@ export default function WithdrawalsPage() {
     if (!viewer || viewerBusy) return
     if (!confirm('이 사진을 삭제할까요?')) return
     setViewerBusy(true)
-    const path = url.split('/uploads/')[1]
-    if (path) await supabase.storage.from('uploads').remove([path])
+    await removeStoredFile(url)
     const next = viewerImages.filter(u => u !== url)
     setViewerImages(next)
     await applyViewer(next, viewerReason)
@@ -102,12 +113,10 @@ export default function WithdrawalsPage() {
     setViewerBusy(true)
     const added: string[] = []
     for (let i = 0; i < files.length; i++) {
-      const file = files[i]
-      const ext = file.name.split('.').pop() || 'jpg'
-      const path = `withdrawals/${Date.now()}_${i}.${ext}`
-      const { data } = await supabase.storage.from('uploads').upload(path, file, { contentType: file.type || 'image/jpeg' })
-      if (data) added.push(supabase.storage.from('uploads').getPublicUrl(path).data.publicUrl)
+      const u = await uploadWithdrawalFile(files[i], i)
+      if (u) added.push(u)
     }
+    if (added.length) { const m = await signSecureUrls(added); setSigned(s => ({ ...s, ...m })) }
     const next = [...viewerImages, ...added]
     setViewerImages(next)
     await applyViewer(next, viewerReason)
@@ -118,7 +127,9 @@ export default function WithdrawalsPage() {
   async function fetchPhotos() {
     setLoading(true)
     const { data } = await supabase.from('withdrawal_requests').select('*').order('created_at', { ascending: false })
-    setPhotos(data || [])
+    const list = (data || []) as Photo[]
+    setSigned(await signSecureUrls(list.flatMap(imgsOf)))
+    setPhotos(list)
     setLoading(false)
   }
 
@@ -134,12 +145,7 @@ export default function WithdrawalsPage() {
     for (let i = 0; i < selectedFiles.length; i += CONC) {
       const chunk = selectedFiles.slice(i, i + CONC)
       await Promise.all(chunk.map(async (file, j) => {
-        const ext = file.name.split('.').pop() || 'jpg'
-        const path = `withdrawals/${Date.now()}_${i + j}.${ext}`
-        const { data: uploadData } = await supabase.storage.from('uploads').upload(path, file, {
-          contentType: file.type || 'image/jpeg',
-        })
-        if (uploadData) slots[i + j] = supabase.storage.from('uploads').getPublicUrl(path).data.publicUrl
+        slots[i + j] = await uploadWithdrawalFile(file, i + j)
         done++
         setUploadCurrent(done)
       }))
@@ -172,9 +178,39 @@ export default function WithdrawalsPage() {
   async function deletePhoto(photo: Photo) {
     if (!confirm('삭제할까요?')) return
     const imgs = (photo.images && photo.images.length ? photo.images : [photo.image_url]).filter(Boolean)
-    const paths = imgs.map(u => u.split('/uploads/')[1]).filter(Boolean)
-    if (paths.length) await supabase.storage.from('uploads').remove(paths)
+    await Promise.all(imgs.map(u => removeStoredFile(u)))
     await supabase.from('withdrawal_requests').delete().eq('id', photo.id)
+    fetchPhotos()
+  }
+
+  // 예전에 공개 저장소(uploads)에 올라간 출금 사진을 잠금 보관함으로 옮긴다 — 관리자 1회 작업
+  const publicCount = photos.reduce((n, p) => n + imgsOf(p).filter(isPublicWithdrawal).length, 0)
+  async function moveOldToSecure() {
+    if (!confirm(`예전 출금 사진 ${publicCount}장을 잠금 보관함으로 옮길까요?\n옮기고 나면 예전 주소(카톡 등에 붙여 둔 링크)로는 열리지 않아요.`)) return
+    let ok = 0, fail = 0
+    for (const p of photos) {
+      const imgs = imgsOf(p)
+      if (!imgs.some(isPublicWithdrawal)) continue
+      const next: string[] = []
+      for (const u of imgs) {
+        if (!isPublicWithdrawal(u)) { next.push(u); continue }
+        setMoving(`${ok + fail + 1} / ${publicCount}`)
+        const path = decodeURIComponent(u.split('/uploads/')[1].split('?')[0])
+        // 저장소 안에서 바로 옮기기 → 안 되면 내려받아 다시 올리고 원본 삭제
+        let moved = !(await supabase.storage.from('uploads').move(path, path, { destinationBucket: 'secure' })).error
+        if (!moved) {
+          const blob = await fetch(u).then(r => r.ok ? r.blob() : null).catch(() => null)
+          if (blob) {
+            const { error } = await supabase.storage.from('secure').upload(path, blob, { contentType: blob.type || 'image/jpeg', upsert: true })
+            if (!error) { await supabase.storage.from('uploads').remove([path]); moved = true }
+          }
+        }
+        if (moved) { next.push(SECURE_PREFIX + path); ok++ } else { next.push(u); fail++ }
+      }
+      await supabase.from('withdrawal_requests').update({ images: next, image_url: next[0] || '' }).eq('id', p.id)
+    }
+    setMoving('')
+    toast(fail ? `${ok}장 옮김 · ${fail}장 실패(그대로 둠)` : `${ok}장 모두 잠금 보관함으로 옮겼어요`)
     fetchPhotos()
   }
 
@@ -220,6 +256,15 @@ export default function WithdrawalsPage() {
         </header>
 
         <div className="flex-1 overflow-auto px-4 md:px-8 py-4 md:py-6 pb-20 md:pb-24">
+          {isAdmin && !loading && publicCount > 0 && (
+            <div className="mb-4 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 flex flex-col sm:flex-row sm:items-center gap-2 justify-between">
+              <p className="text-sm text-amber-900">🔓 예전 출금 사진 <b>{publicCount}장</b>이 아직 공개 저장소에 있어요 (주소만 알면 누구나 열림)</p>
+              <button onClick={moveOldToSecure} disabled={!!moving}
+                className="flex-shrink-0 bg-amber-600 text-white text-sm font-medium px-4 py-2 rounded-lg disabled:opacity-60">
+                {moving ? `옮기는 중 ${moving}` : '🔒 잠금 보관함으로 옮기기'}
+              </button>
+            </div>
+          )}
           {loading ? (
             <div className="text-center py-16 text-gray-400">불러오는 중...</div>
           ) : photos.length === 0 ? (
@@ -239,9 +284,9 @@ export default function WithdrawalsPage() {
                     {imgs.length > 0 ? (
                       <>
                         {isImageUrl(imgs[0]) ? (
-                          <Image src={imgs[0]} alt="출금요청" width={400} height={400} unoptimized loading="lazy" className="w-full aspect-square object-cover" />
+                          <Image src={view(imgs[0]) || '/icons/icon-192.png'} alt="출금요청" width={400} height={400} unoptimized loading="lazy" className="w-full aspect-square object-cover" />
                         ) : isPdfUrl(imgs[0]) ? (
-                          <PdfPreview url={imgs[0]} width={400} className="w-full aspect-square overflow-hidden bg-gray-50" />
+                          <PdfPreview url={view(imgs[0])} width={400} className="w-full aspect-square overflow-hidden bg-gray-50" />
                         ) : (
                           <div className="w-full aspect-square bg-gray-50 flex flex-col items-center justify-center gap-1.5 px-2">
                             <span className="text-3xl">📄</span>
@@ -348,23 +393,23 @@ export default function WithdrawalsPage() {
                   {viewerImages.map((u, i) => (
                     <div key={i} className="relative">
                       {isImageUrl(u) ? (
-                        <Image src={u} alt="" width={800} height={600} unoptimized loading="lazy" className="w-full h-auto rounded-lg" />
+                        <Image src={view(u) || '/icons/icon-192.png'} alt="" width={800} height={600} unoptimized loading="lazy" className="w-full h-auto rounded-lg" />
                       ) : isPdfUrl(u) ? (
                         // PDF는 쪽을 그림으로 바로 표시, 누르면 크게(브라우저 뷰어)
-                        <button onClick={() => viewInBrowser(u, `출금자료_${i + 1}.pdf`)} className="block w-full text-left">
-                          <PdfPreview url={u} maxPages={5} width={1000} className="w-full rounded-lg overflow-hidden border border-gray-200 bg-gray-50 min-h-[160px]" />
+                        <button onClick={() => viewInBrowser(view(u), `출금자료_${i + 1}.pdf`)} className="block w-full text-left">
+                          <PdfPreview url={view(u)} maxPages={5} width={1000} className="w-full rounded-lg overflow-hidden border border-gray-200 bg-gray-50 min-h-[160px]" />
                         </button>
                       ) : (
-                        <button onClick={() => viewInBrowser(u, `출금자료_${i + 1}`)}
+                        <button onClick={() => viewInBrowser(view(u), `출금자료_${i + 1}`)}
                           className="w-full bg-gray-50 hover:bg-gray-100 border border-gray-200 rounded-lg py-8 flex flex-col items-center gap-2">
                           <span className="text-4xl">📄</span>
                           <span className="text-xs text-green-600">눌러서 바로 보기 (다운로드 없음)</span>
                         </button>
                       )}
                       <div className="absolute bottom-2 left-2 flex gap-1.5">
-                        <button onClick={() => printUrl(u)} className="bg-black/60 text-white text-xs px-2.5 py-1 rounded-full">🖨 인쇄</button>
-                        <button onClick={() => shareUrl(u, `출금_${i + 1}`)} className="bg-black/60 text-white text-xs px-2.5 py-1 rounded-full">내보내기</button>
-                        <button onClick={() => downloadUrl(u, `출금_${i + 1}`)} className="bg-black/60 text-white text-xs px-2.5 py-1 rounded-full">저장</button>
+                        <button onClick={() => printUrl(view(u))} className="bg-black/60 text-white text-xs px-2.5 py-1 rounded-full">🖨 인쇄</button>
+                        <button onClick={() => shareUrl(view(u), `출금_${i + 1}`)} className="bg-black/60 text-white text-xs px-2.5 py-1 rounded-full">내보내기</button>
+                        <button onClick={() => downloadUrl(view(u), `출금_${i + 1}`)} className="bg-black/60 text-white text-xs px-2.5 py-1 rounded-full">저장</button>
                       </div>
                       {!readOnly && (
                         <button onClick={() => removeViewerImage(u)} disabled={viewerBusy}

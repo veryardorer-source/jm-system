@@ -23,6 +23,16 @@ export async function resolveFileUrl(url: string): Promise<string> {
   return data.signedUrl
 }
 
+// 화면에 한꺼번에 띄울 때 — 잠금 보관함 주소만 골라 한 번에 서명 주소를 받아 {원래 값: 볼 주소} 로 돌려준다
+export async function signSecureUrls(urls: string[], seconds = 3600): Promise<Record<string, string>> {
+  const secure = [...new Set(urls.filter(isSecureUrl))]
+  if (secure.length === 0) return {}
+  const { data } = await supabase.storage.from('secure').createSignedUrls(secure.map(u => u.slice(SECURE_PREFIX.length)), seconds)
+  const map: Record<string, string> = {}
+  ;(data || []).forEach(d => { if (d.signedUrl && d.path) map[SECURE_PREFIX + d.path] = d.signedUrl })
+  return map
+}
+
 // 저장소 파일 삭제 — 공개(uploads)·잠금(secure) 양쪽 다 처리
 export async function removeStoredFile(url?: string | null) {
   if (!url) return

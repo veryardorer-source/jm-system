@@ -12,6 +12,7 @@ import { notifyOthers, notifyDM, notifyRoom } from '@/lib/notify'
 import { compressImage, makeThumbnail, hashFile, isCompressibleImage, mediaUploadName } from '@/lib/image'
 import PdfPreview from '@/components/PdfPreview'
 import { normalizePdfTitle } from '@/lib/pdf'
+import { SECURE_PREFIX } from '@/lib/media'
 
 const CATEGORY_LIST = ['공사전사진', '시공사진', '마감사진', '도면', '3D', '미팅내용', '고객요청', '기타']
 
@@ -268,6 +269,12 @@ export default function SharePage() {
   async function uploadOne(file: File, i: number, folder: string) {
     const ext = file.name.split('.').pop() || 'bin'
     const path = `${folder}/${Date.now()}_${i}.${ext}`
+    // 출금 사진(신분증·통장 사본 등)은 잠금 보관함에 — 출금 요청 화면과 같은 방식
+    if (folder === 'withdrawals') {
+      const { error } = await supabase.storage.from('secure').upload(path, file, { contentType: file.type || 'application/octet-stream', upsert: true })
+      if (error) { toast('업로드 실패: ' + error.message); return null }
+      return SECURE_PREFIX + path
+    }
     const { error } = await supabase.storage.from('uploads').upload(path, file, {
       contentType: file.type || 'application/octet-stream', upsert: true,
     })
