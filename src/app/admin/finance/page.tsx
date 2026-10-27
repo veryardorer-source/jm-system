@@ -19,7 +19,7 @@ import SortSelect from '@/components/SortSelect'
 const TAB_LIST = ['견적서', '급여내역', '고정지출', '현장별 이익'] as const // 매출매입 탭은 2026-10-27 제외(finance_sales 자료는 DB에 그대로)
 type Tab = typeof TAB_LIST[number]
 
-type Quote = { id: string; title: string; quote_date: string | null; amount: number; extra_amount: number | null; insurance: number | null; vat: number | null; net_profit: number | null; merged_into: string | null; confirmed?: boolean | null; confirmed_at?: string | null; memo: string | null; file_url: string | null; file_name: string | null; created_at: string }
+type Quote = { id: string; title: string; quote_date: string | null; amount: number; extra_amount: number | null; insurance: number | null; vat: number | null; net_profit: number | null; net_profit_vat?: number | null; merged_into: string | null; confirmed?: boolean | null; confirmed_at?: string | null; memo: string | null; file_url: string | null; file_name: string | null; created_at: string }
 type HqExpense = { year: number; amount: number; memo: string | null }
 
 function TrendChart({ data }: { data: { label: string; value: number }[] }) {
@@ -194,7 +194,8 @@ function FixedCostTab({ list, onRefresh }: { list: FixedCost[]; onRefresh: () =>
 const GPT_PROMPT = `경리나라 본사 손익보고서(2026년 ○월)를 보고, 첨부한 '본사_월지출_양식.xlsx' 양식대로 정리해 줘.
 - 1행 제목: 2026년 ○월 본사 지출
 - 4행 머리글(용도 | 지출액 | 건수 | 메모)은 그대로 두기
-- 손익보고서의 '비용' 항목을 용도별로 한 줄씩, 지출액은 부가세 포함·취소/환불 차감 전 금액
+- 손익보고서의 '비용' 항목을 용도별로 한 줄씩, 지출액은 부가세 포함·취소/환불 차감 후 금액(통장에서 나간 만큼)
+- 기타수입(퇴직연금 반환·배당금·카드할인 등 돌아온 돈)은 '기타수입' 한 줄에 마이너스 금액으로
 - 매출(환불)·매입(할인) 줄은 넣지 않기, 마지막 줄은 '합계'`
 
 function ExpenseUploadModal({ existing, onClose, onSaved }: { existing: FixedCost[]; onClose: () => void; onSaved: () => void }) {
@@ -848,9 +849,12 @@ const supplyOf = (q: Quote) => { const total = (q.amount || 0) + (q.extra_amount
 
 function QuoteTab({ list, hqExpenses, fixedCosts, onRefresh }: { list: Quote[]; hqExpenses: HqExpense[]; fixedCosts: FixedCost[]; onRefresh: () => void }) {
   const [sort, setSort] = useState('date_asc') // 기본: 날짜 순서대로(공사경력 엑셀과 같게)
+  const [keyword, setKeyword] = useState('')
   const [showForm, setShowForm] = useState(false)
   const [editing, setEditing] = useState<Quote | null>(null)
-  const emptyForm = { title: '', quote_date: '', amount: '', extra_amount: '', vat: '', insurance: '', net_profit: '', merged_into: '', confirmed: false }
+  // DB에 부가세 포함 순이익 칸이 있는지(quote_profit_vat.sql 실행 여부) — 불러온 견적서에 키가 있으면 있음
+  const hasVatProfitCol = list.some(q => 'net_profit_vat' in q)
+  const emptyForm = { title: '', quote_date: '', amount: '', extra_amount: '', vat: '', insurance: '', net_profit: '', net_profit_vat: '', merged_into: '', confirmed: false }
   const [form, setForm] = useState(emptyForm)
   const [file, setFile] = useState<File | null>(null)
   const [saving, setSaving] = useState(false)
@@ -879,7 +883,7 @@ function QuoteTab({ list, hqExpenses, fixedCosts, onRefresh }: { list: Quote[]; 
     setReadNote({ text: `${r.source}에서 읽었어요 — ${parts.join(' · ')}${r.nego ? ' (특기사항의 네고 금액)' : ''}${r.source === '계약서' ? ' · 고용산재는 계약서에 없어 직접 입력' : ''}. 맞는지 확인 후 저장하세요.`, ok: true })
   }
 
-  const dbHint = (msg: string) => /confirmed/i.test(msg) ? ' (관리자에게: db/quote_confirm.sql 실행 필요)' : /column|schema cache|finance_hq_expense/i.test(msg) ? ' (관리자에게: db/quote_profit.sql 다시 실행 필요)' : ''
+  const dbHint = (msg: string) => /net_profit_vat/i.test(msg) ? ' (관리자에게: db/quote_profit_vat.sql 실행 필요)' : /confirmed/i.test(msg) ? ' (관리자에게: db/quote_confirm.sql 실행 필요)' : /column|schema cache|finance_hq_expense/i.test(msg) ? ' (관리자에게: db/quote_profit.sql 다시 실행 필요)' : ''
 
   async function save(e: React.FormEvent) {
     e.preventDefault()
@@ -902,6 +906,8 @@ function QuoteTab({ list, hqExpenses, fixedCosts, onRefresh }: { list: Quote[]; 
       vat: Number(form.vat) || 0, insurance: Number(form.insurance) || 0,
       // 합산된 견적서는 순이익을 비움(A 쪽에만 A+B 순이익) · 그 외엔 비우면 미입력(합계에서 제외)
       net_profit: form.merged_into || form.net_profit === '' ? null : Number(form.net_profit) || 0,
+      // 부가세 포함 순이익 — DB에 칸이 생기기 전(quote_profit_vat.sql 실행 전)엔 비어 있으면 보내지 않음
+      ...(hasVatProfitCol || form.net_profit_vat !== '' ? { net_profit_vat: form.merged_into || form.net_profit_vat === '' ? null : Number(form.net_profit_vat) || 0 } : {}),
       merged_into: form.merged_into || null,
       // 2단계 확인 — 켤 때 시각 기록, 이미 확인된 건 시각 유지
       confirmed: form.confirmed,
@@ -984,7 +990,14 @@ function QuoteTab({ list, hqExpenses, fixedCosts, onRefresh }: { list: Quote[]; 
   const fcMissing = fcMonths.length ? Array.from({ length: fcMonths[fcMonths.length - 1] }, (_, i) => i + 1).filter(m => !fcMonths.includes(m)) : []
   const hqAuto = fcYear.length > 0
   const hqAmount = hqAuto ? fcYear.reduce((t, c) => t + (c.amount || 0), 0) : hq ? hq.amount : null
-  const realProfit = profitSum - (hqAmount || 0)
+  // 부가세 포함 순이익(통장 기준) — 비어 있으면 임시로 '부가세 제외 순이익 + 부가세'(합산 견적은 합쳐진 견적서 부가세까지)
+  const vatProfitOf = (q: Quote) => q.merged_into ? 0
+    : q.net_profit_vat != null ? q.net_profit_vat
+    : q.net_profit != null ? q.net_profit + (q.vat || 0) + mergedOf(q.id).reduce((t, x) => t + (x.vat || 0), 0) : 0
+  const profitVatSum = sum(vatProfitOf)
+  const vatProfitTemp = yearList.filter(q => !q.merged_into && q.net_profit_vat == null && q.net_profit != null).length
+  // 실제 순이익 = 부가세 포함 순이익 합 − 본사 총지출(부가세 납부 포함 → 받은 부가세와 상쇄)
+  const realProfit = profitVatSum - (hqAmount || 0)
 
   // 정렬 — 날짜(현장명 앞 날짜 260824_ → 견적일 → 등록일)/현장명/금액. 같은 날짜는 현장명순
   const dateOf = quoteDate
@@ -1029,7 +1042,17 @@ function QuoteTab({ list, hqExpenses, fixedCosts, onRefresh }: { list: Quote[]; 
       else { n++; sub = 0; numOf.set(q.id, String(n)) }
     } }
 
-  const numCell = (n: number | null | undefined) => n ? won(n) : <span className="text-gray-300">-</span>
+  // 현장 검색 — 이름·첨부파일명·메모(띄어쓰기 무시). 번호는 전체 목록 기준 그대로, 추가 견적이 걸리면 본 견적도 함께
+  const norm = (s: string | null | undefined) => (s || '').replace(/\s/g, '').toLowerCase()
+  const kw = norm(keyword)
+  const hit = (q: Quote) => [q.title, q.file_name, q.memo].some(s => norm(s).includes(kw))
+  const shown = !kw ? sorted : sorted.filter(q => hit(q)
+    || (parentOf.has(q.id) && hit(list.find(p => p.id === parentOf.get(q.id))!))
+    || yearList.some(c => parentOf.get(c.id) === q.id && hit(c)))
+  const otherYearHits = kw && shown.length === 0
+    ? Array.from(new Set(list.filter(hit).map(quoteYear))).filter(y => y !== year).sort((a, b) => b - a) : []
+
+  const numCell =(n: number | null | undefined) => n ? won(n) : <span className="text-gray-300">-</span>
 
   return (
     <div>
@@ -1046,6 +1069,11 @@ function QuoteTab({ list, hqExpenses, fixedCosts, onRefresh }: { list: Quote[]; 
             { value: 'amount_desc', label: '금액 높은순' },
             { value: 'amount_asc', label: '금액 낮은순' },
           ]} />
+          <div className="relative">
+            <input value={keyword} onChange={e => setKeyword(e.target.value)} placeholder="🔍 현장 검색"
+              className="border border-gray-300 rounded-lg pl-3 pr-7 py-2 text-sm w-44 focus:outline-none focus:border-green-500" />
+            {keyword && <button onClick={() => setKeyword('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 text-sm" aria-label="검색어 지우기">✕</button>}
+          </div>
         </div>
         <div className="flex gap-2">
           <button onClick={() => setShowBulkRead(true)}
@@ -1062,7 +1090,8 @@ function QuoteTab({ list, hqExpenses, fixedCosts, onRefresh }: { list: Quote[]; 
           <SumItem label="본 공사 금액" value={won(baseSum)} />
           <SumItem label="추가 공사 금액" value={won(extraSum)} />
           <SumItem label="합계" value={won(totalSum)} strong sub={`계약 확인 ${yearList.filter(q => q.confirmed).length}/${yearList.length}건`} />
-          <SumItem label="공사 순이익" value={won(profitSum)} sub={pct(profitSum, totalSum) + (noProfit ? ` · 미입력 ${noProfit}건` : '')} />
+          <SumItem label="공사 순이익 (부가세 제외)" value={won(profitSum)} sub={pct(profitSum, totalSum) + (noProfit ? ` · 미입력 ${noProfit}건` : '')} />
+          <SumItem label="공사 순이익 (부가세 포함)" value={won(profitVatSum)} sub={vatProfitTemp ? `임시 계산 ${vatProfitTemp}건(부가세 제외+부가세)` : undefined} />
           <div>
             <p className="text-xs text-gray-400">본사 총지출</p>
             {hqAuto ? <>
@@ -1086,12 +1115,19 @@ function QuoteTab({ list, hqExpenses, fixedCosts, onRefresh }: { list: Quote[]; 
           <SumItem label="부가세 합" value={won(sum(q => q.vat || 0))} />
           <SumItem label="고용산재 합" value={won(sum(q => q.insurance || 0))} />
         </div>
-        <p className="text-[11px] text-gray-400 mt-3">실제 순이익 = 공사 순이익 합 − 본사 총지출 · %는 합계(본+추가) 대비</p>
+        <p className="text-[11px] text-gray-400 mt-3">실제 순이익 = 공사 순이익(부가세 포함) − 본사 총지출(부가세 납부 포함, 돌아온 돈 차감) · %는 합계(본+추가) 대비</p>
       </div>
 
       <p className="text-xs text-gray-400 mb-3">1단계: 견적서를 올리면 금액이 자동으로 들어가요(네고 금액 포함). 2단계: 계약서와 맞춰 보고 [확인하기] — 계약서로 금액을 고쳤으면 수정에서 고친 뒤 확인. 현장별 %는 공급가(부가세 제외) 대비예요.</p>
       {yearList.length === 0 ? (
         <EmptyState icon="📄" text={`${year}년 견적서가 없어요`} />
+      ) : kw && shown.length === 0 ? (
+        <div className="bg-white rounded-xl border border-gray-200 px-6 py-10 text-center text-sm text-gray-500">
+          {year}년에 &lsquo;{keyword}&rsquo; 현장이 없어요
+          {otherYearHits.length > 0 && <div className="mt-3 flex justify-center gap-2">
+            {otherYearHits.map(y => <button key={y} onClick={() => setYear(y)} className="text-green-600 border border-green-600 rounded-lg px-3 py-1 hover:bg-green-50">{y}년에서 보기</button>)}
+          </div>}
+        </div>
       ) : (
         <div className="bg-white rounded-xl border border-gray-200 overflow-hidden overflow-x-auto">
           <table className="w-full whitespace-nowrap">
@@ -1103,14 +1139,15 @@ function QuoteTab({ list, hqExpenses, fixedCosts, onRefresh }: { list: Quote[]; 
                 <th className="text-right text-xs font-semibold text-gray-400 px-4 py-3">추가 공사</th>
                 <th className="text-right text-xs font-semibold text-gray-400 px-4 py-3">부가세</th>
                 <th className="text-right text-xs font-semibold text-gray-400 px-4 py-3">고용산재</th>
-                <th className="text-right text-xs font-semibold text-gray-400 px-4 py-3">순이익</th>
+                <th className="text-right text-xs font-semibold text-gray-400 px-4 py-3">순이익<span className="block text-[10px] font-normal">부가세 제외</span></th>
                 <th className="text-right text-xs font-semibold text-gray-400 px-4 py-3">%</th>
+                <th className="text-right text-xs font-semibold text-gray-400 px-4 py-3">순이익<span className="block text-[10px] font-normal">부가세 포함</span></th>
                 <th className="text-left text-xs font-semibold text-gray-400 px-4 py-3">첨부파일</th>
                 <th className="px-4 py-3"></th>
               </tr>
             </thead>
             <tbody>
-              {sorted.map(q => (
+              {shown.map(q => (
                 <tr key={q.id} className="border-b border-gray-50 hover:bg-gray-50 align-top">
                   <td className="px-6 py-3 text-sm font-medium text-gray-800">
                     {grouped && parentOf.has(q.id) && <span className="text-gray-400 mr-1">└</span>}
@@ -1138,6 +1175,12 @@ function QuoteTab({ list, hqExpenses, fixedCosts, onRefresh }: { list: Quote[]; 
                       {mergedOf(q.id).length > 0 && <span className="block text-[10px] text-gray-400">합산 {mergedOf(q.id).length + 1}건 기준</span>}
                     </>}
                   </td>
+                  <td className="px-4 py-3 text-sm text-right text-gray-700">
+                    {q.merged_into ? null
+                      : q.net_profit_vat != null ? won(q.net_profit_vat)
+                      : q.net_profit != null ? <span className="text-gray-400" title="임시: 부가세 제외 순이익 + 부가세">{won(vatProfitOf(q))}</span>
+                      : <span className="text-gray-300">-</span>}
+                  </td>
                   <td className="px-4 py-3">
                     {q.file_url ? (
                       <button onClick={() => openFile(q)} className="text-sm text-green-600 hover:underline text-left max-w-[260px] truncate inline-block align-middle" title={q.file_name || ''}>📎 {q.file_name}</button>
@@ -1148,7 +1191,7 @@ function QuoteTab({ list, hqExpenses, fixedCosts, onRefresh }: { list: Quote[]; 
                       <button onClick={() => {
                         setEditing(q)
                         const s = (n: number | null) => n ? String(n) : ''
-                        setForm({ title: q.title, quote_date: q.quote_date || '', amount: s(q.amount), extra_amount: s(q.extra_amount), vat: s(q.vat), insurance: s(q.insurance), net_profit: q.net_profit == null ? '' : String(q.net_profit), merged_into: q.merged_into || '', confirmed: !!q.confirmed })
+                        setForm({ title: q.title, quote_date: q.quote_date || '', amount: s(q.amount), extra_amount: s(q.extra_amount), vat: s(q.vat), insurance: s(q.insurance), net_profit: q.net_profit == null ? '' : String(q.net_profit), net_profit_vat: q.net_profit_vat == null ? '' : String(q.net_profit_vat), merged_into: q.merged_into || '', confirmed: !!q.confirmed })
                         setFile(null); setReadNote(null); setShowForm(true)
                       }} className="text-xs text-green-500 hover:text-green-700">수정</button>
                       <button onClick={() => del(q)} className="text-xs text-red-400 hover:text-red-600">삭제</button>
@@ -1200,8 +1243,11 @@ function QuoteTab({ list, hqExpenses, fixedCosts, onRefresh }: { list: Quote[]; 
           </div>
           {!form.merged_into && (
             <div>
-              <NumberInput label={editingHasMerged ? '순이익 금액 (합산)' : '순이익 금액'} value={form.net_profit} onChange={v => setForm({ ...form, net_profit: v })} />
-              <p className="text-[11px] text-gray-400 mt-1">손익 엑셀의 순이익을 옮겨 적어요. 아직 모르면 비워두세요(합계에서 빠짐).</p>
+              <div className="grid grid-cols-2 gap-3">
+                <NumberInput label={editingHasMerged ? '순이익 · 부가세 제외 (합산)' : '순이익 · 부가세 제외'} value={form.net_profit} onChange={v => setForm({ ...form, net_profit: v })} />
+                <NumberInput label={editingHasMerged ? '순이익 · 부가세 포함 (합산)' : '순이익 · 부가세 포함'} value={form.net_profit_vat} onChange={v => setForm({ ...form, net_profit_vat: v })} />
+              </div>
+              <p className="text-[11px] text-gray-400 mt-1">손익 엑셀의 순이익 두 가지를 옮겨 적어요. 부가세 제외 = 견적서 기준 이익, 부가세 포함 = 통장 기준(실제 순이익 계산에 씀). 모르면 비워두세요 — 부가세 포함이 비면 임시로 &lsquo;부가세 제외 + 부가세&rsquo;로 계산해요.</p>
             </div>
           )}
         </FormModal>

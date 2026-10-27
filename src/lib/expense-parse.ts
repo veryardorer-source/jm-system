@@ -1,6 +1,7 @@
 // 본사 월지출 엑셀(경리나라 손익보고서를 지피티가 정리한 파일) → 용도별 금액
 // 표 머리에 '용도'(또는 용도명·항목) 칸과 '지출액'(또는 금액) 칸이 있으면 읽는다. '합계' 줄에서 멈추고, 같은 용도는 합친다.
 // '보고서 구분' 칸이 있으면 '비용' 줄만 더한다(환불=매출·할인=매입 제외 → 경리나라 '비용 합계'와 같음).
+// '순액' 칸이 있으면 그걸 쓴다 — 기타수입(퇴직연금 반환·배당금·카드할인 등 돌아온 돈)이 마이너스로 들어가 통장 기준과 맞음.
 // 회사 양식(public/templates/본사_월지출_양식.xlsx)과 예전 정리 파일(9월 지출요약, 1~8월 지출상세) 모두 같은 규칙으로 읽힌다.
 
 export type ExpenseSheet = {
@@ -11,7 +12,7 @@ export type ExpenseSheet = {
 }
 
 const LABEL_HEADS = ['용도', '용도명', '항목', '항목명', '계정과목']
-const AMOUNT_HEADS = ['지출액', '금액(원)', '금액', '지출']
+const AMOUNT_HEADS = ['순액', '지출액', '금액(원)', '금액', '지출']
 const cell = (v: unknown) => String(v ?? '').replace(/\s+/g, ' ').trim()
 const num = (v: unknown) => typeof v === 'number' ? v : Number(cell(v).replace(/[^0-9.-]/g, ''))
 
