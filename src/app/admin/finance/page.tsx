@@ -996,7 +996,7 @@ function QuoteTab({ list, hqExpenses, fixedCosts, onRefresh }: { list: Quote[]; 
     : q.net_profit != null ? q.net_profit + (q.vat || 0) + mergedOf(q.id).reduce((t, x) => t + (x.vat || 0), 0) : 0
   const profitVatSum = sum(vatProfitOf)
   const vatProfitTemp = yearList.filter(q => !q.merged_into && q.net_profit_vat == null && q.net_profit != null).length
-  // 실제 순이익 = 부가세 포함 순이익 합 − 본사 총지출(부가세 납부 포함 → 받은 부가세와 상쇄)
+  // 실제 순이익 = 공사 순이익(부가세 포함) − 본사 총지출 — 부가세·고용산재 납부는 본사 총지출 안에 있어 따로 빼지 않음
   const realProfit = profitVatSum - (hqAmount || 0)
 
   // 정렬 — 날짜(현장명 앞 날짜 260824_ → 견적일 → 등록일)/현장명/금액. 같은 날짜는 현장명순
@@ -1090,8 +1090,12 @@ function QuoteTab({ list, hqExpenses, fixedCosts, onRefresh }: { list: Quote[]; 
           <SumItem label="본 공사 금액" value={won(baseSum)} />
           <SumItem label="추가 공사 금액" value={won(extraSum)} />
           <SumItem label="합계" value={won(totalSum)} strong sub={`계약 확인 ${yearList.filter(q => q.confirmed).length}/${yearList.length}건`} />
-          <SumItem label="공사 순이익 (부가세 제외)" value={won(profitSum)} sub={pct(profitSum, totalSum) + (noProfit ? ` · 미입력 ${noProfit}건` : '')} />
-          <SumItem label="공사 순이익 (부가세 포함)" value={won(profitVatSum)} sub={vatProfitTemp ? `임시 계산 ${vatProfitTemp}건(부가세 제외+부가세)` : undefined} />
+          <div>
+            <p className="text-xs text-gray-400">공사 순이익 <span className="text-[10px]">(부가세 포함)</span></p>
+            <p className="font-semibold text-gray-800">{won(profitVatSum)}</p>
+            <p className="text-[11px] text-gray-400">부가세 제외 {won(profitSum)} · {pct(profitSum, totalSum)}{noProfit ? ` · 미입력 ${noProfit}건` : ''}</p>
+            {vatProfitTemp > 0 && <p className="text-[11px] text-orange-500">임시 계산 {vatProfitTemp}건(부가세 제외+부가세)</p>}
+          </div>
           <div>
             <p className="text-xs text-gray-400">본사 총지출</p>
             {hqAuto ? <>
@@ -1115,7 +1119,7 @@ function QuoteTab({ list, hqExpenses, fixedCosts, onRefresh }: { list: Quote[]; 
           <SumItem label="부가세 합" value={won(sum(q => q.vat || 0))} />
           <SumItem label="고용산재 합" value={won(sum(q => q.insurance || 0))} />
         </div>
-        <p className="text-[11px] text-gray-400 mt-3">실제 순이익 = 공사 순이익(부가세 포함) − 본사 총지출(부가세 납부 포함, 돌아온 돈 차감) · %는 합계(본+추가) 대비</p>
+        <p className="text-[11px] text-gray-400 mt-3">실제 순이익 = 공사 순이익 − 본사 총지출 · 부가세·고용산재 납부는 본사 총지출에 들어 있어 따로 빼지 않음 · %는 부가세 제외 순이익 ÷ 합계(본+추가)</p>
       </div>
 
       <p className="text-xs text-gray-400 mb-3">1단계: 견적서를 올리면 금액이 자동으로 들어가요(네고 금액 포함). 2단계: 계약서와 맞춰 보고 [확인하기] — 계약서로 금액을 고쳤으면 수정에서 고친 뒤 확인. 현장별 %는 공급가(부가세 제외) 대비예요.</p>
@@ -1139,9 +1143,9 @@ function QuoteTab({ list, hqExpenses, fixedCosts, onRefresh }: { list: Quote[]; 
                 <th className="text-right text-xs font-semibold text-gray-400 px-4 py-3">추가 공사</th>
                 <th className="text-right text-xs font-semibold text-gray-400 px-4 py-3">부가세</th>
                 <th className="text-right text-xs font-semibold text-gray-400 px-4 py-3">고용산재</th>
-                <th className="text-right text-xs font-semibold text-gray-400 px-4 py-3">순이익<span className="block text-[10px] font-normal">부가세 제외</span></th>
-                <th className="text-right text-xs font-semibold text-gray-400 px-4 py-3">%</th>
                 <th className="text-right text-xs font-semibold text-gray-400 px-4 py-3">순이익<span className="block text-[10px] font-normal">부가세 포함</span></th>
+                <th className="text-right text-xs font-semibold text-gray-400 px-4 py-3">순이익<span className="block text-[10px] font-normal">부가세 제외</span></th>
+                <th className="text-right text-xs font-semibold text-gray-400 px-4 py-3">%<span className="block text-[10px] font-normal">부가세 제외 기준</span></th>
                 <th className="text-left text-xs font-semibold text-gray-400 px-4 py-3">첨부파일</th>
                 <th className="px-4 py-3"></th>
               </tr>
@@ -1167,19 +1171,18 @@ function QuoteTab({ list, hqExpenses, fixedCosts, onRefresh }: { list: Quote[]; 
                   <td className="px-4 py-3 text-sm text-right font-semibold text-gray-800">
                     {q.merged_into
                       ? <span className="text-xs font-normal text-gray-500 max-w-[200px] truncate inline-block align-middle" title={titleOf(q.merged_into)}>→ {titleOf(q.merged_into)}에 합산</span>
-                      : q.net_profit == null ? <span className="text-gray-300">-</span> : won(q.net_profit)}
+                      : q.net_profit_vat != null ? won(q.net_profit_vat)
+                      : q.net_profit != null ? <span className="font-normal text-gray-400" title="임시: 부가세 제외 순이익 + 부가세">{won(vatProfitOf(q))}</span>
+                      : <span className="text-gray-300">-</span>}
+                  </td>
+                  <td className="px-4 py-3 text-sm text-right text-gray-700">
+                    {q.merged_into ? null : q.net_profit == null ? <span className="text-gray-300">-</span> : won(q.net_profit)}
                   </td>
                   <td className="px-4 py-3 text-sm text-right text-gray-500">
                     {q.net_profit != null && !q.merged_into && <>
                       {pct(q.net_profit, groupSupply(q))}
                       {mergedOf(q.id).length > 0 && <span className="block text-[10px] text-gray-400">합산 {mergedOf(q.id).length + 1}건 기준</span>}
                     </>}
-                  </td>
-                  <td className="px-4 py-3 text-sm text-right text-gray-700">
-                    {q.merged_into ? null
-                      : q.net_profit_vat != null ? won(q.net_profit_vat)
-                      : q.net_profit != null ? <span className="text-gray-400" title="임시: 부가세 제외 순이익 + 부가세">{won(vatProfitOf(q))}</span>
-                      : <span className="text-gray-300">-</span>}
                   </td>
                   <td className="px-4 py-3">
                     {q.file_url ? (
@@ -1244,8 +1247,8 @@ function QuoteTab({ list, hqExpenses, fixedCosts, onRefresh }: { list: Quote[]; 
           {!form.merged_into && (
             <div>
               <div className="grid grid-cols-2 gap-3">
-                <NumberInput label={editingHasMerged ? '순이익 · 부가세 제외 (합산)' : '순이익 · 부가세 제외'} value={form.net_profit} onChange={v => setForm({ ...form, net_profit: v })} />
                 <NumberInput label={editingHasMerged ? '순이익 · 부가세 포함 (합산)' : '순이익 · 부가세 포함'} value={form.net_profit_vat} onChange={v => setForm({ ...form, net_profit_vat: v })} />
+                <NumberInput label={editingHasMerged ? '순이익 · 부가세 제외 (합산)' : '순이익 · 부가세 제외'} value={form.net_profit} onChange={v => setForm({ ...form, net_profit: v })} />
               </div>
               <p className="text-[11px] text-gray-400 mt-1">손익 엑셀의 순이익 두 가지를 옮겨 적어요. 부가세 제외 = 견적서 기준 이익, 부가세 포함 = 통장 기준(실제 순이익 계산에 씀). 모르면 비워두세요 — 부가세 포함이 비면 임시로 &lsquo;부가세 제외 + 부가세&rsquo;로 계산해요.</p>
             </div>
