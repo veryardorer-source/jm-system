@@ -10,7 +10,7 @@ declare
   p record;
   tables text[] := array[
     'employees','employee_salaries','employee_attendance','employee_overtime',
-    'finance_fixed_costs','finance_payroll','finance_project_profit','finance_sales','finance_quotes'
+    'finance_fixed_costs','finance_payroll','finance_project_profit','finance_sales','finance_quotes','finance_hq_expense'
   ];
 begin
   foreach t in array tables loop

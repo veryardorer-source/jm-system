@@ -6,18 +6,19 @@ import { useRouter } from 'next/navigation'
 import Sidebar from '@/components/Sidebar'
 import { useAuth } from '@/lib/auth-context'
 import { createClient } from '@/lib/supabase-browser'
-import { FixedCost, Payroll, ProjectProfit, SalesRecord, Project, supabase } from '@/lib/supabase'
-import { parseExcelRows, parseExcelTotal, ParsedRow, parsePayrollLedger, PayrollLedger, parsePayrollLedgerFull, PayrollLedgerFull, parseBonusLedger, BonusLedger } from '@/lib/excel-parse'
+import { FixedCost, Payroll, ProjectProfit, Project, supabase } from '@/lib/supabase'
+import { parseExcelRows, ParsedRow, parsePayrollLedger, PayrollLedger, parsePayrollLedgerFull, PayrollLedgerFull, parseBonusLedger, BonusLedger } from '@/lib/excel-parse'
 import { storeMonthlyLedger } from '@/lib/payroll-store'
 import FileDropInput from '@/components/FileDropInput'
 import { openPdfTitled, resolveFileUrl, removeStoredFile, downloadUrl, SECURE_PREFIX } from '@/lib/media'
 import { normalizePdfTitle } from '@/lib/pdf'
 import SortSelect from '@/components/SortSelect'
 
-const TAB_LIST = ['고정지출', '급여내역', '현장별 이익', '매출매입', '견적서'] as const
+const TAB_LIST = ['고정지출', '급여내역', '현장별 이익', '견적서'] as const // 매출매입 탭은 2026-10-27 제외(finance_sales 자료는 DB에 그대로)
 type Tab = typeof TAB_LIST[number]
 
-type Quote = { id: string; title: string; quote_date: string | null; amount: number; memo: string | null; file_url: string | null; file_name: string | null; created_at: string }
+type Quote = { id: string; title: string; quote_date: string | null; amount: number; extra_amount: number | null; insurance: number | null; vat: number | null; net_profit: number | null; merged_into: string | null; memo: string | null; file_url: string | null; file_name: string | null; created_at: string }
+type HqExpense = { year: number; amount: number; memo: string | null }
 
 function TrendChart({ data }: { data: { label: string; value: number }[] }) {
   const max = Math.max(...data.map(d => d.value), 1)
@@ -45,9 +46,9 @@ export default function FinancePage() {
   const [fixedCosts, setFixedCosts] = useState<FixedCost[]>([])
   const [payrolls, setPayrolls] = useState<Payroll[]>([])
   const [profits, setProfits] = useState<ProjectProfit[]>([])
-  const [sales, setSales] = useState<SalesRecord[]>([])
   const [projects, setProjects] = useState<Project[]>([])
   const [quotes, setQuotes] = useState<Quote[]>([])
+  const [hqExpenses, setHqExpenses] = useState<HqExpense[]>([])
 
   useEffect(() => {
     if (!authLoading) {
@@ -59,20 +60,20 @@ export default function FinancePage() {
   async function fetchAll() {
     setLoading(true)
     const sb = createClient()
-    const [fc, pr, pp, sl, proj, qt] = await Promise.all([
+    const [fc, pr, pp, proj, qt, hq] = await Promise.all([
       sb.from('finance_fixed_costs').select('*').order('month', { ascending: false }),
       sb.from('finance_payroll').select('*').order('month', { ascending: false }),
       sb.from('finance_project_profit').select('*').order('month', { ascending: false }),
-      sb.from('finance_sales').select('*').order('month', { ascending: false }),
       supabase.from('projects').select('*').order('name'),
       sb.from('finance_quotes').select('*').order('quote_date', { ascending: false, nullsFirst: false }),
+      sb.from('finance_hq_expense').select('*'),
     ])
     setFixedCosts(fc.data || [])
     setPayrolls(pr.data || [])
     setProfits(pp.data || [])
-    setSales(sl.data || [])
     setProjects(proj.data || [])
     setQuotes(qt.data || [])
+    setHqExpenses(hq.data || []) // 표가 아직 없으면(db/quote_profit.sql 미실행) 빈 목록
     setLoading(false)
   }
 
@@ -107,8 +108,7 @@ export default function FinancePage() {
           {tab === '고정지출' && <FixedCostTab list={fixedCosts} onRefresh={fetchAll} />}
           {tab === '급여내역' && <PayrollTab list={payrolls} onRefresh={fetchAll} />}
           {tab === '현장별 이익' && <ProfitTab list={profits} projects={projects} onRefresh={fetchAll} />}
-          {tab === '매출매입' && <SalesTab list={sales} onRefresh={fetchAll} />}
-          {tab === '견적서' && <QuoteTab list={quotes} onRefresh={fetchAll} />}
+          {tab === '견적서' && <QuoteTab list={quotes} hqExpenses={hqExpenses} onRefresh={fetchAll} />}
         </div>
       </div>
     </div>
@@ -746,166 +746,33 @@ function ProfitTab({ list, projects, onRefresh }: { list: ProjectProfit[]; proje
   )
 }
 
-// ───────────── 매출매입 ─────────────
-function SalesTab({ list, onRefresh }: { list: SalesRecord[]; onRefresh: () => void }) {
-  const [sort, setSort] = useState('date_desc')
-  const [showForm, setShowForm] = useState(false)
-  const [editing, setEditing] = useState<SalesRecord | null>(null)
-  const [form, setForm] = useState({ month: '', type: '매출' as '매출' | '매입', amount: '', memo: '' })
-  const [file, setFile] = useState<File | null>(null)
-  const [saving, setSaving] = useState(false)
-
-  async function save(e: React.FormEvent) {
-    e.preventDefault()
-    if (!form.month) return
-    setSaving(true)
-    const sb = createClient()
-    let file_url = editing?.file_url || '', file_name = editing?.file_name || ''
-    if (file) {
-      const ext = file.name.split('.').pop() || 'bin'
-      const path = `finance/sales/${Date.now()}.${ext}`
-      const { error: upErr } = await sb.storage.from('secure').upload(path, file, { contentType: file.type, upsert: true })
-      if (upErr) { toast('파일 업로드 실패: ' + upErr.message + (/bucket/i.test(upErr.message) ? ' (관리자에게: db/secure_bucket.sql 실행 필요)' : '')); setSaving(false); return }
-      file_url = SECURE_PREFIX + path
-      file_name = file.name
-    }
-    const payload = { month: form.month + '-01', type: form.type, amount: Number(form.amount) || 0, memo: form.memo, file_url, file_name }
-    const { error } = editing
-      ? await sb.from('finance_sales').update(payload).eq('id', editing.id)
-      : await sb.from('finance_sales').insert([payload])
-    if (error) { toast('저장 실패: ' + error.message); setSaving(false); return }
-    setForm({ month: '', type: '매출', amount: '', memo: '' }); setFile(null)
-    setEditing(null); setShowForm(false); setSaving(false)
-    onRefresh()
-  }
-
-  async function del(s: SalesRecord) {
-    if (!confirm('이 항목을 삭제할까요?')) return
-    const sb = createClient()
-    if (s.file_url) await removeStoredFile(s.file_url)
-    await sb.from('finance_sales').delete().eq('id', s.id)
-    onRefresh()
-  }
-
-  const byMonth = Object.values(list.reduce((acc, c) => {
-    const k = c.month?.slice(0, 7) || ''
-    acc[k] = acc[k] || { label: k.slice(2).replace('-', '.'), value: 0, key: k }
-    acc[k].value += c.type === '매출' ? c.amount : -c.amount
-    return acc
-  }, {} as Record<string, { label: string; value: number; key: string }>)).sort((a, b) => a.key.localeCompare(b.key))
-
-  // 정렬 — 월/금액/구분
-  const sortedList = [...list].sort((a, b) => {
-    if (sort === 'date_asc') return (a.month || '').localeCompare(b.month || '')
-    if (sort === 'amount_desc') return (b.amount || 0) - (a.amount || 0)
-    if (sort === 'amount_asc') return (a.amount || 0) - (b.amount || 0)
-    if (sort === 'type') return (a.type || '').localeCompare(b.type || '') || (b.month || '').localeCompare(a.month || '')
-    return (b.month || '').localeCompare(a.month || '')
-  })
-
-  return (
-    <div>
-      <div className="flex justify-between items-center mb-4 gap-2">
-        <SortSelect value={sort} onChange={setSort} options={[
-          { value: 'date_desc', label: '최신순' },
-          { value: 'date_asc', label: '오래된순' },
-          { value: 'amount_desc', label: '금액 높은순' },
-          { value: 'amount_asc', label: '금액 낮은순' },
-          { value: 'type', label: '매출/매입 구분' },
-        ]} />
-        <button onClick={() => { setEditing(null); setForm({ month: '', type: '매출', amount: '', memo: '' }); setFile(null); setShowForm(true) }}
-          className="bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-700">+ 매출/매입 자료 추가</button>
-      </div>
-      {list.length === 0 ? (
-        <EmptyState icon="🧾" text="등록된 매출매입 자료가 없어요" />
-      ) : (
-        <>
-          <ChartCard title="월별 순매출(매출-매입) 추이" data={byMonth} />
-          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b border-gray-100 bg-gray-50">
-                  <th className="text-left text-xs font-semibold text-gray-400 px-6 py-3">월</th>
-                  <th className="text-left text-xs font-semibold text-gray-400 px-4 py-3">구분</th>
-                  <th className="text-right text-xs font-semibold text-gray-400 px-4 py-3">금액</th>
-                  <th className="text-left text-xs font-semibold text-gray-400 px-4 py-3">첨부</th>
-                  <th className="text-left text-xs font-semibold text-gray-400 px-4 py-3">메모</th>
-                  <th className="px-4 py-3"></th>
-                </tr>
-              </thead>
-              <tbody>
-                {sortedList.map(s => (
-                  <tr key={s.id} className="border-b border-gray-50 hover:bg-gray-50">
-                    <td className="px-6 py-3 text-sm font-medium text-gray-800">{s.month?.slice(0,7)}</td>
-                    <td className="px-4 py-3">
-                      <span className={`text-xs px-2 py-1 rounded-full font-medium ${s.type === '매출' ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'}`}>{s.type}</span>
-                    </td>
-                    <td className="px-4 py-3 text-sm text-right font-semibold text-gray-800">{s.amount.toLocaleString()}원</td>
-                    <td className="px-4 py-3">
-                      {s.file_url ? (
-                        <button onClick={async () => {
-                          let url: string
-                          try { url = await resolveFileUrl(s.file_url) } catch (e) { toast((e as Error).message, 'error'); return }
-                          const name = s.file_name?.toLowerCase() || ''
-                          if (/\.(xlsx|xls|doc|docx|ppt|pptx)$/.test(name)) window.open(`https://view.officeapps.live.com/op/view.aspx?src=${encodeURIComponent(url)}`, '_blank')
-                          else if (name.endsWith('.pdf')) openPdfTitled(url, s.file_name || '')
-                          else downloadUrl(url, s.file_name || '')
-                        }} className="text-xs text-green-600 hover:underline truncate max-w-[140px] inline-block">📎 {s.file_name}</button>
-                      ) : <span className="text-xs text-gray-300">-</span>}
-                    </td>
-                    <td className="px-4 py-3 text-xs text-gray-400">{s.memo || '-'}</td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2 justify-end">
-                        <button onClick={() => { setEditing(s); setForm({ month: s.month?.slice(0,7) || '', type: s.type, amount: String(s.amount), memo: s.memo || '' }); setFile(null); setShowForm(true) }}
-                          className="text-xs text-green-500 hover:text-green-700">수정</button>
-                        <button onClick={() => del(s)} className="text-xs text-red-400 hover:text-red-600">삭제</button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </>
-      )}
-      {showForm && (
-        <FormModal title={editing ? '매출매입 자료 수정' : '매출매입 자료 추가'} onClose={() => setShowForm(false)} onSubmit={save} saving={saving}>
-          <div className="grid grid-cols-2 gap-2">
-            {(['매출', '매입'] as const).map(t => (
-              <button key={t} type="button" onClick={() => setForm({ ...form, type: t })}
-                className={`py-2.5 rounded-lg text-sm font-medium border transition-colors ${
-                  form.type === t ? 'bg-green-600 text-white border-green-600' : 'border-gray-200 text-gray-500 hover:border-gray-300'
-                }`}>{t}</button>
-            ))}
-          </div>
-          <MonthInput value={form.month} onChange={v => setForm({ ...form, month: v })} />
-          <NumberInput label="금액 *" required value={form.amount} onChange={v => setForm({ ...form, amount: v })} />
-          <div>
-            <label className="text-sm font-medium text-gray-700 block mb-1.5">자료 첨부 <span className="text-gray-400 font-normal">(엑셀이면 금액 자동 인식)</span></label>
-            <FileDropInput currentName={file?.name} hint="엑셀·PDF·사진 등"
-              onFile={async f => {
-                setFile(f)
-                if (/\.(xlsx|xls)$/i.test(f.name)) {
-                  const total = await parseExcelTotal(f).catch(() => null)
-                  if (total) setForm(prev => ({ ...prev, amount: String(total) }))
-                }
-              }} />
-          </div>
-          <TextInput label="메모" value={form.memo} onChange={v => setForm({ ...form, memo: v })} />
-        </FormModal>
-      )}
-    </div>
-  )
-}
-
 // ───────────── 견적서 ─────────────
-function QuoteTab({ list, onRefresh }: { list: Quote[]; onRefresh: () => void }) {
+// 연도 기준 — 견적일 → 현장명 앞 날짜(260824_) → 등록일 순
+function quoteYear(q: Quote): number {
+  if (q.quote_date) return Number(q.quote_date.slice(0, 4))
+  const m = q.title.match(/^(\d{2})(\d{2})(\d{2})(?!\d)/)
+  if (m && Number(m[2]) >= 1 && Number(m[2]) <= 12) return 2000 + Number(m[1])
+  return Number((q.created_at || '').slice(0, 4)) || new Date().getFullYear()
+}
+const won = (n: number) => n.toLocaleString() + '원'
+const pct = (a: number, b: number) => b > 0 ? Math.round(a / b * 100) + '%' : '-'
+// 현장별 % = 순이익 ÷ 공급가(공사+추가 − 부가세, 부가세 미입력이면 ÷1.1) — 기존 공사경력 엑셀과 같은 기준
+const supplyOf = (q: Quote) => { const total = (q.amount || 0) + (q.extra_amount || 0); return q.vat ? total - q.vat : Math.round(total / 1.1) }
+
+function QuoteTab({ list, hqExpenses, onRefresh }: { list: Quote[]; hqExpenses: HqExpense[]; onRefresh: () => void }) {
   const [sort, setSort] = useState('date_desc')
   const [showForm, setShowForm] = useState(false)
   const [editing, setEditing] = useState<Quote | null>(null)
-  const [form, setForm] = useState({ title: '', amount: '' })
+  const emptyForm = { title: '', quote_date: '', amount: '', extra_amount: '', vat: '', insurance: '', net_profit: '', merged_into: '' }
+  const [form, setForm] = useState(emptyForm)
   const [file, setFile] = useState<File | null>(null)
   const [saving, setSaving] = useState(false)
+  const years = Array.from(new Set([new Date().getFullYear(), ...list.map(quoteYear), ...hqExpenses.map(h => h.year)])).sort((a, b) => b - a)
+  const [year, setYear] = useState(new Date().getFullYear())
+  const [showHq, setShowHq] = useState(false)
+  const [hqForm, setHqForm] = useState({ amount: '', memo: '' })
+
+  const dbHint = (msg: string) => /column|schema cache|finance_hq_expense/i.test(msg) ? ' (관리자에게: db/quote_profit.sql 실행 필요)' : ''
 
   async function save(e: React.FormEvent) {
     e.preventDefault()
@@ -922,13 +789,32 @@ function QuoteTab({ list, onRefresh }: { list: Quote[]; onRefresh: () => void })
       file_url = SECURE_PREFIX + path
       file_name = file.name
     }
-    const payload = { title: form.title.trim(), amount: Number(form.amount) || 0, file_url, file_name }
+    const payload = {
+      title: form.title.trim(), quote_date: form.quote_date || null,
+      amount: Number(form.amount) || 0, extra_amount: Number(form.extra_amount) || 0,
+      vat: Number(form.vat) || 0, insurance: Number(form.insurance) || 0,
+      // 합산된 견적서는 순이익을 비움(A 쪽에만 A+B 순이익) · 그 외엔 비우면 미입력(합계에서 제외)
+      net_profit: form.merged_into || form.net_profit === '' ? null : Number(form.net_profit) || 0,
+      merged_into: form.merged_into || null,
+      file_url, file_name,
+    }
     const { error } = editing
       ? await sb.from('finance_quotes').update(payload).eq('id', editing.id)
       : await sb.from('finance_quotes').insert([payload])
-    if (error) { toast('저장 실패: ' + error.message); setSaving(false); return }
-    setForm({ title: '', amount: '' }); setFile(null)
+    if (error) { toast('저장 실패: ' + error.message + dbHint(error.message)); setSaving(false); return }
+    setForm(emptyForm); setFile(null)
     setEditing(null); setShowForm(false); setSaving(false)
+    onRefresh()
+  }
+
+  async function saveHq(e: React.FormEvent) {
+    e.preventDefault()
+    setSaving(true)
+    const { error } = await createClient().from('finance_hq_expense')
+      .upsert({ year, amount: Number(hqForm.amount) || 0, memo: hqForm.memo, updated_at: new Date().toISOString() })
+    setSaving(false)
+    if (error) { toast('저장 실패: ' + error.message + dbHint(error.message)); return }
+    setShowHq(false)
     onRefresh()
   }
 
@@ -956,9 +842,27 @@ function QuoteTab({ list, onRefresh }: { list: Quote[]; onRefresh: () => void })
     }
   }
 
+  // 선택한 연도 견적서만
+  const yearList = list.filter(q => quoteYear(q) === year)
+  const sum = (f: (q: Quote) => number) => yearList.reduce((s, q) => s + f(q), 0)
+  const baseSum = sum(q => q.amount || 0)
+  const extraSum = sum(q => q.extra_amount || 0)
+  const totalSum = baseSum + extraSum
+  const profitSum = sum(q => q.net_profit || 0)
+  const noProfit = yearList.filter(q => q.net_profit == null && !q.merged_into).length
+  // 합산 묶음 — A에 합쳐진 B들. A의 %는 A+B 공급가 기준(손익표를 A+B 하나로 만든 경우)
+  const mergedOf = (id: string) => list.filter(x => x.merged_into === id)
+  const titleOf = (id: string) => list.find(x => x.id === id)?.title || '(삭제된 견적서)'
+  const groupSupply = (q: Quote) => supplyOf(q) + mergedOf(q.id).reduce((t, x) => t + supplyOf(x), 0)
+  // 합산 대상 후보 — 자기 자신·이미 다른 곳에 합쳐진 견적서 제외(한 단계만)
+  const mergeTargets = list.filter(x => x.id !== editing?.id && !x.merged_into)
+  const editingHasMerged = !!editing && mergedOf(editing.id).length > 0
+  const hq = hqExpenses.find(h => h.year === year)
+  const realProfit = profitSum - (hq?.amount || 0)
+
   // 정렬 — 날짜(견적일 없으면 등록일)/현장명/금액
   const dateOf = (q: Quote) => q.quote_date || q.created_at || ''
-  const sorted = [...list].sort((a, b) => {
+  const sorted = [...yearList].sort((a, b) => {
     if (sort === 'date_asc') return dateOf(a).localeCompare(dateOf(b))
     if (sort === 'name') return (a.title || '').localeCompare(b.title || '', 'ko', { numeric: true })
     if (sort === 'amount_desc') return (b.amount || 0) - (a.amount || 0)
@@ -966,29 +870,71 @@ function QuoteTab({ list, onRefresh }: { list: Quote[]; onRefresh: () => void })
     return dateOf(b).localeCompare(dateOf(a))
   })
 
+  const numCell = (n: number | null | undefined) => n ? won(n) : <span className="text-gray-300">-</span>
+
   return (
     <div>
-      <div className="flex justify-between items-center mb-4 gap-2">
-        <SortSelect value={sort} onChange={setSort} options={[
-          { value: 'date_desc', label: '최신순' },
-          { value: 'date_asc', label: '오래된순' },
-          { value: 'name', label: '현장명순' },
-          { value: 'amount_desc', label: '금액 높은순' },
-          { value: 'amount_asc', label: '금액 낮은순' },
-        ]} />
-        <button onClick={() => { setEditing(null); setForm({ title: '', amount: '' }); setFile(null); setShowForm(true) }}
+      <div className="flex justify-between items-center mb-4 gap-2 flex-wrap">
+        <div className="flex items-center gap-2">
+          <select value={year} onChange={e => setYear(Number(e.target.value))}
+            className="border border-gray-300 rounded-lg px-3 py-2 text-sm">
+            {years.map(y => <option key={y} value={y}>{y}년</option>)}
+          </select>
+          <SortSelect value={sort} onChange={setSort} options={[
+            { value: 'date_desc', label: '최신순' },
+            { value: 'date_asc', label: '오래된순' },
+            { value: 'name', label: '현장명순' },
+            { value: 'amount_desc', label: '금액 높은순' },
+            { value: 'amount_asc', label: '금액 낮은순' },
+          ]} />
+        </div>
+        <button onClick={() => { setEditing(null); setForm(emptyForm); setFile(null); setShowForm(true) }}
           className="bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-700">+ 견적서 추가</button>
       </div>
-      <p className="text-xs text-gray-400 mb-3">이 프로그램 이전에 만든 견적서(PDF·엑셀·사진)도 파일로 올려두면 여기서 모아볼 수 있어요.</p>
-      {list.length === 0 ? (
-        <EmptyState icon="📄" text="등록된 견적서가 없어요" />
+
+      {/* 연간 합계 — 공사경력 엑셀 상단 요약과 같은 순서 */}
+      <div className="bg-white rounded-xl border border-gray-200 px-4 md:px-6 py-5 mb-4">
+        <p className="text-sm font-semibold text-gray-700 mb-3">{year}년 합계 <span className="text-xs font-normal text-gray-400">· 견적서 {yearList.length}건</span></p>
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-x-6 gap-y-3 text-sm">
+          <SumItem label="본 공사 금액" value={won(baseSum)} />
+          <SumItem label="추가 공사 금액" value={won(extraSum)} />
+          <SumItem label="합계" value={won(totalSum)} strong />
+          <SumItem label="공사 순이익" value={won(profitSum)} sub={pct(profitSum, totalSum) + (noProfit ? ` · 미입력 ${noProfit}건` : '')} />
+          <div>
+            <p className="text-xs text-gray-400">본사 총지출</p>
+            <button onClick={() => { setHqForm({ amount: hq ? String(hq.amount) : '', memo: hq?.memo || '' }); setShowHq(true) }}
+              className="font-semibold text-gray-800 hover:text-green-700 text-left">
+              {hq ? won(hq.amount) : <span className="text-green-600 text-xs font-medium">+ 입력하기</span>}
+              {hq && <span className="text-xs text-green-500 ml-1.5 font-normal">수정</span>}
+            </button>
+            {hq?.memo && <p className="text-[11px] text-gray-400 truncate">{hq.memo}</p>}
+          </div>
+          <div className="bg-green-50 rounded-lg px-3 py-2 -mx-1">
+            <p className="text-xs text-green-700 font-medium">실제 순이익</p>
+            <p className={`font-bold ${realProfit < 0 ? 'text-red-500' : 'text-green-800'}`}>{won(realProfit)}</p>
+            <p className="text-[11px] text-green-700">{pct(realProfit, totalSum)}{!hq && ' · 본사 총지출 미입력'}</p>
+          </div>
+          <SumItem label="부가세 합" value={won(sum(q => q.vat || 0))} />
+          <SumItem label="고용산재 합" value={won(sum(q => q.insurance || 0))} />
+        </div>
+        <p className="text-[11px] text-gray-400 mt-3">실제 순이익 = 공사 순이익 합 − 본사 총지출 · %는 합계(본+추가) 대비</p>
+      </div>
+
+      <p className="text-xs text-gray-400 mb-3">이 프로그램 이전에 만든 견적서(PDF·엑셀·사진)도 파일로 올려두면 여기서 모아볼 수 있어요. 현장별 %는 공급가(부가세 제외) 대비예요.</p>
+      {yearList.length === 0 ? (
+        <EmptyState icon="📄" text={`${year}년 견적서가 없어요`} />
       ) : (
-        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-          <table className="w-full">
+        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden overflow-x-auto">
+          <table className="w-full whitespace-nowrap">
             <thead>
               <tr className="border-b border-gray-100 bg-gray-50">
                 <th className="text-left text-xs font-semibold text-gray-400 px-6 py-3">현장명</th>
-                <th className="text-right text-xs font-semibold text-gray-400 px-4 py-3 whitespace-nowrap">금액</th>
+                <th className="text-right text-xs font-semibold text-gray-400 px-4 py-3">공사 금액</th>
+                <th className="text-right text-xs font-semibold text-gray-400 px-4 py-3">추가 공사</th>
+                <th className="text-right text-xs font-semibold text-gray-400 px-4 py-3">부가세</th>
+                <th className="text-right text-xs font-semibold text-gray-400 px-4 py-3">고용산재</th>
+                <th className="text-right text-xs font-semibold text-gray-400 px-4 py-3">순이익</th>
+                <th className="text-right text-xs font-semibold text-gray-400 px-4 py-3">%</th>
                 <th className="text-left text-xs font-semibold text-gray-400 px-4 py-3">첨부파일</th>
                 <th className="px-4 py-3"></th>
               </tr>
@@ -997,16 +943,34 @@ function QuoteTab({ list, onRefresh }: { list: Quote[]; onRefresh: () => void })
               {sorted.map(q => (
                 <tr key={q.id} className="border-b border-gray-50 hover:bg-gray-50 align-top">
                   <td className="px-6 py-3 text-sm font-medium text-gray-800">{q.title}</td>
-                  <td className="px-4 py-3 text-sm text-right font-semibold text-gray-800 whitespace-nowrap">{q.amount ? q.amount.toLocaleString() + '원' : '-'}</td>
+                  <td className="px-4 py-3 text-sm text-right font-semibold text-gray-800">{numCell(q.amount)}</td>
+                  <td className="px-4 py-3 text-sm text-right text-gray-700">{numCell(q.extra_amount)}</td>
+                  <td className="px-4 py-3 text-sm text-right text-gray-700">{numCell(q.vat)}</td>
+                  <td className="px-4 py-3 text-sm text-right text-gray-700">{numCell(q.insurance)}</td>
+                  <td className="px-4 py-3 text-sm text-right font-semibold text-gray-800">
+                    {q.merged_into
+                      ? <span className="text-xs font-normal text-gray-500 max-w-[200px] truncate inline-block align-middle" title={titleOf(q.merged_into)}>→ {titleOf(q.merged_into)}에 합산</span>
+                      : q.net_profit == null ? <span className="text-gray-300">-</span> : won(q.net_profit)}
+                  </td>
+                  <td className="px-4 py-3 text-sm text-right text-gray-500">
+                    {q.net_profit != null && !q.merged_into && <>
+                      {pct(q.net_profit, groupSupply(q))}
+                      {mergedOf(q.id).length > 0 && <span className="block text-[10px] text-gray-400">합산 {mergedOf(q.id).length + 1}건 기준</span>}
+                    </>}
+                  </td>
                   <td className="px-4 py-3">
                     {q.file_url ? (
-                      <button onClick={() => openFile(q)} className="text-sm text-green-600 hover:underline text-left break-all">📎 {q.file_name}</button>
+                      <button onClick={() => openFile(q)} className="text-sm text-green-600 hover:underline text-left max-w-[260px] truncate inline-block align-middle" title={q.file_name || ''}>📎 {q.file_name}</button>
                     ) : <span className="text-xs text-gray-300">-</span>}
                   </td>
-                  <td className="px-4 py-3 whitespace-nowrap">
+                  <td className="px-4 py-3">
                     <div className="flex items-center gap-2 justify-end">
-                      <button onClick={() => { setEditing(q); setForm({ title: q.title, amount: String(q.amount || '') }); setFile(null); setShowForm(true) }}
-                        className="text-xs text-green-500 hover:text-green-700">수정</button>
+                      <button onClick={() => {
+                        setEditing(q)
+                        const s = (n: number | null) => n ? String(n) : ''
+                        setForm({ title: q.title, quote_date: q.quote_date || '', amount: s(q.amount), extra_amount: s(q.extra_amount), vat: s(q.vat), insurance: s(q.insurance), net_profit: q.net_profit == null ? '' : String(q.net_profit), merged_into: q.merged_into || '' })
+                        setFile(null); setShowForm(true)
+                      }} className="text-xs text-green-500 hover:text-green-700">수정</button>
                       <button onClick={() => del(q)} className="text-xs text-red-400 hover:text-red-600">삭제</button>
                     </div>
                   </td>
@@ -1018,8 +982,37 @@ function QuoteTab({ list, onRefresh }: { list: Quote[]; onRefresh: () => void })
       )}
       {showForm && (
         <FormModal title={editing ? '견적서 수정' : '견적서 추가'} onClose={() => setShowForm(false)} onSubmit={save} saving={saving}>
-          <TextInput label="현장명 *" required value={form.title} onChange={v => setForm({ ...form, title: v })} placeholder="예) 롯데캐슬 미용실" />
-          <NumberInput label="금액" value={form.amount} onChange={v => setForm({ ...form, amount: v })} />
+          <TextInput label="현장명 *" required value={form.title} onChange={v => setForm({ ...form, title: v })} placeholder="예) 260824_롯데캐슬 미용실" />
+          <div>
+            <label className="text-sm font-medium text-gray-700 block mb-1.5">견적일 <span className="text-gray-400 font-normal">(연도 합계 기준 · 비우면 현장명 앞 날짜)</span></label>
+            <input type="date" value={form.quote_date} onChange={e => setForm({ ...form, quote_date: e.target.value })}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <NumberInput label="공사 금액" value={form.amount} onChange={v => setForm({ ...form, amount: v })} />
+            <NumberInput label="추가 공사 금액" value={form.extra_amount} onChange={v => setForm({ ...form, extra_amount: v })} />
+            <NumberInput label="부가세" value={form.vat} onChange={v => setForm({ ...form, vat: v })} />
+            <NumberInput label="고용산재 금액" value={form.insurance} onChange={v => setForm({ ...form, insurance: v })} />
+          </div>
+          <div>
+            <label className="text-sm font-medium text-gray-700 block mb-1.5">손익 계산</label>
+            <select value={form.merged_into} disabled={editingHasMerged} onChange={e => setForm({ ...form, merged_into: e.target.value })}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 disabled:bg-gray-50">
+              <option value="">이 견적서 따로 계산</option>
+              {mergeTargets.map(x => <option key={x.id} value={x.id}>{x.title}에 합산</option>)}
+            </select>
+            <p className="text-[11px] text-gray-400 mt-1">
+              {editingHasMerged
+                ? `다른 견적서 ${mergedOf(editing!.id).length}건이 이 견적서에 합산돼 있어요 — 순이익은 합친 금액으로 적어요.`
+                : '손익표를 다른 견적서와 하나로 만들었으면 그 견적서를 고르세요. 순이익·%는 그쪽에 합쳐서 보여요.'}
+            </p>
+          </div>
+          {!form.merged_into && (
+            <div>
+              <NumberInput label={editingHasMerged ? '순이익 금액 (합산)' : '순이익 금액'} value={form.net_profit} onChange={v => setForm({ ...form, net_profit: v })} />
+              <p className="text-[11px] text-gray-400 mt-1">손익 엑셀의 순이익을 옮겨 적어요. 아직 모르면 비워두세요(합계에서 빠짐).</p>
+            </div>
+          )}
           <div>
             <label className="text-sm font-medium text-gray-700 block mb-1.5">
               첨부파일 {editing?.file_name ? <span className="text-gray-400 font-normal">(변경 시에만 · 현재: {editing.file_name})</span> : <span className="text-gray-400 font-normal">(PDF·엑셀·사진)</span>}
@@ -1028,6 +1021,23 @@ function QuoteTab({ list, onRefresh }: { list: Quote[]; onRefresh: () => void })
           </div>
         </FormModal>
       )}
+      {showHq && (
+        <FormModal title={`${year}년 본사 총지출`} onClose={() => setShowHq(false)} onSubmit={saveHq} saving={saving}>
+          <NumberInput label="본사 총지출 금액 *" required value={hqForm.amount} onChange={v => setHqForm({ ...hqForm, amount: v })} />
+          <TextInput label="메모" value={hqForm.memo} onChange={v => setHqForm({ ...hqForm, memo: v })} placeholder="예) 경리나라 본사 손익 1~9월 기준" />
+          <p className="text-[11px] text-gray-400 -mt-2">새로 정리할 때마다 이 금액을 고쳐 쓰면 실제 순이익이 바로 다시 계산돼요.</p>
+        </FormModal>
+      )}
+    </div>
+  )
+}
+
+function SumItem({ label, value, sub, strong }: { label: string; value: string; sub?: string; strong?: boolean }) {
+  return (
+    <div>
+      <p className="text-xs text-gray-400">{label}</p>
+      <p className={strong ? 'font-bold text-gray-900' : 'font-semibold text-gray-800'}>{value}</p>
+      {sub && <p className="text-[11px] text-gray-400">{sub}</p>}
     </div>
   )
 }
