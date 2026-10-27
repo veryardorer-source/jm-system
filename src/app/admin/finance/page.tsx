@@ -12,6 +12,8 @@ import { storeMonthlyLedger } from '@/lib/payroll-store'
 import FileDropInput from '@/components/FileDropInput'
 import { openPdfTitled, resolveFileUrl, removeStoredFile, downloadUrl, SECURE_PREFIX } from '@/lib/media'
 import { normalizePdfTitle } from '@/lib/pdf'
+import { readQuoteAmounts } from '@/lib/quote-parse'
+import { readExpenseFile, ExpenseSheet } from '@/lib/expense-parse'
 import SortSelect from '@/components/SortSelect'
 
 const TAB_LIST = ['고정지출', '급여내역', '현장별 이익', '견적서'] as const // 매출매입 탭은 2026-10-27 제외(finance_sales 자료는 DB에 그대로)
@@ -108,7 +110,7 @@ export default function FinancePage() {
           {tab === '고정지출' && <FixedCostTab list={fixedCosts} onRefresh={fetchAll} />}
           {tab === '급여내역' && <PayrollTab list={payrolls} onRefresh={fetchAll} />}
           {tab === '현장별 이익' && <ProfitTab list={profits} projects={projects} onRefresh={fetchAll} />}
-          {tab === '견적서' && <QuoteTab list={quotes} hqExpenses={hqExpenses} onRefresh={fetchAll} />}
+          {tab === '견적서' && <QuoteTab list={quotes} hqExpenses={hqExpenses} fixedCosts={fixedCosts} onRefresh={fetchAll} />}
         </div>
       </div>
     </div>
@@ -122,17 +124,6 @@ function FixedCostTab({ list, onRefresh }: { list: FixedCost[]; onRefresh: () =>
   const [editing, setEditing] = useState<FixedCost | null>(null)
   const [form, setForm] = useState({ month: '', title: '', amount: '', memo: '' })
   const [saving, setSaving] = useState(false)
-
-  async function bulkSave(month: string, rows: ParsedRow[]) {
-    const sb = createClient()
-    const { error } = await sb.from('finance_fixed_costs').insert(
-      rows.map(r => ({ month: month + '-01', title: r.label, amount: r.amount, memo: '' }))
-    )
-    if (error) { toast('저장 실패: ' + error.message); return }
-    setShowBulk(false)
-    onRefresh()
-  }
-
 
   async function save(e: React.FormEvent) {
     e.preventDefault()
@@ -167,7 +158,7 @@ function FixedCostTab({ list, onRefresh }: { list: FixedCost[]; onRefresh: () =>
     <div>
       <div className="flex justify-end gap-2 mb-4">
         <button onClick={() => setShowBulk(true)}
-          className="border border-green-600 text-green-600 px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-50">📊 엑셀로 일괄 추가</button>
+          className="border border-green-600 text-green-600 px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-50">📊 월 지출 엑셀 올리기</button>
         <button onClick={() => { setEditing(null); setForm({ month: '', title: '', amount: '', memo: '' }); setShowForm(true) }}
           className="bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-700">+ 직접 추가</button>
       </div>
@@ -193,8 +184,102 @@ function FixedCostTab({ list, onRefresh }: { list: FixedCost[]; onRefresh: () =>
         </FormModal>
       )}
       {showBulk && (
-        <BulkImportModal title="고정지출 엑셀 일괄 추가" labelHeader="항목명" onClose={() => setShowBulk(false)} onSave={bulkSave} />
+        <ExpenseUploadModal existing={list} onClose={() => setShowBulk(false)} onSaved={() => { setShowBulk(false); onRefresh() }} />
       )}
+    </div>
+  )
+}
+
+// 본사 월 지출 엑셀(경리나라 손익보고서 정리본) → 그 달 고정지출을 용도별로 교체 저장. 견적서 탭 '본사 총지출'이 이 합계를 쓴다.
+const GPT_PROMPT = `경리나라 본사 손익보고서(2026년 ○월)를 보고, 첨부한 '본사_월지출_양식.xlsx' 양식대로 정리해 줘.
+- 1행 제목: 2026년 ○월 본사 지출
+- 4행 머리글(용도 | 지출액 | 건수 | 메모)은 그대로 두기
+- 손익보고서의 '비용' 항목을 용도별로 한 줄씩, 지출액은 부가세 포함·취소/환불 차감 전 금액
+- 매출(환불)·매입(할인) 줄은 넣지 않기, 마지막 줄은 '합계'`
+
+function ExpenseUploadModal({ existing, onClose, onSaved }: { existing: FixedCost[]; onClose: () => void; onSaved: () => void }) {
+  const [sheet, setSheet] = useState<ExpenseSheet | null>(null)
+  const [fileName, setFileName] = useState('')
+  const [month, setMonth] = useState('')
+  const [error, setError] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  async function pick(f: File) {
+    setError(''); setSheet(null); setFileName(f.name)
+    const r = await readExpenseFile(f).catch(() => null)
+    if (!r) { setError("표에서 '용도'와 '지출액'(또는 금액) 머리글을 찾지 못했어요. 아래 양식대로 정리된 파일인지 확인해 주세요."); return }
+    setSheet(r); setMonth(r.month || '')
+  }
+
+  const same = existing.filter(c => c.month?.slice(0, 7) === month)
+  const sameSum = same.reduce((t, c) => t + (c.amount || 0), 0)
+
+  async function save() {
+    if (!sheet || !month) return
+    setSaving(true)
+    const sb = createClient()
+    // 같은 달은 새 내용으로 교체 — 다시 올려도 두 번 더해지지 않게
+    const { error: delErr } = await sb.from('finance_fixed_costs').delete().eq('month', month + '-01')
+    if (delErr) { toast('저장 실패: ' + delErr.message); setSaving(false); return }
+    const { error: insErr } = await sb.from('finance_fixed_costs').insert(
+      sheet.rows.map(r => ({ month: month + '-01', title: r.label, amount: r.amount, memo: '월지출 엑셀: ' + fileName })))
+    setSaving(false)
+    if (insErr) { toast('저장 실패: ' + insErr.message); return }
+    toast(`${month} 지출 ${sheet.rows.length}개 용도 · ${sheet.total.toLocaleString()}원을 저장했어요`, 'ok')
+    onSaved()
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl w-full max-w-lg shadow-xl max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between px-6 py-5 border-b border-gray-100 sticky top-0 bg-white">
+          <h2 className="text-lg font-bold">월 지출 엑셀 올리기</h2>
+          <button onClick={onClose} className="text-gray-400 text-2xl">&times;</button>
+        </div>
+        <div className="px-6 py-5 flex flex-col gap-4">
+          <FileDropInput onFile={pick} currentName={fileName || undefined} accept=".xlsx,.xls,.xlsm,.xlsb" hint="경리나라 월 지출 정리 엑셀" />
+          {error && <p className="text-sm text-orange-600">{error}</p>}
+          {sheet && <>
+            <div>
+              <label className="text-sm font-medium text-gray-700 block mb-1.5">지출 달 * <span className="text-gray-400 font-normal">(파일 제목에서 찾았어요 — 다르면 고치세요)</span></label>
+              <input type="month" value={month} onChange={e => setMonth(e.target.value)}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
+            </div>
+            <div className="border border-gray-200 rounded-lg overflow-hidden">
+              <table className="w-full text-sm">
+                <tbody>
+                  {sheet.rows.map(r => (
+                    <tr key={r.label} className="border-b border-gray-50">
+                      <td className="px-3 py-1.5 text-gray-700">{r.label}</td>
+                      <td className="px-3 py-1.5 text-right text-gray-800">{r.amount.toLocaleString()}원</td>
+                    </tr>
+                  ))}
+                  <tr className="bg-gray-50 font-semibold">
+                    <td className="px-3 py-2">합계 ({sheet.rows.length}개 용도)</td>
+                    <td className="px-3 py-2 text-right">{sheet.total.toLocaleString()}원</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            {!!sheet.fileTotal && (sheet.fileTotal === sheet.total
+              ? <p className="text-xs text-green-700 -mt-2">✓ 파일의 합계 줄과 같아요</p>
+              : <p className="text-xs text-orange-600 -mt-2">파일의 합계 줄({sheet.fileTotal.toLocaleString()}원)과 달라요 — 파일을 확인해 주세요</p>)}
+            {same.length > 0 && <p className="text-xs text-orange-600">{month}에 이미 {same.length}건({sameSum.toLocaleString()}원)이 있어요. 저장하면 새 내용으로 바뀌어요.</p>}
+            <button onClick={save} disabled={saving || !month}
+              className="bg-green-600 text-white py-2.5 rounded-lg text-sm font-medium disabled:opacity-50">
+              {saving ? '저장 중...' : !month ? '달을 골라 주세요' : `${month} 지출 저장`}
+            </button>
+          </>}
+          <details className="text-xs text-gray-500 bg-gray-50 rounded-lg px-3 py-2">
+            <summary className="cursor-pointer font-medium text-gray-600">양식 · 지피티에게 부탁하는 말</summary>
+            <p className="mt-2">지금 지피티가 만들어 주는 &apos;○월 지출요약&apos; 파일도 그대로 올리면 돼요. 새로 맞춘다면 아래 양식을 쓰세요.</p>
+            <a href="/templates/본사_월지출_양식.xlsx" download className="inline-block mt-2 text-green-600 underline">📥 본사_월지출_양식.xlsx 받기</a>
+            <pre className="mt-2 whitespace-pre-wrap bg-white border border-gray-200 rounded p-2 text-[11px] text-gray-700">{GPT_PROMPT}</pre>
+            <button type="button" onClick={() => navigator.clipboard.writeText(GPT_PROMPT).then(() => toast('복사했어요', 'ok'))}
+              className="mt-1 text-green-600 underline">부탁하는 말 복사</button>
+          </details>
+        </div>
+      </div>
     </div>
   )
 }
@@ -759,7 +844,7 @@ const pct = (a: number, b: number) => b > 0 ? Math.round(a / b * 100) + '%' : '-
 // 현장별 % = 순이익 ÷ 공급가(공사+추가 − 부가세, 부가세 미입력이면 ÷1.1) — 기존 공사경력 엑셀과 같은 기준
 const supplyOf = (q: Quote) => { const total = (q.amount || 0) + (q.extra_amount || 0); return q.vat ? total - q.vat : Math.round(total / 1.1) }
 
-function QuoteTab({ list, hqExpenses, onRefresh }: { list: Quote[]; hqExpenses: HqExpense[]; onRefresh: () => void }) {
+function QuoteTab({ list, hqExpenses, fixedCosts, onRefresh }: { list: Quote[]; hqExpenses: HqExpense[]; fixedCosts: FixedCost[]; onRefresh: () => void }) {
   const [sort, setSort] = useState('date_desc')
   const [showForm, setShowForm] = useState(false)
   const [editing, setEditing] = useState<Quote | null>(null)
@@ -771,6 +856,25 @@ function QuoteTab({ list, hqExpenses, onRefresh }: { list: Quote[]; hqExpenses: 
   const [year, setYear] = useState(new Date().getFullYear())
   const [showHq, setShowHq] = useState(false)
   const [hqForm, setHqForm] = useState({ amount: '', memo: '' })
+  const [readNote, setReadNote] = useState<{ text: string; ok: boolean } | null>(null)
+
+  // 견적서·계약서를 고르면 공사금액·부가세·고용산재를 읽어 칸에 채움(저장 전 확인·수정 가능)
+  async function pickFile(f: File | null) {
+    setFile(f); setReadNote(null)
+    if (!f) return
+    if (!form.title.trim()) setForm(prev => ({ ...prev, title: f.name.replace(/\.[^.]+$/, '') }))
+    setReadNote({ text: '파일에서 금액을 읽는 중…', ok: true })
+    const r = await readQuoteAmounts(f)
+    if (!r) { setReadNote({ text: '이 파일에서는 금액을 읽지 못했어요(스캔·사진·한글 파일 등). 직접 입력해 주세요.', ok: false }); return }
+    setForm(prev => ({
+      ...prev,
+      amount: r.amount != null ? String(r.amount) : prev.amount,
+      vat: r.vat != null ? String(r.vat) : prev.vat,
+      insurance: r.insurance != null ? String(r.insurance) : prev.insurance,
+    }))
+    const parts = [`공사금액 ${won(r.amount || 0)}`, r.vat != null && `부가세 ${won(r.vat)}${r.vatEstimated ? '(금액÷11로 계산)' : ''}`, r.insurance != null && `고용산재 ${won(r.insurance)}`].filter(Boolean)
+    setReadNote({ text: `${r.source}에서 읽었어요 — ${parts.join(' · ')}${r.nego ? ' (특기사항의 네고 금액)' : ''}${r.source === '계약서' ? ' · 고용산재는 계약서에 없어 직접 입력' : ''}. 맞는지 확인 후 저장하세요.`, ok: true })
+  }
 
   const dbHint = (msg: string) => /column|schema cache|finance_hq_expense/i.test(msg) ? ' (관리자에게: db/quote_profit.sql 실행 필요)' : ''
 
@@ -857,8 +961,14 @@ function QuoteTab({ list, hqExpenses, onRefresh }: { list: Quote[]; hqExpenses: 
   // 합산 대상 후보 — 자기 자신·이미 다른 곳에 합쳐진 견적서 제외(한 단계만)
   const mergeTargets = list.filter(x => x.id !== editing?.id && !x.merged_into)
   const editingHasMerged = !!editing && mergedOf(editing.id).length > 0
+  // 본사 총지출 — 고정지출 탭에 올린 그 해 월 지출 합(있으면 자동), 없으면 직접 입력한 금액
   const hq = hqExpenses.find(h => h.year === year)
-  const realProfit = profitSum - (hq?.amount || 0)
+  const fcYear = fixedCosts.filter(c => c.month?.startsWith(String(year)))
+  const fcMonths = Array.from(new Set(fcYear.map(c => Number(c.month.slice(5, 7))))).sort((a, b) => a - b)
+  const fcMissing = fcMonths.length ? Array.from({ length: fcMonths[fcMonths.length - 1] }, (_, i) => i + 1).filter(m => !fcMonths.includes(m)) : []
+  const hqAuto = fcYear.length > 0
+  const hqAmount = hqAuto ? fcYear.reduce((t, c) => t + (c.amount || 0), 0) : hq ? hq.amount : null
+  const realProfit = profitSum - (hqAmount || 0)
 
   // 정렬 — 날짜(견적일 없으면 등록일)/현장명/금액
   const dateOf = (q: Quote) => q.quote_date || q.created_at || ''
@@ -888,8 +998,8 @@ function QuoteTab({ list, hqExpenses, onRefresh }: { list: Quote[]; hqExpenses: 
             { value: 'amount_asc', label: '금액 낮은순' },
           ]} />
         </div>
-        <button onClick={() => { setEditing(null); setForm(emptyForm); setFile(null); setShowForm(true) }}
-          className="bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-700">+ 견적서 추가</button>
+        <button onClick={() => { setEditing(null); setForm(emptyForm); setFile(null); setReadNote(null); setShowForm(true) }}
+          className="bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-700">+ 추가</button>
       </div>
 
       {/* 연간 합계 — 공사경력 엑셀 상단 요약과 같은 순서 */}
@@ -902,17 +1012,23 @@ function QuoteTab({ list, hqExpenses, onRefresh }: { list: Quote[]; hqExpenses: 
           <SumItem label="공사 순이익" value={won(profitSum)} sub={pct(profitSum, totalSum) + (noProfit ? ` · 미입력 ${noProfit}건` : '')} />
           <div>
             <p className="text-xs text-gray-400">본사 총지출</p>
-            <button onClick={() => { setHqForm({ amount: hq ? String(hq.amount) : '', memo: hq?.memo || '' }); setShowHq(true) }}
-              className="font-semibold text-gray-800 hover:text-green-700 text-left">
-              {hq ? won(hq.amount) : <span className="text-green-600 text-xs font-medium">+ 입력하기</span>}
-              {hq && <span className="text-xs text-green-500 ml-1.5 font-normal">수정</span>}
-            </button>
-            {hq?.memo && <p className="text-[11px] text-gray-400 truncate">{hq.memo}</p>}
+            {hqAuto ? <>
+              <p className="font-semibold text-gray-800">{won(hqAmount || 0)}</p>
+              <p className="text-[11px] text-gray-400">고정지출 {fcMonths.length === fcMonths[fcMonths.length - 1] ? `1~${fcMonths[fcMonths.length - 1]}월` : fcMonths.join('·') + '월'} 합 (자동)</p>
+              {fcMissing.length > 0 && <p className="text-[11px] text-orange-500">빠진 달: {fcMissing.join('·')}월</p>}
+            </> : <>
+              <button onClick={() => { setHqForm({ amount: hq ? String(hq.amount) : '', memo: hq?.memo || '' }); setShowHq(true) }}
+                className="font-semibold text-gray-800 hover:text-green-700 text-left">
+                {hq ? won(hq.amount) : <span className="text-green-600 text-xs font-medium">+ 입력하기</span>}
+                {hq && <span className="text-xs text-green-500 ml-1.5 font-normal">수정</span>}
+              </button>
+              <p className="text-[11px] text-gray-400 truncate">{hq?.memo || '고정지출 탭에 월 지출 엑셀을 올리면 자동으로 채워져요'}</p>
+            </>}
           </div>
           <div className="bg-green-50 rounded-lg px-3 py-2 -mx-1">
             <p className="text-xs text-green-700 font-medium">실제 순이익</p>
             <p className={`font-bold ${realProfit < 0 ? 'text-red-500' : 'text-green-800'}`}>{won(realProfit)}</p>
-            <p className="text-[11px] text-green-700">{pct(realProfit, totalSum)}{!hq && ' · 본사 총지출 미입력'}</p>
+            <p className="text-[11px] text-green-700">{pct(realProfit, totalSum)}{hqAmount == null && ' · 본사 총지출 미입력'}</p>
           </div>
           <SumItem label="부가세 합" value={won(sum(q => q.vat || 0))} />
           <SumItem label="고용산재 합" value={won(sum(q => q.insurance || 0))} />
@@ -969,7 +1085,7 @@ function QuoteTab({ list, hqExpenses, onRefresh }: { list: Quote[]; hqExpenses: 
                         setEditing(q)
                         const s = (n: number | null) => n ? String(n) : ''
                         setForm({ title: q.title, quote_date: q.quote_date || '', amount: s(q.amount), extra_amount: s(q.extra_amount), vat: s(q.vat), insurance: s(q.insurance), net_profit: q.net_profit == null ? '' : String(q.net_profit), merged_into: q.merged_into || '' })
-                        setFile(null); setShowForm(true)
+                        setFile(null); setReadNote(null); setShowForm(true)
                       }} className="text-xs text-green-500 hover:text-green-700">수정</button>
                       <button onClick={() => del(q)} className="text-xs text-red-400 hover:text-red-600">삭제</button>
                     </div>
@@ -981,8 +1097,15 @@ function QuoteTab({ list, hqExpenses, onRefresh }: { list: Quote[]; hqExpenses: 
         </div>
       )}
       {showForm && (
-        <FormModal title={editing ? '견적서 수정' : '견적서 추가'} onClose={() => setShowForm(false)} onSubmit={save} saving={saving}>
+        <FormModal title={editing ? '견적서 수정' : '견적서·계약 추가'} onClose={() => setShowForm(false)} onSubmit={save} saving={saving}>
           <TextInput label="현장명 *" required value={form.title} onChange={v => setForm({ ...form, title: v })} placeholder="예) 260824_롯데캐슬 미용실" />
+          <div>
+            <label className="text-sm font-medium text-gray-700 block mb-1.5">
+              견적서 또는 계약서 {editing?.file_name ? <span className="text-gray-400 font-normal">(변경 시에만 · 현재: {editing.file_name})</span> : <span className="text-gray-400 font-normal">(없으면 비워두고 금액만 입력)</span>}
+            </label>
+            <FileDropInput onFile={pickFile} currentName={file?.name} hint="PDF·엑셀 — 공사금액·부가세·고용산재 자동 입력" />
+            {readNote && <p className={`text-[11px] mt-1.5 ${readNote.ok ? 'text-green-700' : 'text-orange-600'}`}>{readNote.text}</p>}
+          </div>
           <div>
             <label className="text-sm font-medium text-gray-700 block mb-1.5">견적일 <span className="text-gray-400 font-normal">(연도 합계 기준 · 비우면 현장명 앞 날짜)</span></label>
             <input type="date" value={form.quote_date} onChange={e => setForm({ ...form, quote_date: e.target.value })}
@@ -1013,12 +1136,6 @@ function QuoteTab({ list, hqExpenses, onRefresh }: { list: Quote[]; hqExpenses: 
               <p className="text-[11px] text-gray-400 mt-1">손익 엑셀의 순이익을 옮겨 적어요. 아직 모르면 비워두세요(합계에서 빠짐).</p>
             </div>
           )}
-          <div>
-            <label className="text-sm font-medium text-gray-700 block mb-1.5">
-              첨부파일 {editing?.file_name ? <span className="text-gray-400 font-normal">(변경 시에만 · 현재: {editing.file_name})</span> : <span className="text-gray-400 font-normal">(PDF·엑셀·사진)</span>}
-            </label>
-            <FileDropInput onFile={f => setFile(f)} currentName={file?.name} hint="PDF·엑셀·사진 등" />
-          </div>
         </FormModal>
       )}
       {showHq && (
