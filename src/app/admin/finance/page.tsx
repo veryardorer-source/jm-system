@@ -12,7 +12,7 @@ import { storeMonthlyLedger } from '@/lib/payroll-store'
 import FileDropInput from '@/components/FileDropInput'
 import { openPdfTitled, resolveFileUrl, removeStoredFile, downloadUrl, SECURE_PREFIX } from '@/lib/media'
 import { normalizePdfTitle } from '@/lib/pdf'
-import { readQuoteAmounts } from '@/lib/quote-parse'
+import { readQuoteAmounts, QuoteAmounts } from '@/lib/quote-parse'
 import { readExpenseFile, ExpenseSheet } from '@/lib/expense-parse'
 import SortSelect from '@/components/SortSelect'
 
@@ -857,6 +857,7 @@ function QuoteTab({ list, hqExpenses, fixedCosts, onRefresh }: { list: Quote[]; 
   const [showHq, setShowHq] = useState(false)
   const [hqForm, setHqForm] = useState({ amount: '', memo: '' })
   const [readNote, setReadNote] = useState<{ text: string; ok: boolean } | null>(null)
+  const [showBulkRead, setShowBulkRead] = useState(false)
 
   // 견적서·계약서를 고르면 공사금액·부가세·고용산재를 읽어 칸에 채움(저장 전 확인·수정 가능)
   async function pickFile(f: File | null) {
@@ -998,8 +999,12 @@ function QuoteTab({ list, hqExpenses, fixedCosts, onRefresh }: { list: Quote[]; 
             { value: 'amount_asc', label: '금액 낮은순' },
           ]} />
         </div>
-        <button onClick={() => { setEditing(null); setForm(emptyForm); setFile(null); setReadNote(null); setShowForm(true) }}
-          className="bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-700">+ 추가</button>
+        <div className="flex gap-2">
+          <button onClick={() => setShowBulkRead(true)}
+            className="border border-green-600 text-green-600 px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-50">📄 올려 둔 파일에서 한 번에 읽기</button>
+          <button onClick={() => { setEditing(null); setForm(emptyForm); setFile(null); setReadNote(null); setShowForm(true) }}
+            className="bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-700">+ 추가</button>
+        </div>
       </div>
 
       {/* 연간 합계 — 공사경력 엑셀 상단 요약과 같은 순서 */}
@@ -1138,6 +1143,7 @@ function QuoteTab({ list, hqExpenses, fixedCosts, onRefresh }: { list: Quote[]; 
           )}
         </FormModal>
       )}
+      {showBulkRead && <BulkReadModal quotes={yearList} year={year} onClose={() => setShowBulkRead(false)} onDone={() => { setShowBulkRead(false); onRefresh() }} />}
       {showHq && (
         <FormModal title={`${year}년 본사 총지출`} onClose={() => setShowHq(false)} onSubmit={saveHq} saving={saving}>
           <NumberInput label="본사 총지출 금액 *" required value={hqForm.amount} onChange={v => setHqForm({ ...hqForm, amount: v })} />
@@ -1145,6 +1151,146 @@ function QuoteTab({ list, hqExpenses, fixedCosts, onRefresh }: { list: Quote[]; 
           <p className="text-[11px] text-gray-400 -mt-2">새로 정리할 때마다 이 금액을 고쳐 쓰면 실제 순이익이 바로 다시 계산돼요.</p>
         </FormModal>
       )}
+    </div>
+  )
+}
+
+// 올려 둔 견적서·계약서 파일을 한꺼번에 다시 읽어 빈 칸(공사금액·부가세·고용산재)을 채운다.
+// 이미 적어 둔 공사금액과 다르게 읽히면(네고로 고친 금액 등) 표시만 하고, 체크했을 때만 바꾼다.
+type BulkRow = {
+  q: Quote
+  status: 'wait' | 'ok' | 'fail' | 'nofile'
+  r?: QuoteAmounts
+  fill: { amount?: number; vat?: number; insurance?: number } // 비어 있어 채울 값
+  diffAmount?: number                                          // 기존 공사금액과 다르게 읽힌 금액
+  apply: boolean
+  replaceAmount: boolean
+}
+
+function BulkReadModal({ quotes, year, onClose, onDone }: { quotes: Quote[]; year: number; onClose: () => void; onDone: () => void }) {
+  const [rows, setRows] = useState<BulkRow[]>(() => quotes.map(q => ({ q, status: q.file_url ? 'wait' : 'nofile', fill: {}, apply: false, replaceAmount: false })))
+  const [running, setRunning] = useState(false)
+  const [done, setDone] = useState(0)
+  const [saving, setSaving] = useState(false)
+  const targets = rows.filter(x => x.q.file_url).length
+
+  async function readAll() {
+    setRunning(true); setDone(0)
+    for (let i = 0; i < rows.length; i++) {
+      const q = rows[i].q
+      if (!q.file_url) continue
+      let r: QuoteAmounts | null = null
+      try {
+        const url = await resolveFileUrl(q.file_url)
+        const blob = await (await fetch(url)).blob()
+        r = await readQuoteAmounts(new File([blob], q.file_name || 'file'))
+      } catch { r = null }
+      const fill: BulkRow['fill'] = {}
+      let diffAmount: number | undefined
+      if (r) {
+        if (r.amount != null) { if (!q.amount) fill.amount = r.amount; else if (q.amount !== r.amount) diffAmount = r.amount }
+        if (r.vat != null && !q.vat) fill.vat = r.vat
+        if (r.insurance != null && !q.insurance) fill.insurance = r.insurance
+      }
+      const row: BulkRow = { q, status: r ? 'ok' : 'fail', r: r || undefined, fill, diffAmount, apply: Object.keys(fill).length > 0, replaceAmount: false }
+      setRows(prev => prev.map((x, j) => j === i ? row : x))
+      setDone(d => d + 1)
+    }
+    setRunning(false)
+  }
+
+  const toSave = rows.filter(x => (x.apply && Object.keys(x.fill).length > 0) || (x.replaceAmount && x.diffAmount != null))
+
+  async function apply() {
+    setSaving(true)
+    const sb = createClient()
+    let fail = 0
+    for (const x of toSave) {
+      const payload: Record<string, number> = x.apply ? { ...x.fill } : {}
+      if (x.replaceAmount && x.diffAmount != null) payload.amount = x.diffAmount
+      const { error } = await sb.from('finance_quotes').update(payload).eq('id', x.q.id)
+      if (error) fail++
+    }
+    setSaving(false)
+    toast(fail ? `${toSave.length - fail}건 저장, ${fail}건 실패` : `${toSave.length}건을 채웠어요`, fail ? 'error' : 'ok')
+    onDone()
+  }
+
+  const set = (id: string, patch: Partial<BulkRow>) => setRows(prev => prev.map(x => x.q.id === id ? { ...x, ...patch } : x))
+  const cellNew = (cur: number | null, v?: number) => v != null
+    ? <span className="text-green-700 font-medium">{v.toLocaleString()}</span>
+    : cur ? <span className="text-gray-400">{cur.toLocaleString()}</span> : <span className="text-gray-300">-</span>
+  const failed = rows.filter(x => x.status === 'fail')
+  const noFile = rows.filter(x => x.status === 'nofile')
+
+  return (
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl w-full max-w-4xl shadow-xl max-h-[90vh] flex flex-col">
+        <div className="flex items-center justify-between px-6 py-5 border-b border-gray-100">
+          <h2 className="text-lg font-bold">{year}년 견적서 한 번에 읽기</h2>
+          <button onClick={onClose} className="text-gray-400 text-2xl">&times;</button>
+        </div>
+        <div className="px-6 py-4 flex flex-col gap-3 overflow-y-auto">
+          <p className="text-xs text-gray-500">첨부 파일이 있는 {targets}건을 읽어 <b>비어 있는 칸만</b> 채워요(초록 글씨). 이미 적어 둔 공사금액과 다르게 읽힌 줄은 주황색 — 체크해야만 바뀌어요. [적용]을 눌러야 저장돼요.</p>
+          {!running && done === 0 && (
+            <button onClick={readAll} disabled={targets === 0} className="self-start bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-medium disabled:opacity-50">파일 {targets}건 읽기 시작</button>
+          )}
+          {(running || done > 0) && <p className="text-sm text-gray-700">{running ? `읽는 중… ${done}/${targets}` : `다 읽었어요 — ${done}건`}</p>}
+          {done > 0 && (
+            <div className="border border-gray-200 rounded-lg overflow-x-auto">
+              <table className="w-full text-sm whitespace-nowrap">
+                <thead>
+                  <tr className="bg-gray-50 text-xs text-gray-400">
+                    <th className="px-3 py-2 text-left">채우기</th>
+                    <th className="px-3 py-2 text-left">현장명</th>
+                    <th className="px-3 py-2 text-right">공사 금액</th>
+                    <th className="px-3 py-2 text-right">부가세</th>
+                    <th className="px-3 py-2 text-right">고용산재</th>
+                    <th className="px-3 py-2 text-left">읽은 곳</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.filter(x => x.status === 'ok').map(x => (
+                    <tr key={x.q.id} className="border-t border-gray-50 align-top">
+                      <td className="px-3 py-2">
+                        {Object.keys(x.fill).length > 0
+                          ? <input type="checkbox" checked={x.apply} onChange={e => set(x.q.id, { apply: e.target.checked })} />
+                          : <span className="text-[11px] text-gray-300">채울 칸 없음</span>}
+                      </td>
+                      <td className="px-3 py-2 text-gray-800 max-w-[220px] truncate" title={x.q.title}>{x.q.title}</td>
+                      <td className="px-3 py-2 text-right">
+                        {cellNew(x.q.amount, x.fill.amount)}
+                        {x.diffAmount != null && (
+                          <label className="block text-[11px] text-orange-600 mt-0.5">
+                            <input type="checkbox" className="mr-1 align-middle" checked={x.replaceAmount} onChange={e => set(x.q.id, { replaceAmount: e.target.checked })} />
+                            파일은 {x.diffAmount.toLocaleString()} — 바꾸기
+                          </label>
+                        )}
+                      </td>
+                      <td className="px-3 py-2 text-right">{cellNew(x.q.vat, x.fill.vat)}{x.fill.vat != null && x.r?.vatEstimated && <span className="text-[10px] text-gray-400"> (계산)</span>}</td>
+                      <td className="px-3 py-2 text-right">{cellNew(x.q.insurance, x.fill.insurance)}</td>
+                      <td className="px-3 py-2 text-xs text-gray-500">{x.r?.source}{x.r?.nego ? ' · 네고' : ''}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          {!running && done > 0 && (failed.length > 0 || noFile.length > 0) && (
+            <div className="text-xs text-orange-600 bg-orange-50 rounded-lg px-3 py-2">
+              {failed.length > 0 && <p>못 읽은 파일 {failed.length}건(스캔·사진·다른 양식) — 직접 입력: {failed.map(x => x.q.title).join(', ')}</p>}
+              {noFile.length > 0 && <p className="mt-1">첨부 파일 없음 {noFile.length}건: {noFile.map(x => x.q.title).join(', ')}</p>}
+            </div>
+          )}
+        </div>
+        <div className="px-6 py-4 border-t border-gray-100 flex gap-3">
+          <button onClick={onClose} className="flex-1 border border-gray-300 text-gray-700 py-2.5 rounded-lg text-sm font-medium">닫기</button>
+          <button onClick={apply} disabled={running || saving || toSave.length === 0}
+            className="flex-1 bg-green-600 text-white py-2.5 rounded-lg text-sm font-medium disabled:opacity-50">
+            {saving ? '저장 중...' : `적용 (${toSave.length}건)`}
+          </button>
+        </div>
+      </div>
     </div>
   )
 }
