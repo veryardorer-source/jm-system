@@ -975,9 +975,18 @@ function QuoteTab({ list, hqExpenses, fixedCosts, onRefresh }: { list: Quote[]; 
   const extraSum = sum(q => q.extra_amount || 0)
   const totalSum = baseSum + extraSum
   const profitSum = sum(q => q.net_profit || 0)
-  const noProfit = yearList.filter(q => q.net_profit == null && !q.merged_into).length
   // 합산 묶음 — A에 합쳐진 B들. A의 %는 A+B 공급가 기준(손익표를 A+B 하나로 만든 경우)
   const mergedOf = (id: string) => list.filter(x => x.merged_into === id)
+  // 진행 중 = 순이익(부가세 제외·포함) 둘 다 비어 있음 — 계약 금액엔 넣고 손익(%·실제 순이익)에선 뺌. 합산된 견적서는 합쳐진 쪽을 따름
+  const noProfitOf = (q: Quote) => q.net_profit == null && q.net_profit_vat == null
+  const isOngoing = (q: Quote): boolean => {
+    if (!q.merged_into) return noProfitOf(q)
+    const p = list.find(x => x.id === q.merged_into)
+    return p ? noProfitOf(p) : noProfitOf(q)
+  }
+  const ongoingCount = yearList.filter(q => isOngoing(q) && !q.merged_into).length
+  const settledList = yearList.filter(q => !isOngoing(q))
+  const settledSum = settledList.reduce((t, q) => t + (q.amount || 0) + (q.extra_amount || 0), 0)
   const titleOf = (id: string) => list.find(x => x.id === id)?.title || '(삭제된 견적서)'
   const groupSupply = (q: Quote) => supplyOf(q) + mergedOf(q.id).reduce((t, x) => t + supplyOf(x), 0)
   // 합산 대상 후보 — 자기 자신·이미 다른 곳에 합쳐진 견적서 제외(한 단계만)
@@ -1089,11 +1098,14 @@ function QuoteTab({ list, hqExpenses, fixedCosts, onRefresh }: { list: Quote[]; 
         <div className="grid grid-cols-2 md:grid-cols-3 gap-x-6 gap-y-3 text-sm">
           <SumItem label="본 공사 금액" value={won(baseSum)} />
           <SumItem label="추가 공사 금액" value={won(extraSum)} />
-          <SumItem label="합계" value={won(totalSum)} strong sub={`계약 확인 ${yearList.filter(q => q.confirmed).length}/${yearList.length}건`} />
+          <SumItem label={`계약 금액 (전체 ${yearList.filter(q => !q.merged_into).length}건)`} value={won(totalSum)} strong
+            sub={(ongoingCount ? `진행 중 ${ongoingCount}건 포함 · ` : '') + `계약 확인 ${yearList.filter(q => q.confirmed).length}/${yearList.length}건`} />
+          <SumItem label={`손익 확정 금액 (${settledList.filter(q => !q.merged_into).length}건)`} value={won(settledSum)}
+            sub={ongoingCount ? `진행 중 ${won(totalSum - settledSum)} 제외` : '전부 손익 확정'} />
           <div>
             <p className="text-xs text-gray-400">공사 순이익 <span className="text-[10px]">(부가세 포함)</span></p>
             <p className="font-semibold text-gray-800">{won(profitVatSum)}</p>
-            <p className="text-[11px] text-gray-400">부가세 제외 {won(profitSum)} · {pct(profitSum, totalSum)}{noProfit ? ` · 미입력 ${noProfit}건` : ''}</p>
+            <p className="text-[11px] text-gray-400">부가세 제외 {won(profitSum)} · {pct(profitSum, settledSum)}</p>
             {vatProfitTemp > 0 && <p className="text-[11px] text-orange-500">임시 계산 {vatProfitTemp}건(부가세 제외+부가세)</p>}
           </div>
           <div>
@@ -1114,12 +1126,12 @@ function QuoteTab({ list, hqExpenses, fixedCosts, onRefresh }: { list: Quote[]; 
           <div className="bg-green-50 rounded-lg px-3 py-2 -mx-1">
             <p className="text-xs text-green-700 font-medium">실제 순이익</p>
             <p className={`font-bold ${realProfit < 0 ? 'text-red-500' : 'text-green-800'}`}>{won(realProfit)}</p>
-            <p className="text-[11px] text-green-700">{pct(realProfit, totalSum)}{hqAmount == null && ' · 본사 총지출 미입력'}</p>
+            <p className="text-[11px] text-green-700">{pct(realProfit, settledSum)}{hqAmount == null && ' · 본사 총지출 미입력'}</p>
           </div>
           <SumItem label="부가세 합" value={won(sum(q => q.vat || 0))} />
           <SumItem label="고용산재 합" value={won(sum(q => q.insurance || 0))} />
         </div>
-        <p className="text-[11px] text-gray-400 mt-3">실제 순이익 = 공사 순이익 − 본사 총지출 · 부가세·고용산재 납부는 본사 총지출에 들어 있어 따로 빼지 않음 · %는 부가세 제외 순이익 ÷ 합계(본+추가)</p>
+        <p className="text-[11px] text-gray-400 mt-3">실제 순이익 = 공사 순이익 − 본사 총지출 · 부가세·고용산재 납부는 본사 총지출에 들어 있어 따로 빼지 않음 · 순이익이 비어 있는 견적서는 진행 중 — 계약 금액엔 넣고 손익에선 뺌 · %는 손익 확정 금액 대비</p>
       </div>
 
       <p className="text-xs text-gray-400 mb-3">1단계: 견적서를 올리면 금액이 자동으로 들어가요(네고 금액 포함). 2단계: 계약서와 맞춰 보고 [확인하기] — 계약서로 금액을 고쳤으면 수정에서 고친 뒤 확인. 현장별 %는 공급가(부가세 제외) 대비예요.</p>
@@ -1156,6 +1168,7 @@ function QuoteTab({ list, hqExpenses, fixedCosts, onRefresh }: { list: Quote[]; 
                   <td className="px-6 py-3 text-sm font-medium text-gray-800">
                     {grouped && parentOf.has(q.id) && <span className="text-gray-400 mr-1">└</span>}
                     <span className="text-gray-400 font-normal mr-1.5 tabular-nums">{numOf.get(q.id)}.</span>{q.title}
+                    {isOngoing(q) && !q.merged_into && <span className="ml-1.5 text-[10px] font-normal px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200" title="순이익이 비어 있어 손익 계산에서 빠져요">진행 중</span>}
                   </td>
                   <td className="px-3 py-2.5 text-center">
                     {q.confirmed
