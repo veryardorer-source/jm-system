@@ -845,7 +845,7 @@ const pct = (a: number, b: number) => b > 0 ? Math.round(a / b * 100) + '%' : '-
 const supplyOf = (q: Quote) => { const total = (q.amount || 0) + (q.extra_amount || 0); return q.vat ? total - q.vat : Math.round(total / 1.1) }
 
 function QuoteTab({ list, hqExpenses, fixedCosts, onRefresh }: { list: Quote[]; hqExpenses: HqExpense[]; fixedCosts: FixedCost[]; onRefresh: () => void }) {
-  const [sort, setSort] = useState('date_desc')
+  const [sort, setSort] = useState('date_asc') // 기본: 날짜 순서대로(공사경력 엑셀과 같게)
   const [showForm, setShowForm] = useState(false)
   const [editing, setEditing] = useState<Quote | null>(null)
   const emptyForm = { title: '', quote_date: '', amount: '', extra_amount: '', vat: '', insurance: '', net_profit: '', merged_into: '', confirmed: false }
@@ -984,14 +984,20 @@ function QuoteTab({ list, hqExpenses, fixedCosts, onRefresh }: { list: Quote[]; 
   const hqAmount = hqAuto ? fcYear.reduce((t, c) => t + (c.amount || 0), 0) : hq ? hq.amount : null
   const realProfit = profitSum - (hqAmount || 0)
 
-  // 정렬 — 날짜(견적일 없으면 등록일)/현장명/금액
-  const dateOf = (q: Quote) => q.quote_date || q.created_at || ''
+  // 정렬 — 날짜(견적일 → 현장명 앞 날짜 260824_ → 등록일)/현장명/금액. 같은 날짜는 현장명순
+  const dateOf = (q: Quote) => {
+    if (q.quote_date) return q.quote_date
+    const m = q.title.match(/^(\d{2})(\d{2})(\d{2})(?!\d)/)
+    if (m && Number(m[2]) >= 1 && Number(m[2]) <= 12) return `20${m[1]}-${m[2]}-${m[3]}`
+    return (q.created_at || '').slice(0, 10)
+  }
+  const byName = (a: Quote, b: Quote) => (a.title || '').localeCompare(b.title || '', 'ko', { numeric: true })
   const sorted = [...yearList].sort((a, b) => {
-    if (sort === 'date_asc') return dateOf(a).localeCompare(dateOf(b))
-    if (sort === 'name') return (a.title || '').localeCompare(b.title || '', 'ko', { numeric: true })
+    if (sort === 'date_asc') return dateOf(a).localeCompare(dateOf(b)) || byName(a, b)
+    if (sort === 'name') return byName(a, b)
     if (sort === 'amount_desc') return (b.amount || 0) - (a.amount || 0)
     if (sort === 'amount_asc') return (a.amount || 0) - (b.amount || 0)
-    return dateOf(b).localeCompare(dateOf(a))
+    return dateOf(b).localeCompare(dateOf(a)) || byName(a, b)
   })
 
   const numCell = (n: number | null | undefined) => n ? won(n) : <span className="text-gray-300">-</span>
