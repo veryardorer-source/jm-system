@@ -47,6 +47,7 @@ npx vercel --prod  # 배포 (jm-system 폴더에서 실행)
   - **pending(미승인)**: 업무 데이터 접근 불가(읽기·쓰기 모두)
   - ⚠️ 운영 DB에 rls_* SQL 적용 전 **스냅샷/백업 권장**. 파일별 적용 상태는 `../관리시스템/docs/security_status.md` 참고
 - **⚠️ TODO — Storage(uploads) public 버킷**: 계약서·손익표·매출매입·출금 등 민감 파일도 public URL(URL만 알면 무로그인 열람). **추후 민감 파일부터 private bucket + signed URL로 전환할 것**(카테고리별 버킷 분리 권장, 사진 표시·공유 로직 영향 큼). 또한 엑셀/PDF "바로 열기"는 MS Office/Google 뷰어에 파일 URL을 전달하므로 민감 재무 파일은 뷰어 대신 다운로드 열람 정책 검토. (db/*.sql 구버전 전체허용 정책은 2026-07-07 전부 최신 RLS 기준으로 정리됨 — 재실행 안전) **진행 상황**: 경영관리 파일(2026-08-25)·출금 요청 사진(2026-10-23, 예전 48장 이전 완료)은 secure 버킷(`secure://` + `signSecureUrls`/`resolveFileUrl`)으로 전환됨. 현장 계약서·견적서(2026-10-23, 분류가 견적서·계약서면 secure, 화면엔 stored_url+서명 주소)도 전환. 남은 것: 회사 서류(/documents) 등.
+- **자동 백업**: 대표 PC 작업 스케줄러 'JM 관리시스템 백업'(매일 12:30) → `scripts/backup.mjs` → `\\jm\004_JM 이소연\AI\관리시스템_백업`(db 날짜별 JSON 60일 + files 사본 누적). 되살릴 땐 그 JSON에서 필요한 줄만 다시 넣기.
 - **새 DB 세팅 시 SQL 실행 순서** (Supabase SQL Editor):
   1. `db/rls_helpers.sql` — 공통 함수(my_role 등). **가장 먼저, 다른 파일들이 의존**
   2. `db/security_and_realtime.sql` — 기본 테이블 + 공용 정책 + realtime

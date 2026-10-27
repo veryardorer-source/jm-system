@@ -32,23 +32,30 @@ export function parseQuoteText(text: string): QuoteAmounts | null {
   const vatHit = rateAmount(main, VAT)
   let vat = vatHit ? vatHit.value : null
   let amount: number | null = null
+  let nego = false, vatEstimated = false
+  const FINAL = sp('최종금액') + '[^\\d]{0,15}?' + NUM // '최종금액 24,000,000' · '최종금액 부가세포함 14,700,000원'
   if (vatHit && vatHit.end > 0) {
     // 합계는 부가세 바로 다음 '[합 계]' 금액
-    const t = new RegExp('\\[?\\s*' + sp('합계') + '\\s*\\]?\\s*' + NUM).exec(main.slice(vatHit.end))
-    if (t) amount = toNum(t[1])
+    const rest = main.slice(vatHit.end)
+    const t = new RegExp('\\[?\\s*' + sp('합계') + '\\s*\\]?\\s*' + NUM).exec(rest)
+    if (t) {
+      amount = toNum(t[1])
+      // 합계 바로 아래 'D/C (-112,000) 최종금액 24,000,000' — 부가세 뒤에서 깎은 네고
+      const after = new RegExp(FINAL).exec(rest.slice(t.index + t[0].length, t.index + t[0].length + 80))
+      if (after) { amount = toNum(after[1]); nego = true; vat = Math.round(amount / 11); vatEstimated = true }
+    }
   }
 
-  // 특기사항의 네고 금액(최종 계약 금액)
-  let nego = false
-  const negoTotal = new RegExp(sp('합계') + '\\s*[:：]?\\s*' + NUM + '\\s*원').exec(note)
+  // 특기사항의 네고 금액 — '… 부가세 280,000원 합계 : 3,080,000원으로 계약' · '최종금액 부가세포함 14,700,000원'
+  const negoTotal = new RegExp(sp('합계') + '\\s*[:：]?\\s*' + NUM + '\\s*원').exec(note) || new RegExp(FINAL).exec(note)
   if (negoTotal) {
     amount = toNum(negoTotal[1]); nego = true
     const negoVat = new RegExp(VAT + '\\s*[:：]?\\s*' + NUM).exec(note)
-    if (negoVat) vat = toNum(negoVat[1])
+    if (negoVat) { vat = toNum(negoVat[1]); vatEstimated = false } else { vat = Math.round(amount / 11); vatEstimated = true }
   }
 
   if (amount == null) return null // 합계가 없으면 회사 견적서 양식이 아님(디자인 견적 등)
-  return { amount, vat, insurance, nego, source: '견적서' }
+  return { amount, vat, insurance, nego, source: '견적서', vatEstimated }
 }
 
 // 계약서 — '일금 ￦61,523,000원정(부가세포함)' · '계약금액 금8,000,000원(부가세포함)' ·

@@ -19,7 +19,7 @@ import SortSelect from '@/components/SortSelect'
 const TAB_LIST = ['고정지출', '급여내역', '현장별 이익', '견적서'] as const // 매출매입 탭은 2026-10-27 제외(finance_sales 자료는 DB에 그대로)
 type Tab = typeof TAB_LIST[number]
 
-type Quote = { id: string; title: string; quote_date: string | null; amount: number; extra_amount: number | null; insurance: number | null; vat: number | null; net_profit: number | null; merged_into: string | null; memo: string | null; file_url: string | null; file_name: string | null; created_at: string }
+type Quote = { id: string; title: string; quote_date: string | null; amount: number; extra_amount: number | null; insurance: number | null; vat: number | null; net_profit: number | null; merged_into: string | null; confirmed?: boolean | null; confirmed_at?: string | null; memo: string | null; file_url: string | null; file_name: string | null; created_at: string }
 type HqExpense = { year: number; amount: number; memo: string | null }
 
 function TrendChart({ data }: { data: { label: string; value: number }[] }) {
@@ -848,7 +848,7 @@ function QuoteTab({ list, hqExpenses, fixedCosts, onRefresh }: { list: Quote[]; 
   const [sort, setSort] = useState('date_desc')
   const [showForm, setShowForm] = useState(false)
   const [editing, setEditing] = useState<Quote | null>(null)
-  const emptyForm = { title: '', quote_date: '', amount: '', extra_amount: '', vat: '', insurance: '', net_profit: '', merged_into: '' }
+  const emptyForm = { title: '', quote_date: '', amount: '', extra_amount: '', vat: '', insurance: '', net_profit: '', merged_into: '', confirmed: false }
   const [form, setForm] = useState(emptyForm)
   const [file, setFile] = useState<File | null>(null)
   const [saving, setSaving] = useState(false)
@@ -877,7 +877,7 @@ function QuoteTab({ list, hqExpenses, fixedCosts, onRefresh }: { list: Quote[]; 
     setReadNote({ text: `${r.source}에서 읽었어요 — ${parts.join(' · ')}${r.nego ? ' (특기사항의 네고 금액)' : ''}${r.source === '계약서' ? ' · 고용산재는 계약서에 없어 직접 입력' : ''}. 맞는지 확인 후 저장하세요.`, ok: true })
   }
 
-  const dbHint = (msg: string) => /column|schema cache|finance_hq_expense/i.test(msg) ? ' (관리자에게: db/quote_profit.sql 다시 실행 필요)' : ''
+  const dbHint = (msg: string) => /confirmed/i.test(msg) ? ' (관리자에게: db/quote_confirm.sql 실행 필요)' : /column|schema cache|finance_hq_expense/i.test(msg) ? ' (관리자에게: db/quote_profit.sql 다시 실행 필요)' : ''
 
   async function save(e: React.FormEvent) {
     e.preventDefault()
@@ -901,6 +901,9 @@ function QuoteTab({ list, hqExpenses, fixedCosts, onRefresh }: { list: Quote[]; 
       // 합산된 견적서는 순이익을 비움(A 쪽에만 A+B 순이익) · 그 외엔 비우면 미입력(합계에서 제외)
       net_profit: form.merged_into || form.net_profit === '' ? null : Number(form.net_profit) || 0,
       merged_into: form.merged_into || null,
+      // 2단계 확인 — 켤 때 시각 기록, 이미 확인된 건 시각 유지
+      confirmed: form.confirmed,
+      confirmed_at: form.confirmed ? (editing?.confirmed ? editing.confirmed_at : new Date().toISOString()) : null,
       file_url, file_name,
     }
     const { error } = editing
@@ -909,6 +912,16 @@ function QuoteTab({ list, hqExpenses, fixedCosts, onRefresh }: { list: Quote[]; 
     if (error) { toast('저장 실패: ' + error.message + dbHint(error.message)); setSaving(false); return }
     setForm(emptyForm); setFile(null)
     setEditing(null); setShowForm(false); setSaving(false)
+    onRefresh()
+  }
+
+  // 2단계 확인 — 계약서와 금액을 맞춰 본 견적서에 표시(다시 누르면 확인 취소)
+  async function toggleConfirm(q: Quote) {
+    if (q.confirmed && !confirm(`"${q.title}" 확인 표시를 취소할까요?`)) return
+    const on = !q.confirmed
+    const { error } = await createClient().from('finance_quotes')
+      .update({ confirmed: on, confirmed_at: on ? new Date().toISOString() : null }).eq('id', q.id)
+    if (error) { toast('저장 실패: ' + error.message + dbHint(error.message), 'error'); return }
     onRefresh()
   }
 
@@ -1013,7 +1026,7 @@ function QuoteTab({ list, hqExpenses, fixedCosts, onRefresh }: { list: Quote[]; 
         <div className="grid grid-cols-2 md:grid-cols-3 gap-x-6 gap-y-3 text-sm">
           <SumItem label="본 공사 금액" value={won(baseSum)} />
           <SumItem label="추가 공사 금액" value={won(extraSum)} />
-          <SumItem label="합계" value={won(totalSum)} strong />
+          <SumItem label="합계" value={won(totalSum)} strong sub={`계약 확인 ${yearList.filter(q => q.confirmed).length}/${yearList.length}건`} />
           <SumItem label="공사 순이익" value={won(profitSum)} sub={pct(profitSum, totalSum) + (noProfit ? ` · 미입력 ${noProfit}건` : '')} />
           <div>
             <p className="text-xs text-gray-400">본사 총지출</p>
@@ -1041,7 +1054,7 @@ function QuoteTab({ list, hqExpenses, fixedCosts, onRefresh }: { list: Quote[]; 
         <p className="text-[11px] text-gray-400 mt-3">실제 순이익 = 공사 순이익 합 − 본사 총지출 · %는 합계(본+추가) 대비</p>
       </div>
 
-      <p className="text-xs text-gray-400 mb-3">이 프로그램 이전에 만든 견적서(PDF·엑셀·사진)도 파일로 올려두면 여기서 모아볼 수 있어요. 현장별 %는 공급가(부가세 제외) 대비예요.</p>
+      <p className="text-xs text-gray-400 mb-3">1단계: 견적서를 올리면 금액이 자동으로 들어가요(네고 금액 포함). 2단계: 계약서와 맞춰 보고 [확인하기] — 계약서로 금액을 고쳤으면 수정에서 고친 뒤 확인. 현장별 %는 공급가(부가세 제외) 대비예요.</p>
       {yearList.length === 0 ? (
         <EmptyState icon="📄" text={`${year}년 견적서가 없어요`} />
       ) : (
@@ -1050,6 +1063,7 @@ function QuoteTab({ list, hqExpenses, fixedCosts, onRefresh }: { list: Quote[]; 
             <thead>
               <tr className="border-b border-gray-100 bg-gray-50">
                 <th className="text-left text-xs font-semibold text-gray-400 px-6 py-3">현장명</th>
+                <th className="text-center text-xs font-semibold text-gray-400 px-3 py-3">계약 확인</th>
                 <th className="text-right text-xs font-semibold text-gray-400 px-4 py-3">공사 금액</th>
                 <th className="text-right text-xs font-semibold text-gray-400 px-4 py-3">추가 공사</th>
                 <th className="text-right text-xs font-semibold text-gray-400 px-4 py-3">부가세</th>
@@ -1064,6 +1078,13 @@ function QuoteTab({ list, hqExpenses, fixedCosts, onRefresh }: { list: Quote[]; 
               {sorted.map(q => (
                 <tr key={q.id} className="border-b border-gray-50 hover:bg-gray-50 align-top">
                   <td className="px-6 py-3 text-sm font-medium text-gray-800">{q.title}</td>
+                  <td className="px-3 py-2.5 text-center">
+                    {q.confirmed
+                      ? <button onClick={() => toggleConfirm(q)} title={q.confirmed_at ? `확인 ${new Date(q.confirmed_at).toLocaleDateString('ko-KR')} · 누르면 취소` : '누르면 취소'}
+                          className="text-xs text-gray-400 hover:text-gray-600">✓ 확인됨</button>
+                      : <button onClick={() => toggleConfirm(q)} title="계약서와 금액을 맞춰 봤으면 누르세요"
+                          className="text-xs px-2.5 py-1 rounded-full border border-orange-300 text-orange-600 bg-orange-50 hover:bg-orange-100">확인하기</button>}
+                  </td>
                   <td className="px-4 py-3 text-sm text-right font-semibold text-gray-800">{numCell(q.amount)}</td>
                   <td className="px-4 py-3 text-sm text-right text-gray-700">{numCell(q.extra_amount)}</td>
                   <td className="px-4 py-3 text-sm text-right text-gray-700">{numCell(q.vat)}</td>
@@ -1089,7 +1110,7 @@ function QuoteTab({ list, hqExpenses, fixedCosts, onRefresh }: { list: Quote[]; 
                       <button onClick={() => {
                         setEditing(q)
                         const s = (n: number | null) => n ? String(n) : ''
-                        setForm({ title: q.title, quote_date: q.quote_date || '', amount: s(q.amount), extra_amount: s(q.extra_amount), vat: s(q.vat), insurance: s(q.insurance), net_profit: q.net_profit == null ? '' : String(q.net_profit), merged_into: q.merged_into || '' })
+                        setForm({ title: q.title, quote_date: q.quote_date || '', amount: s(q.amount), extra_amount: s(q.extra_amount), vat: s(q.vat), insurance: s(q.insurance), net_profit: q.net_profit == null ? '' : String(q.net_profit), merged_into: q.merged_into || '', confirmed: !!q.confirmed })
                         setFile(null); setReadNote(null); setShowForm(true)
                       }} className="text-xs text-green-500 hover:text-green-700">수정</button>
                       <button onClick={() => del(q)} className="text-xs text-red-400 hover:text-red-600">삭제</button>
@@ -1122,6 +1143,10 @@ function QuoteTab({ list, hqExpenses, fixedCosts, onRefresh }: { list: Quote[]; 
             <NumberInput label="부가세" value={form.vat} onChange={v => setForm({ ...form, vat: v })} />
             <NumberInput label="고용산재 금액" value={form.insurance} onChange={v => setForm({ ...form, insurance: v })} />
           </div>
+          <label className="flex items-center gap-2 text-sm text-gray-700 -mt-1">
+            <input type="checkbox" checked={form.confirmed} onChange={e => setForm({ ...form, confirmed: e.target.checked })} />
+            계약서와 금액 확인함 <span className="text-[11px] text-gray-400">(2단계 — 견적서 자동 반영 뒤 계약서와 맞춰 봤으면 체크)</span>
+          </label>
           <div>
             <label className="text-sm font-medium text-gray-700 block mb-1.5">손익 계산</label>
             <select value={form.merged_into} disabled={editingHasMerged} onChange={e => setForm({ ...form, merged_into: e.target.value })}
@@ -1188,7 +1213,8 @@ function BulkReadModal({ quotes, year, onClose, onDone }: { quotes: Quote[]; yea
       const fill: BulkRow['fill'] = {}
       let diffAmount: number | undefined
       if (r) {
-        if (r.amount != null) { if (!q.amount) fill.amount = r.amount; else if (q.amount !== r.amount) diffAmount = r.amount }
+        // 계약서와 확인한 견적서(2단계)는 공사금액을 다시 바꾸자고 하지 않음
+        if (r.amount != null) { if (!q.amount) fill.amount = r.amount; else if (q.amount !== r.amount && !q.confirmed) diffAmount = r.amount }
         if (r.vat != null && !q.vat) fill.vat = r.vat
         if (r.insurance != null && !q.insurance) fill.insurance = r.insurance
       }
@@ -1207,7 +1233,8 @@ function BulkReadModal({ quotes, year, onClose, onDone }: { quotes: Quote[]; yea
     let fail = 0, firstError = ''
     for (const x of toSave) {
       const payload: Record<string, number> = x.apply ? { ...x.fill } : {}
-      if (x.replaceAmount && x.diffAmount != null) payload.amount = x.diffAmount
+      // 공사금액을 바꾸면 부가세도 그 금액 기준으로
+      if (x.replaceAmount && x.diffAmount != null) { payload.amount = x.diffAmount; if (x.r?.vat != null) payload.vat = x.r.vat }
       const { error } = await sb.from('finance_quotes').update(payload).eq('id', x.q.id)
       if (error) { fail++; firstError = firstError || error.message }
     }
@@ -1268,13 +1295,13 @@ function BulkReadModal({ quotes, year, onClose, onDone }: { quotes: Quote[]; yea
                         {x.diffAmount != null && (
                           <label className="block text-[11px] text-orange-600 mt-0.5">
                             <input type="checkbox" className="mr-1 align-middle" checked={x.replaceAmount} onChange={e => set(x.q.id, { replaceAmount: e.target.checked })} />
-                            파일은 {x.diffAmount.toLocaleString()} — 바꾸기
+                            파일은 {x.diffAmount.toLocaleString()}{x.r?.nego ? '(네고)' : ''} — 바꾸기
                           </label>
                         )}
                       </td>
                       <td className="px-3 py-2 text-right">{cellNew(x.q.vat, x.fill.vat)}{x.fill.vat != null && x.r?.vatEstimated && <span className="text-[10px] text-gray-400"> (계산)</span>}</td>
                       <td className="px-3 py-2 text-right">{cellNew(x.q.insurance, x.fill.insurance)}</td>
-                      <td className="px-3 py-2 text-xs text-gray-500">{x.r?.source}{x.r?.nego ? ' · 네고' : ''}</td>
+                      <td className="px-3 py-2 text-xs text-gray-500">{x.r?.source}{x.r?.nego ? ' · 네고' : ''}{x.q.confirmed ? ' · ✓ 확인됨' : ''}</td>
                     </tr>
                   ))}
                 </tbody>
