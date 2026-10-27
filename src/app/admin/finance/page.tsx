@@ -16,7 +16,7 @@ import { readQuoteAmounts, QuoteAmounts } from '@/lib/quote-parse'
 import { readExpenseFile, ExpenseSheet } from '@/lib/expense-parse'
 import SortSelect from '@/components/SortSelect'
 
-const TAB_LIST = ['고정지출', '급여내역', '현장별 이익', '견적서'] as const // 매출매입 탭은 2026-10-27 제외(finance_sales 자료는 DB에 그대로)
+const TAB_LIST = ['견적서', '급여내역', '고정지출', '현장별 이익'] as const // 매출매입 탭은 2026-10-27 제외(finance_sales 자료는 DB에 그대로)
 type Tab = typeof TAB_LIST[number]
 
 type Quote = { id: string; title: string; quote_date: string | null; amount: number; extra_amount: number | null; insurance: number | null; vat: number | null; net_profit: number | null; merged_into: string | null; confirmed?: boolean | null; confirmed_at?: string | null; memo: string | null; file_url: string | null; file_name: string | null; created_at: string }
@@ -42,7 +42,7 @@ function TrendChart({ data }: { data: { label: string; value: number }[] }) {
 export default function FinancePage() {
   const router = useRouter()
   const { profile: myProfile, loading: authLoading } = useAuth()
-  const [tab, setTab] = useState<Tab>('고정지출')
+  const [tab, setTab] = useState<Tab>('견적서')
   const [loading, setLoading] = useState(true)
 
   const [fixedCosts, setFixedCosts] = useState<FixedCost[]>([])
