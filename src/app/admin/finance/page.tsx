@@ -877,7 +877,7 @@ function QuoteTab({ list, hqExpenses, fixedCosts, onRefresh }: { list: Quote[]; 
     setReadNote({ text: `${r.source}에서 읽었어요 — ${parts.join(' · ')}${r.nego ? ' (특기사항의 네고 금액)' : ''}${r.source === '계약서' ? ' · 고용산재는 계약서에 없어 직접 입력' : ''}. 맞는지 확인 후 저장하세요.`, ok: true })
   }
 
-  const dbHint = (msg: string) => /column|schema cache|finance_hq_expense/i.test(msg) ? ' (관리자에게: db/quote_profit.sql 실행 필요)' : ''
+  const dbHint = (msg: string) => /column|schema cache|finance_hq_expense/i.test(msg) ? ' (관리자에게: db/quote_profit.sql 다시 실행 필요)' : ''
 
   async function save(e: React.FormEvent) {
     e.preventDefault()
@@ -1204,15 +1204,20 @@ function BulkReadModal({ quotes, year, onClose, onDone }: { quotes: Quote[]; yea
   async function apply() {
     setSaving(true)
     const sb = createClient()
-    let fail = 0
+    let fail = 0, firstError = ''
     for (const x of toSave) {
       const payload: Record<string, number> = x.apply ? { ...x.fill } : {}
       if (x.replaceAmount && x.diffAmount != null) payload.amount = x.diffAmount
       const { error } = await sb.from('finance_quotes').update(payload).eq('id', x.q.id)
-      if (error) fail++
+      if (error) { fail++; firstError = firstError || error.message }
     }
     setSaving(false)
-    toast(fail ? `${toSave.length - fail}건 저장, ${fail}건 실패` : `${toSave.length}건을 채웠어요`, fail ? 'error' : 'ok')
+    if (fail) {
+      // 실패 이유를 그대로 보여 줌 — 새 칸이 없으면(SQL 미적용·스키마 캐시) 안내 붙임
+      const hint = /column|schema cache/i.test(firstError) ? ' → Supabase SQL Editor에서 db/quote_profit.sql을 다시 실행해 주세요' : ''
+      toast(`${toSave.length - fail}건 저장, ${fail}건 실패: ${firstError}${hint}`, 'error')
+      if (fail === toSave.length) return // 전부 실패면 창을 닫지 않음
+    } else toast(`${toSave.length}건을 채웠어요`, 'ok')
     onDone()
   }
 

@@ -20,3 +20,6 @@ alter table public.finance_hq_expense enable row level security;
 drop policy if exists "admin only" on public.finance_hq_expense;
 create policy "admin only" on public.finance_hq_expense for all to authenticated
   using (public.my_role() = 'admin') with check (public.my_role() = 'admin');
+
+-- 새 칸을 API(PostgREST)가 바로 알아보도록 스키마 캐시 새로고침 — 없으면 저장 시 'schema cache' 오류
+notify pgrst, 'reload schema';
