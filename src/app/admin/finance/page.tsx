@@ -992,13 +992,32 @@ function QuoteTab({ list, hqExpenses, fixedCosts, onRefresh }: { list: Quote[]; 
     return (q.created_at || '').slice(0, 10)
   }
   const byName = (a: Quote, b: Quote) => (a.title || '').localeCompare(b.title || '', 'ko', { numeric: true })
-  const sorted = [...yearList].sort((a, b) => {
+  const plain = [...yearList].sort((a, b) => {
     if (sort === 'date_asc') return dateOf(a).localeCompare(dateOf(b)) || byName(a, b)
     if (sort === 'name') return byName(a, b)
     if (sort === 'amount_desc') return (b.amount || 0) - (a.amount || 0)
     if (sort === 'amount_asc') return (a.amount || 0) - (b.amount || 0)
     return dateOf(b).localeCompare(dateOf(a)) || byName(a, b)
   })
+
+  // 날짜순일 때 추가 견적은 본 견적 바로 아래 — 현장명(또는 파일명)에 '추가'가 있으면 이름이 가장 닮은 앞선 본 견적에 붙인다
+  const isExtra = (q: Quote) => /추가/.test(q.title) || /추가/.test(q.file_name || '')
+  const core = (s: string) => s.replace(/^\d{6}_?/, '').replace(/\s/g, '').replace(/\(?추가\)?.*$/, '')
+  const parentOf = new Map<string, string>()
+  for (const x of yearList.filter(isExtra)) {
+    const c = core(x.title)
+    let best: Quote | null = null, bestScore = 2 // 3글자 이상 겹쳐야
+    for (const p of yearList) {
+      if (p.id === x.id || isExtra(p) || dateOf(p) > dateOf(x)) continue
+      const pc = core(p.title)
+      let n = 0; while (n < c.length && c[n] === pc[n]) n++
+      const score = Math.max(n, c && pc.includes(c) ? c.length : 0)
+      if (score > bestScore || (score === bestScore && best && dateOf(p) > dateOf(best))) { best = p; bestScore = score }
+    }
+    if (best) parentOf.set(x.id, best.id)
+  }
+  const sorted = !sort.startsWith('date') ? plain : plain.filter(q => !parentOf.has(q.id)).flatMap(p => [p,
+    ...yearList.filter(x => parentOf.get(x.id) === p.id).sort((a, b) => dateOf(a).localeCompare(dateOf(b)) || byName(a, b))])
 
   const numCell = (n: number | null | undefined) => n ? won(n) : <span className="text-gray-300">-</span>
 
@@ -1083,7 +1102,9 @@ function QuoteTab({ list, hqExpenses, fixedCosts, onRefresh }: { list: Quote[]; 
             <tbody>
               {sorted.map(q => (
                 <tr key={q.id} className="border-b border-gray-50 hover:bg-gray-50 align-top">
-                  <td className="px-6 py-3 text-sm font-medium text-gray-800">{q.title}</td>
+                  <td className="px-6 py-3 text-sm font-medium text-gray-800">
+                    {sort.startsWith('date') && parentOf.has(q.id) && <span className="text-gray-400 mr-1">└</span>}{q.title}
+                  </td>
                   <td className="px-3 py-2.5 text-center">
                     {q.confirmed
                       ? <button onClick={() => toggleConfirm(q)} title={q.confirmed_at ? `확인 ${new Date(q.confirmed_at).toLocaleDateString('ko-KR')} · 누르면 취소` : '누르면 취소'}
