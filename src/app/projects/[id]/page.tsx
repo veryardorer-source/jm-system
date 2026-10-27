@@ -12,6 +12,7 @@ import { FolderIndex, sha256Hex, uniqueByOriginal } from '@/lib/folder-dedupe'
 import { openPdfTitled, printUrl, downloadUrl, downloadName, viewUrl, SECURE_PREFIX, isSecureUrl, signSecureUrls } from '@/lib/media'
 import PdfPreview, { isPdfUrl } from '@/components/PdfPreview'
 import { normalizePdfTitle } from '@/lib/pdf'
+import { useGalleryNav } from '@/lib/gallery-nav'
 import Image from 'next/image'
 import FileDropInput from '@/components/FileDropInput'
 import ProjectGantt, { todayStart, STYLE } from '@/components/ProjectGantt'
@@ -149,8 +150,6 @@ export default function ProjectDetail() {
     return () => window.removeEventListener('beforeunload', warn)
   }, [uploading])
   const [lightbox, setLightbox] = useState<string | null>(null)
-  const touchStartX = useRef(0)
-  const pinchingRef = useRef(false) // 두 손가락 확대 중에는 스와이프(다음 장 넘기기) 금지
 
   const [collapsedCats, setCollapsedCats] = useState<Record<string, boolean>>({})
   const [collapsedZones, setCollapsedZones] = useState<Record<string, boolean>>({})
@@ -1103,6 +1102,25 @@ export default function ProjectDetail() {
   // 기본 분류 + 직접 추가된(파일에 존재하는) 분류
   const allCategories = Array.from(new Set([...CATEGORY_LIST, ...files.map(f => f.category).filter(Boolean)]))
 
+  // 사진 크게 보기 — 같은 분류의 사진·동영상을 목록과 같은 순서로 넘김 (끝에서 넘기면 처음으로)
+  const lbCur = lightbox ? files.find(f => f.file_url === lightbox) : undefined
+  const lbGallery = (lbCur ? files.filter(f => f.category === lbCur.category) : [])
+    .filter(f => (f.file_type || '') !== 'link' && (isVideoFile(f) || isImageFile(f)))
+    .sort((a, b) => {
+      if (photoGroup === 'date') {
+        const d = fileDate(b).localeCompare(fileDate(a)); if (d !== 0) return d
+        const c = (b.created_at || '').localeCompare(a.created_at || ''); if (c !== 0) return c
+      }
+      return (a.file_name || '').localeCompare(b.file_name || '', undefined, { numeric: true })
+    })
+    .map(f => f.file_url)
+  const lbIdx = lightbox ? lbGallery.indexOf(lightbox) : -1
+  const lbGo = (d: number) => {
+    if (lbGallery.length < 2 || lbIdx < 0) return
+    setLightbox(lbGallery[(lbIdx + d + lbGallery.length) % lbGallery.length])
+  }
+  const lbNav = useGalleryNav(!!lightbox, lbGo, () => setLightbox(null))
+
   if (loading) return (
     <div className="flex flex-col h-screen">
       <Sidebar />
@@ -1812,53 +1830,35 @@ export default function ProjectDetail() {
 
       {/* 사진 크게 보기 (좌우 넘기기) */}
       {lightbox && (() => {
-        const cur = files.find(f => f.file_url === lightbox)
-        const gallery = (cur ? files.filter(f => f.category === cur.category) : [])
-          .filter(f => (f.file_type || '') !== 'link' && (isVideoFile(f) || isImageFile(f)))
-          .sort((a, b) => {
-            if (photoGroup === 'date') {
-              const d = fileDate(b).localeCompare(fileDate(a)); if (d !== 0) return d
-              const c = (b.created_at || '').localeCompare(a.created_at || ''); if (c !== 0) return c
-            }
-            return (a.file_name || '').localeCompare(b.file_name || '', undefined, { numeric: true })
-          })
-          .map(f => f.file_url)
-        const idx = gallery.indexOf(lightbox)
-        const go = (d: number) => { const n = idx + d; if (n >= 0 && n < gallery.length) setLightbox(gallery[n]) }
+        const cur = lbCur
+        const gallery = lbGallery
+        const idx = lbIdx
         return (
-          <div className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-4"
+          // touch-action: 가로 끌기는 우리가 처리(손가락 따라 이동), 두 손가락 확대는 브라우저에 맡김
+          <div className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-4 overflow-hidden [touch-action:pan-y_pinch-zoom]"
             onClick={() => setLightbox(null)}
-            onTouchStart={e => {
-              // 손가락이 2개 이상이면 확대 동작 — 스와이프로 취급하지 않음
-              if (e.touches.length > 1) { pinchingRef.current = true; return }
-              pinchingRef.current = false
-              touchStartX.current = e.touches[0].clientX
-            }}
-            onTouchMove={e => { if (e.touches.length > 1) pinchingRef.current = true }}
-            onTouchEnd={e => {
-              // 확대 중이었거나 아직 손가락이 남아 있으면(핀치 해제 중) 넘기지 않음
-              if (pinchingRef.current || e.touches.length > 0) return
-              // 이미 확대된 상태에서는 한 손가락 이동 = 화면 이동이지 넘기기가 아님
-              if (typeof window !== 'undefined' && window.visualViewport && window.visualViewport.scale > 1.05) return
-              const dx = e.changedTouches[0].clientX - touchStartX.current
-              if (Math.abs(dx) > 50) go(dx < 0 ? 1 : -1)
-            }}>
+            {...lbNav.handlers}>
+            <div className="max-w-full max-h-full flex items-center justify-center" style={lbNav.mediaStyle}>
             {isVideoUrl(lightbox) ? (
               <video src={lightbox} controls autoPlay playsInline
                 onClick={e => e.stopPropagation()}
-                className="max-w-full max-h-full rounded-lg" />
+                className="max-w-full max-h-[calc(100vh-2rem)] rounded-lg" />
             ) : (
               // 우리 주소(끝=올린 파일명)로 표시 — 오른쪽 클릭 '다른 이름으로 저장'도 올린 이름
-              <HeicImg src={viewUrl(lightbox, cur?.file_name)} alt="" onClick={e => e.stopPropagation()} className="max-w-full max-h-full object-contain rounded-lg" />
+              <HeicImg src={viewUrl(lightbox, cur?.file_name)} alt="" onClick={e => e.stopPropagation()} className="max-w-full max-h-[calc(100vh-2rem)] object-contain rounded-lg select-none" />
             )}
-            {idx > 0 && (
-              <button onClick={e => { e.stopPropagation(); go(-1) }}
-                className="absolute left-2 md:left-6 top-1/2 -translate-y-1/2 w-11 h-11 rounded-full bg-white/20 hover:bg-white/30 text-white text-2xl flex items-center justify-center">‹</button>
-            )}
-            {idx < gallery.length - 1 && (
-              <button onClick={e => { e.stopPropagation(); go(1) }}
-                className="absolute right-2 md:right-6 top-1/2 -translate-y-1/2 w-11 h-11 rounded-full bg-white/20 hover:bg-white/30 text-white text-2xl flex items-center justify-center">›</button>
-            )}
+            </div>
+            {gallery.length > 1 && (<>
+              {/* 화면 양옆 넓은 누름 영역 — PC는 가장자리 아무 데나 눌러도 넘어감 */}
+              <button onClick={e => { e.stopPropagation(); lbNav.step(-1) }} title="이전 사진 (← 키)" aria-label="이전 사진"
+                className="group absolute left-0 top-16 bottom-16 w-16 md:w-[15%] flex items-center justify-start pl-2 md:pl-6">
+                <span className="w-12 h-12 md:w-14 md:h-14 rounded-full bg-white/20 group-hover:bg-white/35 text-white text-3xl flex items-center justify-center">‹</span>
+              </button>
+              <button onClick={e => { e.stopPropagation(); lbNav.step(1) }} title="다음 사진 (→ 키)" aria-label="다음 사진"
+                className="group absolute right-0 top-16 bottom-16 w-16 md:w-[15%] flex items-center justify-end pr-2 md:pr-6">
+                <span className="w-12 h-12 md:w-14 md:h-14 rounded-full bg-white/20 group-hover:bg-white/35 text-white text-3xl flex items-center justify-center">›</span>
+              </button>
+            </>)}
             {cur && (
               <div className="absolute top-4 left-4 right-14 flex flex-wrap items-center gap-1.5 pointer-events-none">
                 <span className="bg-black/50 text-white text-xs px-3 py-1 rounded-full">

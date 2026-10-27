@@ -11,6 +11,7 @@ import { shareUrl, downloadUrl, viewInBrowser } from '@/lib/media'
 import { toast } from '@/components/Toaster'
 import { playNotifySound } from '@/lib/sound'
 import LinkPreview from '@/components/LinkPreview'
+import { useGalleryNav } from '@/lib/gallery-nav'
 
 type Message = {
   id: string
@@ -744,6 +745,16 @@ export default function ChatPage() {
     )
   }
 
+  // 채팅 사진 크게 보기 — 대화 속 사진 전체를 순서대로 넘김 (끝에서 넘기면 처음으로)
+  const chatGallery = chatLightbox ? messages.filter(m => !m.is_deleted)
+    .flatMap(m => (m.images && m.images.length ? m.images : (m.image_url ? [m.image_url] : []))) : []
+  const chatIdx = chatLightbox ? chatGallery.indexOf(chatLightbox) : -1
+  const chatGo = (d: number) => {
+    if (chatGallery.length < 2 || chatIdx < 0) return
+    setChatLightbox(chatGallery[(chatIdx + d + chatGallery.length) % chatGallery.length])
+  }
+  const chatNav = useGalleryNav(!!chatLightbox, chatGo, () => setChatLightbox(null))
+
   if (profile?.role === 'partner') return (
     <div className="flex flex-col min-h-screen">
       <Sidebar />
@@ -1176,15 +1187,24 @@ export default function ChatPage() {
 
       {/* 채팅 사진 크게 보기 (좌우 넘김 + 내보내기/저장) */}
       {chatLightbox && (() => {
-        const gallery = messages.filter(m => !m.is_deleted)
-          .flatMap(m => (m.images && m.images.length ? m.images : (m.image_url ? [m.image_url] : [])))
-        const idx = gallery.indexOf(chatLightbox)
-        const go = (d: number) => { const n = idx + d; if (n >= 0 && n < gallery.length) setChatLightbox(gallery[n]) }
+        const gallery = chatGallery
+        const idx = chatIdx
         return (
-          <div className="fixed inset-0 bg-black/90 z-[60] flex items-center justify-center p-4" onClick={() => setChatLightbox(null)}>
-            <Image src={chatLightbox} alt="" width={1600} height={1200} unoptimized onClick={e => e.stopPropagation()} className="w-auto h-auto max-w-full max-h-[85vh] object-contain rounded-lg" />
-            {idx > 0 && <button onClick={e => { e.stopPropagation(); go(-1) }} className="absolute left-2 md:left-6 top-1/2 -translate-y-1/2 w-11 h-11 rounded-full bg-white/20 hover:bg-white/30 text-white text-2xl flex items-center justify-center">‹</button>}
-            {idx < gallery.length - 1 && <button onClick={e => { e.stopPropagation(); go(1) }} className="absolute right-2 md:right-6 top-1/2 -translate-y-1/2 w-11 h-11 rounded-full bg-white/20 hover:bg-white/30 text-white text-2xl flex items-center justify-center">›</button>}
+          <div className="fixed inset-0 bg-black/90 z-[60] flex items-center justify-center p-4 overflow-hidden [touch-action:pan-y_pinch-zoom]"
+            onClick={() => setChatLightbox(null)} {...chatNav.handlers}>
+            <div className="max-w-full flex items-center justify-center" style={chatNav.mediaStyle}>
+              <Image src={chatLightbox} alt="" width={1600} height={1200} unoptimized onClick={e => e.stopPropagation()} className="w-auto h-auto max-w-full max-h-[85vh] object-contain rounded-lg select-none" />
+            </div>
+            {gallery.length > 1 && (<>
+              <button onClick={e => { e.stopPropagation(); chatNav.step(-1) }} title="이전 사진 (← 키)" aria-label="이전 사진"
+                className="group absolute left-0 top-16 bottom-16 w-16 md:w-[15%] flex items-center justify-start pl-2 md:pl-6">
+                <span className="w-12 h-12 md:w-14 md:h-14 rounded-full bg-white/20 group-hover:bg-white/35 text-white text-3xl flex items-center justify-center">‹</span>
+              </button>
+              <button onClick={e => { e.stopPropagation(); chatNav.step(1) }} title="다음 사진 (→ 키)" aria-label="다음 사진"
+                className="group absolute right-0 top-16 bottom-16 w-16 md:w-[15%] flex items-center justify-end pr-2 md:pr-6">
+                <span className="w-12 h-12 md:w-14 md:h-14 rounded-full bg-white/20 group-hover:bg-white/35 text-white text-3xl flex items-center justify-center">›</span>
+              </button>
+            </>)}
             <div className="absolute bottom-5 left-1/2 -translate-x-1/2 flex items-center gap-2" onClick={e => e.stopPropagation()}>
               {gallery.length > 1 && <span className="bg-black/50 text-white text-xs px-3 py-1.5 rounded-full">{idx + 1} / {gallery.length}</span>}
               <button onClick={() => shareUrl(chatLightbox!, '사진.jpg')} className="bg-white/20 hover:bg-white/30 text-white text-xs px-3 py-1.5 rounded-full">내보내기</button>
