@@ -863,7 +863,7 @@ function QuoteTab({ list, hqExpenses, fixedCosts, onRefresh }: { list: Quote[]; 
   async function pickFile(f: File | null) {
     setFile(f); setReadNote(null)
     if (!f) return
-    if (!form.title.trim()) setForm(prev => ({ ...prev, title: f.name.replace(/\.[^.]+$/, '') }))
+    setForm(prev => ({ ...prev, title: f.name.replace(/\.[^.]+$/, '').trim() })) // 이름은 첨부파일 제목 그대로
     setReadNote({ text: '파일에서 금액을 읽는 중…', ok: true })
     const r = await readQuoteAmounts(f)
     if (!r) { setReadNote({ text: '이 파일에서는 금액을 읽지 못했어요(스캔·사진·한글 파일 등). 직접 입력해 주세요.', ok: false }); return }
@@ -1000,15 +1000,20 @@ function QuoteTab({ list, hqExpenses, fixedCosts, onRefresh }: { list: Quote[]; 
     return dateOf(b).localeCompare(dateOf(a)) || byName(a, b)
   })
 
-  // 날짜순일 때 추가 견적은 본 견적 바로 아래 — 현장명(또는 파일명)에 '추가'가 있으면 이름이 가장 닮은 앞선 본 견적에 붙인다
+  // 날짜순일 때 추가 견적은 본 견적 바로 아래 — 순이익을 합산한 견적은 합산 대상 아래,
+  // 그 밖에 현장명(또는 파일명)에 '추가'가 있으면 이름이 가장 닮은 앞선 본 견적 아래
   const isExtra = (q: Quote) => /추가/.test(q.title) || /추가/.test(q.file_name || '')
-  const core = (s: string) => s.replace(/^\d{6}_?/, '').replace(/\s/g, '').replace(/\(?추가\)?.*$/, '')
+  const core = (s: string) => s.replace(/^\d{6,7}_?/, '').replace(/\s/g, '').replace(/\(?추가.*$/, '')
   const parentOf = new Map<string, string>()
-  for (const x of yearList.filter(isExtra)) {
+  for (const x of yearList) {
+    const target = x.merged_into && yearList.find(p => p.id === x.merged_into && !p.merged_into)
+    if (target) parentOf.set(x.id, target.id)
+  }
+  for (const x of yearList.filter(q => isExtra(q) && !parentOf.has(q.id))) {
     const c = core(x.title)
     let best: Quote | null = null, bestScore = 2 // 3글자 이상 겹쳐야
     for (const p of yearList) {
-      if (p.id === x.id || isExtra(p) || dateOf(p) > dateOf(x)) continue
+      if (p.id === x.id || isExtra(p) || parentOf.has(p.id) || dateOf(p) > dateOf(x)) continue
       const pc = core(p.title)
       let n = 0; while (n < c.length && c[n] === pc[n]) n++
       const score = Math.max(n, c && pc.includes(c) ? c.length : 0)
@@ -1018,6 +1023,14 @@ function QuoteTab({ list, hqExpenses, fixedCosts, onRefresh }: { list: Quote[]; 
   }
   const sorted = !sort.startsWith('date') ? plain : plain.filter(q => !parentOf.has(q.id)).flatMap(p => [p,
     ...yearList.filter(x => parentOf.get(x.id) === p.id).sort((a, b) => dateOf(a).localeCompare(dateOf(b)) || byName(a, b))])
+  const grouped = sort.startsWith('date')
+  // 번호 — 본 견적 1, 2, 3… / 그 아래 추가 견적 3-1, 3-2…
+  const numOf = new Map<string, string>()
+  { let n = 0, sub = 0
+    for (const q of sorted) {
+      if (grouped && parentOf.has(q.id)) numOf.set(q.id, `${n}-${++sub}`)
+      else { n++; sub = 0; numOf.set(q.id, String(n)) }
+    } }
 
   const numCell = (n: number | null | undefined) => n ? won(n) : <span className="text-gray-300">-</span>
 
@@ -1103,7 +1116,8 @@ function QuoteTab({ list, hqExpenses, fixedCosts, onRefresh }: { list: Quote[]; 
               {sorted.map(q => (
                 <tr key={q.id} className="border-b border-gray-50 hover:bg-gray-50 align-top">
                   <td className="px-6 py-3 text-sm font-medium text-gray-800">
-                    {sort.startsWith('date') && parentOf.has(q.id) && <span className="text-gray-400 mr-1">└</span>}{q.title}
+                    {grouped && parentOf.has(q.id) && <span className="text-gray-400 mr-1">└</span>}
+                    <span className="text-gray-400 font-normal mr-1.5 tabular-nums">{numOf.get(q.id)}.</span>{q.title}
                   </td>
                   <td className="px-3 py-2.5 text-center">
                     {q.confirmed
@@ -1151,7 +1165,7 @@ function QuoteTab({ list, hqExpenses, fixedCosts, onRefresh }: { list: Quote[]; 
       )}
       {showForm && (
         <FormModal title={editing ? '견적서 수정' : '견적서·계약 추가'} onClose={() => setShowForm(false)} onSubmit={save} saving={saving}>
-          <TextInput label="현장명 *" required value={form.title} onChange={v => setForm({ ...form, title: v })} placeholder="예) 260824_롯데캐슬 미용실" />
+          <TextInput label="현장명 *" required value={form.title} onChange={v => setForm({ ...form, title: v })} placeholder="파일을 고르면 파일 제목이 들어가요" />
           <div>
             <label className="text-sm font-medium text-gray-700 block mb-1.5">
               견적서 또는 계약서 {editing?.file_name ? <span className="text-gray-400 font-normal">(변경 시에만 · 현재: {editing.file_name})</span> : <span className="text-gray-400 font-normal">(없으면 비워두고 금액만 입력)</span>}
