@@ -52,14 +52,52 @@ export function parseExpenseRows(rows: unknown[][], fileName = ''): ExpenseSheet
   return { month: findMonth(rows, fileName), rows: list, total: list.reduce((s, x) => s + x.amount, 0), fileTotal }
 }
 
-// 첫 시트부터 차례로 — 읽히는 첫 시트를 쓴다
+// 사업장 고용산재보험 — 현장 손익표마다 원가로 이미 빠져 있어 본사 총지출에서 또 빼면 두 번 빠짐.
+// 그래서 따로 한 줄로 떼어 저장하고, 견적서 탭 본사 총지출은 이 줄을 빼고 더한다. (임원 개인 '○○ 산재보험'은 본사 지출 그대로)
+export const SITE_INSURANCE_LABEL = '고용산재보험(현장 손익표 반영)'
+const SITE_INSURANCE_RE = /고용\s*[·,/]?\s*산재/
+
+// 지출내역 시트(일자·용도·내용·금액)에서 내용이 '고용산재'인 비용 줄 → 용도별 금액
+export function findSiteInsurance(rows: unknown[][]): Map<string, number> {
+  const found = new Map<string, number>()
+  for (let r = 0; r < Math.min(rows.length, 40); r++) {
+    const row = (rows[r] || []).map(cell)
+    const lc = row.indexOf('용도'), dc = row.indexOf('내용'), ac = row.indexOf('금액'), kc = row.indexOf('보고서 구분')
+    if (lc < 0 || dc < 0 || ac < 0) continue
+    for (let i = r + 1; i < rows.length; i++) {
+      const x = rows[i] || []
+      if (kc >= 0 && cell(x[kc]) && cell(x[kc]) !== '비용') continue
+      const amount = num(x[ac])
+      if (!SITE_INSURANCE_RE.test(cell(x[dc])) || !amount || isNaN(amount)) continue
+      found.set(cell(x[lc]), (found.get(cell(x[lc])) || 0) + amount)
+    }
+    break
+  }
+  return found
+}
+
+// 첫 시트부터 차례로 — 읽히는 첫 시트를 쓴다. 지출내역 시트가 있으면 사업장 고용산재를 그 용도에서 떼어 따로 한 줄로
 export async function readExpenseFile(file: File): Promise<ExpenseSheet | null> {
   const XLSX = await import('xlsx')
   const wb = XLSX.read(new Uint8Array(await file.arrayBuffer()), { type: 'array', cellDates: true })
-  for (const name of wb.SheetNames) {
-    const rows = XLSX.utils.sheet_to_json<unknown[]>(wb.Sheets[name], { header: 1, defval: '' })
-    const parsed = parseExpenseRows(rows, file.name)
-    if (parsed) return parsed
+  const sheets = wb.SheetNames.map(name => XLSX.utils.sheet_to_json<unknown[]>(wb.Sheets[name], { header: 1, defval: '' }))
+  let parsed: ExpenseSheet | null = null
+  for (const rows of sheets) { parsed = parseExpenseRows(rows, file.name); if (parsed) break }
+  if (!parsed) return null
+  let ins = 0
+  for (const rows of sheets) {
+    const found = findSiteInsurance(rows)
+    if (!found.size) continue
+    for (const [label, amount] of found) {
+      const row = parsed.rows.find(x => x.label === label)
+      if (!row) continue
+      row.amount -= amount; ins += amount
+    }
+    break
   }
-  return null
+  if (ins) {
+    parsed.rows = parsed.rows.filter(x => x.amount !== 0)
+    parsed.rows.push({ label: SITE_INSURANCE_LABEL, amount: ins })
+  }
+  return parsed
 }

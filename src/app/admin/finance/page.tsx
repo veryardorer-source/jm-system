@@ -13,7 +13,7 @@ import FileDropInput from '@/components/FileDropInput'
 import { openPdfTitled, resolveFileUrl, removeStoredFile, downloadUrl, SECURE_PREFIX } from '@/lib/media'
 import { normalizePdfTitle } from '@/lib/pdf'
 import { readQuoteAmounts, QuoteAmounts } from '@/lib/quote-parse'
-import { readExpenseFile, ExpenseSheet } from '@/lib/expense-parse'
+import { readExpenseFile, ExpenseSheet, SITE_INSURANCE_LABEL } from '@/lib/expense-parse'
 import SortSelect from '@/components/SortSelect'
 
 const TAB_LIST = ['견적서', '급여내역', '고정지출', '현장별 이익'] as const // 매출매입 탭은 2026-10-27 제외(finance_sales 자료는 DB에 그대로)
@@ -998,7 +998,9 @@ function QuoteTab({ list, hqExpenses, fixedCosts, onRefresh }: { list: Quote[]; 
   const fcMonths = Array.from(new Set(fcYear.map(c => Number(c.month.slice(5, 7))))).sort((a, b) => a - b)
   const fcMissing = fcMonths.length ? Array.from({ length: fcMonths[fcMonths.length - 1] }, (_, i) => i + 1).filter(m => !fcMonths.includes(m)) : []
   const hqAuto = fcYear.length > 0
-  const hqAmount = hqAuto ? fcYear.reduce((t, c) => t + (c.amount || 0), 0) : hq ? hq.amount : null
+  // 사업장 고용산재는 현장 손익표 원가에 이미 들어 있어 본사 총지출에선 뺌(두 번 빠지지 않게) — 금액은 따로 표시
+  const siteInsurance = fcYear.filter(c => c.title === SITE_INSURANCE_LABEL).reduce((t, c) => t + (c.amount || 0), 0)
+  const hqAmount = hqAuto ? fcYear.reduce((t, c) => t + (c.amount || 0), 0) - siteInsurance : hq ? hq.amount : null
   // 부가세 포함 순이익(통장 기준) — 비어 있으면 임시로 '부가세 제외 순이익 + 부가세'(합산 견적은 합쳐진 견적서 부가세까지)
   const vatProfitOf = (q: Quote) => q.merged_into ? 0
     : q.net_profit_vat != null ? q.net_profit_vat
@@ -1113,6 +1115,7 @@ function QuoteTab({ list, hqExpenses, fixedCosts, onRefresh }: { list: Quote[]; 
             {hqAuto ? <>
               <p className="font-semibold text-gray-800">{won(hqAmount || 0)}</p>
               <p className="text-[11px] text-gray-400">고정지출 {fcMonths.length === fcMonths[fcMonths.length - 1] ? `1~${fcMonths[fcMonths.length - 1]}월` : fcMonths.join('·') + '월'} 합 (자동)</p>
+              {siteInsurance > 0 && <p className="text-[11px] text-gray-400" title="현장 손익표마다 고용산재가 원가로 빠져 있어 본사 총지출에선 뺐어요">사업장 고용산재 {won(siteInsurance)} 뺌 (현장 손익표에 포함)</p>}
               {fcMissing.length > 0 && <p className="text-[11px] text-orange-500">빠진 달: {fcMissing.join('·')}월</p>}
             </> : <>
               <button onClick={() => { setHqForm({ amount: hq ? String(hq.amount) : '', memo: hq?.memo || '' }); setShowHq(true) }}
