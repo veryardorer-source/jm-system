@@ -69,8 +69,8 @@ export default function SearchPage() {
 
     // 금전 자료 (금액 볼 수 있는 사람만)
     if (canMoney) {
-      const { data: wd } = await supabase.from('withdrawal_requests').select('*').or(`reason.ilike.${like},requested_by.ilike.${like}`).limit(15)
-      ;(wd || []).forEach(w => results.push({ kind: '출금요청', icon: '💸', title: (w.reason || '출금요청').slice(0, 40), sub: w.requested_by, href: '/withdrawals' }))
+      const { data: wd } = await supabase.from('withdrawal_requests').select('*').or(`reason.ilike.${like},requested_by.ilike.${like},recipient.ilike.${like},bank_account.ilike.${like}`).limit(15)
+      ;(wd || []).forEach(w => results.push({ kind: '출금요청', icon: '💸', title: (w.reason || '출금요청').slice(0, 40), sub: [w.requested_by, w.recipient].filter(Boolean).join(' → '), href: `/withdrawals?open=${w.id}` }))
 
       // 수금은 관리자만
       if (profile?.role === 'admin') {

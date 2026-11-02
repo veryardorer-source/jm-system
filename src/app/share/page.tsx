@@ -8,6 +8,8 @@ import Sidebar from '@/components/Sidebar'
 import { WANT_VERSION } from '@/components/SWRegister'
 import { supabase, HIDDEN_STATUSES } from '@/lib/supabase'
 import { useAuth, canEdit } from '@/lib/auth-context'
+import WithdrawalFields, { PasteTextButton, appendText, EMPTY_INFO, type WithdrawalInfo } from '@/components/WithdrawalFields'
+import { notifySafeText } from '@/lib/withdrawal-parse'
 import { notifyOthers, notifyDM, notifyRoom } from '@/lib/notify'
 import { compressImage, makeThumbnail, hashFile, isCompressibleImage, mediaUploadName } from '@/lib/image'
 import PdfPreview from '@/components/PdfPreview'
@@ -153,6 +155,7 @@ export default function SharePage() {
   const [rooms, setRooms] = useState<{ id: string; name: string }[]>([])
   const [people, setPeople] = useState<{ id: string; name: string }[]>([])
   const [chatTarget, setChatTarget] = useState('all')
+  const [wInfo, setWInfo] = useState<WithdrawalInfo>(EMPTY_INFO)  // 출금요청: 금액·받는 분·계좌
 
   useEffect(() => {
     let active = true
@@ -300,9 +303,9 @@ export default function SharePage() {
         notifyOthers(profile?.id, { type: 'receipt', title: '새 영수증 메모', body: reason || sharedText, link: '/receipts' })
       } else {
         await supabase.from('withdrawal_requests').insert([{
-          image_url: '', images: [], reason: reason || sharedText, requested_by: who, status: '요청', amount: 0, recipient: '',
+          image_url: '', images: [], reason: reason || sharedText, requested_by: who, status: '요청', ...wInfo,
         }])
-        notifyOthers(profile?.id, { type: 'withdrawal', title: '새 출금요청 메모', body: reason || sharedText, link: '/withdrawals' })
+        notifyOthers(profile?.id, { type: 'withdrawal', title: '새 출금요청 메모', body: notifySafeText(reason || sharedText) || '출금요청 메모가 등록되었습니다', link: '/withdrawals' })
       }
       await clearShared()
       setUploading(false)
@@ -377,7 +380,7 @@ export default function SharePage() {
     const wImageNames = wSlots.map((u, i) => u ? wNames[i] : undefined).filter(n => n !== undefined)
     if (dest === 'withdrawal' && wUrls.length > 0) {
       await supabase.from('withdrawal_requests').insert([{
-        image_url: wUrls[0], images: wUrls, image_names: wImageNames, reason: reason || '', requested_by: who, status: '요청', amount: 0, recipient: '',
+        image_url: wUrls[0], images: wUrls, image_names: wImageNames, reason: reason || '', requested_by: who, status: '요청', ...wInfo,
       }])
     }
     setProgress(100)
@@ -387,7 +390,7 @@ export default function SharePage() {
     } else if (dest === 'receipt') {
       notifyOthers(profile?.id, { type: 'receipt', title: `새 영수증 ${files.length}건`, body: reason || '영수증이 등록되었습니다', link: '/receipts' })
     } else {
-      notifyOthers(profile?.id, { type: 'withdrawal', title: `새 출금요청 ${files.length}건`, body: reason || '출금요청이 등록되었습니다', link: '/withdrawals' })
+      notifyOthers(profile?.id, { type: 'withdrawal', title: `새 출금요청 ${files.length}건`, body: notifySafeText(reason) || '출금요청이 등록되었습니다', link: '/withdrawals' })
     }
     await clearShared()
     setUploading(false)
@@ -671,13 +674,22 @@ export default function SharePage() {
                   <p className="text-[11px] text-gray-400 mt-1.5">사진은 한 묶음으로, 함께 공유된 글은 메시지로 같이 전송돼요.</p>
                 </div>
               ) : (
-                <div>
-                  <label className="text-sm font-medium text-gray-700 block mb-1.5">
-                    {dest === 'withdrawal' ? '사유 / 메모' : '메모'} <span className="text-gray-400 font-normal">(선택)</span>
-                  </label>
-                  <textarea value={reason} onChange={e => setReason(e.target.value)} rows={4}
-                    placeholder={dest === 'withdrawal' ? '예) OO현장 자재대금 송금' : '예) OO현장 자재 영수증'}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 resize-y leading-relaxed" />
+                <div className="flex flex-col gap-3">
+                  <div>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <label className="text-sm font-medium text-gray-700">
+                        {dest === 'withdrawal' ? '사유 / 메모' : '메모'} <span className="text-gray-400 font-normal">(선택)</span>
+                      </label>
+                      {dest === 'withdrawal' && <PasteTextButton onText={t => setReason(r => appendText(r, t))} />}
+                    </div>
+                    <textarea value={reason} onChange={e => setReason(e.target.value)} rows={4}
+                      placeholder={dest === 'withdrawal' ? '예) OO현장 자재대금 송금' : '예) OO현장 자재 영수증'}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 resize-y leading-relaxed" />
+                    {dest === 'withdrawal' && (
+                      <p className="text-[11px] text-gray-400 mt-1">카톡에서 날짜·금액 메시지를 ‘복사’하고 📋를 누르면 이어 붙어요. 여러 개도 가능.</p>
+                    )}
+                  </div>
+                  {dest === 'withdrawal' && <WithdrawalFields text={reason} value={wInfo} onChange={setWInfo} />}
                 </div>
               )}
 

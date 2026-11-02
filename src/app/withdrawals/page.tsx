@@ -11,6 +11,8 @@ import { notifyOthers } from '@/lib/notify'
 import { compressImage, mediaUploadName } from '@/lib/image'
 import { isImageUrl, viewInBrowser, printUrl, SECURE_PREFIX, isSecureUrl, signSecureUrls, removeStoredFile, saveAsOriginal } from '@/lib/media'
 import PdfPreview, { isPdfUrl } from '@/components/PdfPreview'
+import WithdrawalFields, { PasteTextButton, appendText, EMPTY_INFO, type WithdrawalInfo } from '@/components/WithdrawalFields'
+import { formatWon, notifySafeText } from '@/lib/withdrawal-parse'
 
 type Photo = {
   id: string
@@ -18,12 +20,16 @@ type Photo = {
   images?: string[] | null
   image_names?: (string | null)[] | null   // images 와 같은 순서의 원래 파일 이름 (db/upload_names.sql)
   reason: string
+  amount?: number | null          // 출금 금액(원) — 카톡 글에서 자동 인식 후 확인
+  recipient?: string | null       // 받는 분(예금주)
+  bank_account?: string | null    // 은행 · 계좌
   requested_by: string
   status?: string | null   // '요청'(대기) | '처리완료'
   created_at: string
 }
 
 const isDone = (p: Photo) => p.status === '처리완료'
+const infoOf = (p: Photo): WithdrawalInfo => ({ amount: Number(p.amount) || 0, recipient: p.recipient || '', bank_account: p.bank_account || '' })
 
 // 출금 사진은 신분증·통장 사본이 섞여 있어 잠금 보관함(비공개)에 둔다 — 볼 때마다 1시간짜리 주소 발급
 // DB에는 'secure://withdrawals/...' 로 저장 (db/secure_withdrawals.sql: 승인 직원만 열람)
@@ -53,6 +59,7 @@ export default function WithdrawalsPage() {
   const [showForm, setShowForm] = useState(false)
   const [selectedFiles, setSelectedFiles] = useState<File[]>([])
   const [reason, setReason] = useState('')
+  const [info, setInfo] = useState<WithdrawalInfo>(EMPTY_INFO)
   // 요청자 기본값은 내 이름 — 입력 전엔 null로 두고 표시할 때 파생 (effect 동기 setState 회피)
   const [requestedByEdit, setRequestedByEdit] = useState<string | null>(null)
   const requestedBy = requestedByEdit ?? profile?.name ?? ''
@@ -60,6 +67,7 @@ export default function WithdrawalsPage() {
   const [uploadCurrent, setUploadCurrent] = useState(0)
   const [viewer, setViewer] = useState<Photo | null>(null)
   const [viewerReason, setViewerReason] = useState('')
+  const [viewerInfo, setViewerInfo] = useState<WithdrawalInfo>(EMPTY_INFO)
   const [viewerImages, setViewerImages] = useState<string[]>([])
   const [viewerNames, setViewerNames] = useState<Record<string, string>>({})
   const [savingReason, setSavingReason] = useState(false)
@@ -86,18 +94,20 @@ export default function WithdrawalsPage() {
   function openViewer(p: Photo) {
     setViewer(p)
     setViewerReason(p.reason || '')
+    setViewerInfo(infoOf(p))
     setViewerImages(imgsOf(p))
     setViewerNames(namesOf(p))
   }
 
   // 출금 건의 사진/글을 DB에 반영 + 화면 갱신
-  async function applyViewer(nextImages: string[], nextReason: string, names: Record<string, string> = viewerNames) {
+  async function applyViewer(nextImages: string[], nextReason: string, names: Record<string, string> = viewerNames, nextInfo: WithdrawalInfo = viewerInfo) {
     if (!viewer) return
     const image_names = nextImages.map(u => names[u] || null)
-    await supabase.from('withdrawal_requests').update({
-      images: nextImages, image_url: nextImages[0] || '', reason: nextReason, image_names,
+    const { error } = await supabase.from('withdrawal_requests').update({
+      images: nextImages, image_url: nextImages[0] || '', reason: nextReason, image_names, ...nextInfo,
     }).eq('id', viewer.id)
-    setPhotos(ps => ps.map(x => x.id === viewer.id ? { ...x, images: nextImages, image_url: nextImages[0] || '', reason: nextReason, image_names } : x))
+    if (error) { toast('저장 실패: ' + error.message); return }
+    setPhotos(ps => ps.map(x => x.id === viewer.id ? { ...x, images: nextImages, image_url: nextImages[0] || '', reason: nextReason, image_names, ...nextInfo } : x))
   }
 
   async function saveViewerReason() {
@@ -115,7 +125,7 @@ export default function WithdrawalsPage() {
     await removeStoredFile(url)
     const next = viewerImages.filter(u => u !== url)
     setViewerImages(next)
-    await applyViewer(next, viewerReason)
+    await applyViewer(next, viewerReason, viewerNames, infoOf(viewer))   // 사진 조작은 확인 안 한 자동 정보를 저장하지 않음
     setViewerBusy(false)
   }
 
@@ -132,8 +142,8 @@ export default function WithdrawalsPage() {
     const next = [...viewerImages, ...added]
     setViewerImages(next)
     setViewerNames(names)
-    await applyViewer(next, viewerReason, names)
-    if (added.length) notifyOthers(profile?.id, { type: 'withdrawal', title: `출금요청 사진 ${added.length}장 추가`, body: (viewer.reason || '').slice(0, 40), link: `/withdrawals?open=${viewer.id}` })
+    await applyViewer(next, viewerReason, names, infoOf(viewer))
+    if (added.length) notifyOthers(profile?.id, { type: 'withdrawal', title: `출금요청 사진 ${added.length}장 추가`, body: notifySafeText(viewer.reason || ''), link: `/withdrawals?open=${viewer.id}` })
     setViewerBusy(false)
   }
 
@@ -168,12 +178,14 @@ export default function WithdrawalsPage() {
     const image_names = done2.map(s => s.name)
     if (urls.length > 0 || reason.trim()) {
       const { data: created } = await supabase.from('withdrawal_requests').insert([{
-        image_url: urls[0] || '', images: urls, image_names, reason, requested_by: requestedBy, status: '요청', amount: 0, recipient: '',
+        image_url: urls[0] || '', images: urls, image_names, reason, requested_by: requestedBy, status: '요청', ...info,
       }]).select('id').single()
-      notifyOthers(profile?.id, { type: 'withdrawal', title: '새 출금요청', body: `${requestedBy || ''} ${reason || '출금요청이 등록되었습니다'}`.trim(), link: created?.id ? `/withdrawals?open=${created.id}` : '/withdrawals' })
+      // 알림엔 금액을 넣지 않는다(비용 알림과 같은 원칙)
+      notifyOthers(profile?.id, { type: 'withdrawal', title: '새 출금요청', body: `${requestedBy || ''} ${notifySafeText(reason) || '출금요청이 등록되었습니다'}`.trim(), link: created?.id ? `/withdrawals?open=${created.id}` : '/withdrawals' })
     }
     setSelectedFiles([])
     setReason('')
+    setInfo(EMPTY_INFO)
     setRequestedByEdit(null)
     setShowForm(false)
     setUploading(false)
@@ -323,6 +335,12 @@ export default function WithdrawalsPage() {
                     }`}>{done ? '✅ 처리완료' : '⏳ 대기'}</span>
                   </button>
                   <div className="px-3 py-2">
+                    {(Number(p.amount) > 0 || p.recipient) && (
+                      <p className="text-sm font-semibold text-gray-900 truncate">
+                        {Number(p.amount) > 0 ? formatWon(Number(p.amount)) : ''}
+                        {p.recipient && <span className="text-xs font-normal text-gray-500 ml-1">→ {p.recipient}</span>}
+                      </p>
+                    )}
                     {p.reason && <p className="text-xs text-gray-700 line-clamp-2 whitespace-pre-wrap">{p.reason}</p>}
                     <div className="flex items-center justify-between mt-1">
                       <span className="text-xs text-gray-400">{p.requested_by || ''} {new Date(p.created_at).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
@@ -367,19 +385,35 @@ export default function WithdrawalsPage() {
             </div>
             {/* 글 추가/수정 + 건 삭제 */}
             <div className="bg-white rounded-xl px-4 py-3">
-              <label className="text-sm font-semibold text-gray-700 block mb-1.5">사유 / 내용</label>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="text-sm font-semibold text-gray-700">사유 / 내용</label>
+                {!readOnly && <PasteTextButton onText={t => setViewerReason(r => appendText(r, t))} />}
+              </div>
               {readOnly ? (
-                <p className="text-sm text-gray-700 whitespace-pre-wrap min-h-[1.5rem]">{viewerReason || '내용 없음'}</p>
+                <>
+                  {(viewerInfo.amount > 0 || viewerInfo.recipient || viewerInfo.bank_account) && (
+                    <div className="mb-2 text-sm text-gray-800 bg-gray-50 rounded-lg px-3 py-2">
+                      {viewerInfo.amount > 0 && <p><span className="text-gray-400 text-xs mr-1">금액</span>{formatWon(viewerInfo.amount)}</p>}
+                      {viewerInfo.recipient && <p><span className="text-gray-400 text-xs mr-1">받는 분</span>{viewerInfo.recipient}</p>}
+                      {viewerInfo.bank_account && <p><span className="text-gray-400 text-xs mr-1">계좌</span>{viewerInfo.bank_account}</p>}
+                    </div>
+                  )}
+                  <p className="text-sm text-gray-700 whitespace-pre-wrap min-h-[1.5rem]">{viewerReason || '내용 없음'}</p>
+                </>
               ) : (
                 <>
                   <textarea value={viewerReason} onChange={e => setViewerReason(e.target.value)}
                     rows={Math.max(6, viewerReason.split('\n').length + 1)}
                     placeholder="카톡 내용을 붙여넣거나 입력하세요"
                     className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 resize-y leading-relaxed" />
+                  <div className="mt-2">
+                    <WithdrawalFields text={viewerReason} value={viewerInfo} onChange={setViewerInfo}
+                      auto={!(viewer.amount || viewer.recipient || viewer.bank_account)} />
+                  </div>
                   <div className="flex gap-2 mt-2">
                     <button onClick={saveViewerReason} disabled={savingReason || viewerBusy}
                       className="flex-1 bg-green-600 text-white py-2 rounded-lg text-sm font-medium disabled:opacity-50">
-                      {savingReason ? '저장 중...' : '글 저장'}
+                      {savingReason ? '저장 중...' : '글·정보 저장'}
                     </button>
                     <button onClick={() => { const v = viewer; setViewer(null); deletePhoto(v) }}
                       className="px-4 border border-red-200 text-red-500 py-2 rounded-lg text-sm font-medium hover:bg-red-50">건 삭제</button>
@@ -453,11 +487,16 @@ export default function WithdrawalsPage() {
                 <MultiFileZone files={selectedFiles} onChange={setSelectedFiles} />
               </div>
               <div>
-                <label className="text-sm font-medium text-gray-700 block mb-1.5">사유 / 내용</label>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-sm font-medium text-gray-700">사유 / 내용</label>
+                  <PasteTextButton onText={t => setReason(r => appendText(r, t))} />
+                </div>
                 <textarea value={reason} onChange={e => setReason(e.target.value)} rows={4}
                   placeholder="카톡 내용을 붙여넣거나 입력 (일당, 자재비, 송금내역 등)"
                   className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 resize-y leading-relaxed" />
+                <p className="text-[11px] text-gray-400 mt-1">날짜·금액·계좌가 적힌 메시지를 여러 개 붙여도 돼요. 아래 칸에 자동으로 나눠 채워져요.</p>
               </div>
+              <WithdrawalFields text={reason} value={info} onChange={setInfo} />
               <div>
                 <label className="text-sm font-medium text-gray-700 block mb-1.5">요청자 <span className="text-gray-400 font-normal">(선택)</span></label>
                 <input value={requestedBy} onChange={e => setRequestedByEdit(e.target.value)} placeholder="이름"
@@ -467,7 +506,7 @@ export default function WithdrawalsPage() {
                 <p className="text-sm text-green-600 text-center">{uploadCurrent}/{selectedFiles.length} 업로드 중...</p>
               )}
               <div className="flex gap-3">
-                <button type="button" onClick={() => { setShowForm(false); setSelectedFiles([]) }}
+                <button type="button" onClick={() => { setShowForm(false); setSelectedFiles([]); setInfo(EMPTY_INFO) }}
                   className="flex-1 border border-gray-300 text-gray-700 py-2.5 rounded-lg text-sm">취소</button>
                 <button type="submit" disabled={uploading || (selectedFiles.length === 0 && !reason.trim())}
                   className="flex-1 bg-green-600 text-white py-2.5 rounded-lg text-sm font-medium disabled:opacity-50">
