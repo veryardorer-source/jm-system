@@ -3,6 +3,7 @@
 import { createContext, useContext, useEffect, useState } from 'react'
 import { User } from '@supabase/supabase-js'
 import { createClient } from './supabase-browser'
+import { signOutCurrentDevice } from './auth-session'
 
 const supabase = createClient()
 
@@ -58,7 +59,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [])
 
   async function signOut() {
-    await supabase.auth.signOut()
+    const error = await signOutCurrentDevice(supabase)
+    if (error) throw error
   }
 
   return (

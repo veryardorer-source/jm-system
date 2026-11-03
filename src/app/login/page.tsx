@@ -62,6 +62,7 @@ export default function LoginPage() {
               />
             </div>
             {error && <p className="text-sm text-red-500 text-center">{error}</p>}
+            <p className="text-xs text-gray-500">로그인하면 이 기기에 로그인 상태가 저장됩니다. 직접 로그아웃하거나 브라우저 데이터를 지우면 다시 로그인해야 합니다.</p>
             <button
               type="submit"
               disabled={loading}

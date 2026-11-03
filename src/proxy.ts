@@ -1,9 +1,12 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
+import { forwardAuthCookies } from './lib/auth-cookies'
+import type { CookieOptions } from '@supabase/ssr'
 
 export async function proxy(request: NextRequest) {
-  const supabaseResponse = NextResponse.next({ request })
+  let supabaseResponse = NextResponse.next({ request })
+  let updatedCookies: Array<{ name: string; value: string; options: CookieOptions }> = []
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -11,9 +14,15 @@ export async function proxy(request: NextRequest) {
     {
       cookies: {
         getAll() { return request.cookies.getAll() },
-        setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value, options }) =>
-            supabaseResponse.cookies.set(name, value, options))
+        setAll(cookiesToSet, headers) {
+          // 서버 렌더링은 갱신된 요청 쿠키를, 브라우저는 갱신된 응답 쿠키를 받는다.
+          cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value))
+          supabaseResponse = NextResponse.next({ request })
+          updatedCookies = [
+            ...updatedCookies.filter(old => !cookiesToSet.some(next => next.name === old.name)),
+            ...cookiesToSet,
+          ]
+          forwardAuthCookies(supabaseResponse, updatedCookies, new Headers(headers))
         },
       },
     }
@@ -28,19 +37,19 @@ export async function proxy(request: NextRequest) {
   if (!user && !publicPaths.some(p => request.nextUrl.pathname.startsWith(p))) {
     // API는 로그인 페이지로 보내는 대신 401 JSON — 호출한 쪽이 상태를 제대로 알 수 있게
     if (request.nextUrl.pathname.startsWith('/api/')) {
-      return NextResponse.json({ error: '인증 필요' }, { status: 401 })
+      return forwardAuthCookies(NextResponse.json({ error: '인증 필요' }, { status: 401 }), updatedCookies, supabaseResponse.headers)
     }
     // 공지 링크 등 원래 가려던 주소를 기억 — 로그인 후 그 화면으로 돌아감
     const login = new URL('/login', request.url)
     if (request.nextUrl.pathname !== '/') login.searchParams.set('next', request.nextUrl.pathname + request.nextUrl.search)
-    return NextResponse.redirect(login)
+    return forwardAuthCookies(NextResponse.redirect(login), updatedCookies, supabaseResponse.headers)
   }
 
   // 로그인된 사용자는 로그인/가입/초대 화면 대신 홈으로
   // (초대 링크를 즐겨찾기처럼 다시 여는 직원이 '이미 사용된 초대' 오류를 보지 않게)
   if (user && (['/login', '/signup'].includes(request.nextUrl.pathname) || request.nextUrl.pathname.startsWith('/invite'))) {
     const next = request.nextUrl.searchParams.get('next') || ''
-    return NextResponse.redirect(new URL(next.startsWith('/') && !next.startsWith('//') ? next : '/', request.url))
+    return forwardAuthCookies(NextResponse.redirect(new URL(next.startsWith('/') && !next.startsWith('//') ? next : '/', request.url)), updatedCookies, supabaseResponse.headers)
   }
 
   return supabaseResponse
