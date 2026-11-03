@@ -46,7 +46,10 @@ export function buildSlip(a: {
     ...(r.extraOt ? [{ label: '연장추가수당', amount: r.extraOt }] : []),
     ...(r.position ? [{ label: '직책수당', amount: r.position }] : []),
   ]
-  const irregular: SlipLine[] = r.bonus ? [{ label: '상여금', amount: r.bonus }] : []
+  const irregular: SlipLine[] = [
+    ...(r.bonus ? [{ label: '상여금', amount: r.bonus }] : []),
+    ...(r.specialAllowance ? [{ label: '특별수당', amount: r.specialAllowance }] : []),
+  ]
 
   const deductions: SlipLine[] = [
     { label: '건강보험', amount: r.health },

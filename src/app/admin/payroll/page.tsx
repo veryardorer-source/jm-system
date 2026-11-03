@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from '@/components/Toaster'
 import Sidebar from '@/components/Sidebar'
@@ -14,6 +14,8 @@ import {
 } from '@/lib/payroll'
 import { storeMonthlyLedger } from '@/lib/payroll-store'
 import { buildSlip, slipHtml, slipFileName, slipsToPdf, printSlips, shareOrDownload, Slip } from '@/lib/payslip'
+import { retirementNet } from '@/lib/retirement-settlement'
+import { RetirementSection, type RetirementRecord } from './retirement-section'
 
 // 급여대장 — 노무사 양식 계산식(src/lib/payroll.ts)으로 매달 자동 생성. 관리자 전용.
 type Setting = {
@@ -47,6 +49,7 @@ type Item = Omit<Setting, 'probation_end' | 'probation_rate'> & {
   holiday_hours: number
   small_business: boolean
   bonus: number
+  special_allowance: number
   health_adj: number
   care_adj: number
   attendance_deduction: number
@@ -95,7 +98,7 @@ function toInput(it: Item, emp: Employee | undefined, month: string): PayInput {
     age: ageAt(birthFromRrn(emp?.resident_number), new Date(y, m, 0)),
     pay_rate: Number(it.pay_rate), rate_days: it.rate_days ?? null, days_worked: it.days_worked, month_days: daysInMonth(month),
     extra_ot_hours: Number(it.extra_ot_hours), night_hours: Number(it.night_hours || 0), holiday_hours: Number(it.holiday_hours || 0),
-    small_business: it.small_business ?? SMALL_BUSINESS, bonus: Number(it.bonus),
+    small_business: it.small_business ?? SMALL_BUSINESS, bonus: Number(it.bonus), special_allowance: Number(it.special_allowance || 0),
     health_ins: Number(it.health_ins), care_ins: Number(it.care_ins), pension: Number(it.pension),
     health_adj: Number(it.health_adj), care_adj: Number(it.care_adj),
     attendance_deduction: Number(it.attendance_deduction),
@@ -106,7 +109,7 @@ function toInput(it: Item, emp: Employee | undefined, month: string): PayInput {
 const COLS: [string, (r: PayResult, it: Item) => number][] = [
   ['기본급', r => r.base], ['식대', r => r.meal], ['차량유지비', r => r.car], ['연장근로', r => r.ot],
   // '연장추가수당'은 엑셀 양식 칸 이름 유지 — 추가근무(연장·야간·휴일) 수당
-  ['연장추가수당', r => r.extraOt], ['직책수당', r => r.position], ['상여금', r => r.bonus],
+  ['연장추가수당', r => r.extraOt], ['직책수당', r => r.position], ['상여금', r => r.bonus], ['특별수당', r => r.specialAllowance],
   ['급여합계', r => r.gross], ['과세합계', r => r.taxable],
   ['건강보험', r => r.health], ['장기요양', r => r.care], ['국민연금', r => r.pension], ['고용보험', r => r.empIns],
   ['소득세', r => r.incomeTax], ['주민세', r => r.localTax], ['근태공제', r => r.attendance],
@@ -122,6 +125,10 @@ export default function AdminPayrollPage() {
   const [employees, setEmployees] = useState<Employee[]>([])
   const [settings, setSettings] = useState<Map<string, Setting>>(new Map())
   const [items, setItems] = useState<Item[]>([])
+  const [retirementState, setRetirementState] = useState<{ month: string; rows: RetirementRecord[] }>({ month: '', rows: [] })
+  const retirements = retirementState.month === month ? retirementState.rows : []
+  const [retirementMissing, setRetirementMissing] = useState(false)
+  const retirementRequest = useRef(0)
   const [loading, setLoading] = useState(true)
   const [tableMissing, setTableMissing] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -186,6 +193,30 @@ export default function AdminPayrollPage() {
     return () => { on = false }
   }, [isAdmin, loadItems])
 
+  const loadRetirements = useCallback(async (): Promise<boolean> => {
+    const request = ++retirementRequest.current
+    const { data, error } = await createClient().from('retirement_settlements').select('*')
+      .gte('paid_on', `${month}-01`).lt('paid_on', `${shiftMonth(month, 1)}-01`).order('paid_on')
+    if (request !== retirementRequest.current) return false
+    if (error) {
+      const missing = error.code === '42P01' || error.code === 'PGRST205'
+      setRetirementMissing(missing)
+      if (!missing) toast('퇴직 정산 내역 불러오기 실패: ' + error.message)
+      setRetirementState({ month, rows: [] })
+      return false
+    }
+    setRetirementMissing(false)
+    setRetirementState({ month, rows: (data || []) as RetirementRecord[] })
+    return true
+  }, [month])
+
+  useEffect(() => {
+    if (!isAdmin) return
+    let on = true
+    Promise.resolve().then(() => { if (on) loadRetirements() })
+    return () => { on = false }
+  }, [isAdmin, loadRetirements])
+
   const empById = useMemo(() => new Map(employees.map(e => [e.id, e])), [employees])
   const isResignMonth = (it: Item) => resignsIn(month, it.employee_id ? empById.get(it.employee_id)?.resign_date : null)
   const year = Number(month.slice(0, 4))
@@ -193,6 +224,7 @@ export default function AdminPayrollPage() {
     it, r: calcPay(toInput(it, it.employee_id ? empById.get(it.employee_id) : undefined, month), year),
   })), [items, empById, month, year])
   const totals = useMemo(() => COLS.map(([, f]) => rows.reduce((s, { it, r }) => s + f(r, it), 0)), [rows])
+  const totalOf = (label: string) => totals[COLS.findIndex(([h]) => h === label)] ?? 0
 
   // 이 달 대장 대상: 상용직 + 급여 기준 있음 + 그 달에 재직한 사람
   function eligible(e: Employee) {
@@ -281,6 +313,9 @@ export default function AdminPayrollPage() {
   }
 
   async function saveItem(it: Item) {
+    if (!Number.isSafeInteger(Number(it.special_allowance ?? 0)) || Number(it.special_allowance ?? 0) < 0) {
+      toast('특별수당은 0원 이상의 정수로 입력해 주세요'); return
+    }
     const { id, ...rest } = it
     const { error } = await createClient().from('payroll_items')
       .update({ ...rest, updated_at: new Date().toISOString() }).eq('id', id)
@@ -328,7 +363,7 @@ export default function AdminPayrollPage() {
   }
 
   async function exportExcel() {
-    if (rows.length === 0) return
+    if (rows.length === 0 && retirements.length === 0) return
     const XLSX = await import('xlsx')
     const [y, m] = month.split('-').map(Number)
     const { headers, body, total } = sheetRows()
@@ -349,6 +384,20 @@ export default function AdminPayrollPage() {
     ws['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: headers.length - 1 } }]
     const wb = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(wb, ws, '급여대장')
+    if (retirements.length) {
+      const detail = [
+        ['지급일', '성명', '구분', '지급액(세전)', '퇴직소득세', '지방소득세', '실지급액', '메모'],
+        ...retirements.map(r => [r.paid_on, r.employee_name, r.kind, Number(r.amount), Number(r.income_tax), Number(r.local_tax),
+          retirementNet({ amount: Number(r.amount), incomeTax: Number(r.income_tax), localTax: Number(r.local_tax) }), r.memo || '']),
+      ]
+      const retirementSheet = XLSX.utils.aoa_to_sheet(detail)
+      retirementSheet['!cols'] = [14, 14, 14, 18, 18, 18, 18, 32].map(wch => ({ wch }))
+      for (let R = 1; R < detail.length; R++) for (let C = 3; C <= 6; C++) {
+        const cell = retirementSheet[XLSX.utils.encode_cell({ r: R, c: C })]
+        if (cell) cell.z = '#,##0'
+      }
+      XLSX.utils.book_append_sheet(wb, retirementSheet, '퇴직 정산 내역')
+    }
     XLSX.writeFile(wb, `${String(m).padStart(2, '0')}월 급여대장_${y}.xlsx`)
   }
 
@@ -398,7 +447,7 @@ export default function AdminPayrollPage() {
                 className="border border-gray-300 text-gray-700 px-3 py-2 rounded-lg text-sm font-medium hover:bg-gray-50 disabled:opacity-40">
                 임금명세서
               </button>
-              <button onClick={exportExcel} disabled={rows.length === 0}
+              <button onClick={exportExcel} disabled={rows.length === 0 && retirements.length === 0}
                 className="border border-gray-300 text-gray-700 px-3 py-2 rounded-lg text-sm font-medium hover:bg-gray-50 disabled:opacity-40">
                 엑셀 저장
               </button>
@@ -424,7 +473,8 @@ export default function AdminPayrollPage() {
               <ol>
                 <li><b>⏱️ 추가근무</b> 메뉴에 그 달 연장·야간·휴일 근무를 기록해요.</li>
                 <li>여기서 달을 고르고 <b>[○월 급여대장 만들기]</b> — 추가근무·수습·중도 입사/퇴사가 자동으로 들어가요.</li>
-                <li>바뀌는 것만 <b>이름을 눌러</b> 입력: 상여금, 근태 공제(지각·결근 금액), 퇴사자 보험 정산(<span className="text-red-600">빨간 ‘퇴사월’ 표시</span>).</li>
+                <li>바뀌는 것만 <b>이름을 눌러</b> 입력: 상여금·특별수당(이번 달 과세), 근태 공제, 퇴사자 보험 정산(<span className="text-red-600">빨간 ‘퇴사월’ 표시</span>).</li>
+                <li>퇴직금·퇴직연금 지급은 화면 아래 <b>퇴직 정산 내역</b>에 별도로 등록해요. 월 급여에 합산하지 않으며 확정 세액을 직접 넣어요.</li>
                 <li>대장을 만든 뒤 추가근무를 더 넣었으면 <b>[↻ 추가근무 다시 불러오기]</b>.</li>
                 <li>금액 확인 후 <b>[경영관리에 저장]</b> → 경영관리 &gt; 급여내역에 들어가요.</li>
                 <li><b>[임금명세서]</b> → 직원별 <b>PDF·카톡</b>(폰은 카톡으로 바로 보내기) 또는 <b>선택 인쇄</b>.</li>
@@ -482,7 +532,7 @@ export default function AdminPayrollPage() {
           ) : (
             <>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                {([['인원', rows.length, '명'], ['급여 합계', totals[7], '원'], ['공제 합계', totals[18], '원'], ['차감지급액', totals[20], '원']] as const).map(([l, v, u]) => (
+                {([['인원', rows.length, '명'], ['급여 합계', totalOf('급여합계'), '원'], ['공제 합계', totalOf('공제합계'), '원'], ['차감지급액', totalOf('차감지급액'), '원']] as const).map(([l, v, u]) => (
                   <div key={l} className="bg-white rounded-xl border border-gray-200 px-4 py-3">
                     <p className="text-xs text-gray-400">{l}</p>
                     <p className="text-xl font-bold text-gray-900 mt-0.5">{fmt(v)}<span className="text-sm font-medium text-gray-400 ml-0.5">{u}</span></p>
@@ -546,6 +596,8 @@ export default function AdminPayrollPage() {
               </section>
             </>
           )}
+          <RetirementSection key={month} month={month} employees={employees} rows={retirements}
+            missing={retirementMissing} reload={loadRetirements} />
         </div>
       </div>
 
@@ -765,7 +817,7 @@ function Modal({ title, onClose, children, wide }: { title: string; onClose: () 
 
 const inputCls = 'w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500'
 
-function NumField({ label, value, onChange, hint, step }: { label: string; value: number; onChange: (n: number) => void; hint?: string; step?: string }) {
+function NumField({ label, value, onChange, hint, step, nonNegative = false }: { label: string; value: number; onChange: (n: number) => void; hint?: string; step?: string; nonNegative?: boolean }) {
   const [text, setText] = useState(value ? fmt(value) : '')
   return (
     <div>
@@ -773,6 +825,7 @@ function NumField({ label, value, onChange, hint, step }: { label: string; value
       <input inputMode={step ? 'decimal' : 'numeric'} value={text} aria-label={label}
         onChange={e => {
           const raw = e.target.value
+          if (nonNegative && raw.includes('-')) { setText(''); onChange(0); return }
           setText(raw)
           onChange(step ? Number(raw.replace(/[^0-9.\-]/g, '')) || 0 : toNum(raw))
         }}
@@ -924,6 +977,7 @@ function ItemModal({ item, emp, month, onClose, onSave, onDelete, onReload }: {
             </p>
           </div>
           <NumField label="상여금" value={Number(f.bonus)} onChange={n => set({ bonus: n })} />
+          <NumField label="특별수당 (과세·이번 달만)" value={Number(f.special_allowance || 0)} nonNegative onChange={n => set({ special_allowance: n })} />
           {atts && atts.length > 0 && (
             <div className="col-span-2 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2 text-[11px] text-amber-800">
               <b>이 달 근태 기록</b> · {atts.map(a => `${a.att_date.slice(5).replace('-', '/')} ${a.att_type}${a.memo ? `(${a.memo})` : ''}`).join(', ')}

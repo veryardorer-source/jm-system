@@ -57,6 +57,7 @@ export type PayInput = {
   holiday_hours: number        // 휴일 근무시간 (추가근무 기록)
   small_business: boolean      // 5인 미만 → 추가근무 가산 없음(1배)
   bonus: number                // 상여금(과세)
+  special_allowance?: number   // 특별수당(과세, 상여금과 별도)
   health_ins: number           // 건강보험 (공단 고지액)
   care_ins: number             // 장기요양 (공단 고지액)
   pension: number              // 국민연금 (공단 고지액)
@@ -77,6 +78,7 @@ export type PayResult = {
   extraHours: number   // 추가근무 시간 합계
   position: number     // 직책수당
   bonus: number
+  specialAllowance: number
   gross: number        // 급여 합계 = 지급총액
   taxable: number      // 과세 합계 (식대·차량 제외)
   health: number
@@ -147,9 +149,10 @@ export function calcPay(p: PayInput, year = new Date().getFullYear()): PayResult
   const extraHours = (p.extra_ot_hours || 0) + (p.night_hours || 0) + (p.holiday_hours || 0)
   const extraOt = won(hourly * extraHours * extraOtMultiplier(p.small_business))
   const bonus = won(p.bonus || 0)
+  const specialAllowance = Math.max(0, won(p.special_allowance || 0))
 
-  const gross = base + meal + car + ot + extraOt + position + bonus
-  const taxable = base + ot + extraOt + position + bonus
+  const gross = base + meal + car + ot + extraOt + position + bonus + specialAllowance
+  const taxable = base + ot + extraOt + position + bonus + specialAllowance
 
   const empIns = p.employment_insurance && !(p.age !== null && p.age >= 65) ? floor10(taxable * EMPLOYMENT_INS_RATE) : 0
   const tax = incomeTax(taxable, p.dependents)
@@ -172,7 +175,7 @@ export function calcPay(p: PayInput, year = new Date().getFullYear()): PayResult
   }
 
   return {
-    totalHours, hourly, ratio, base, meal, car, ot, extraOt, extraHours, position, bonus, gross, taxable,
+    totalHours, hourly, ratio, base, meal, car, ot, extraOt, extraHours, position, bonus, specialAllowance, gross, taxable,
     health, care, pension, empIns, incomeTax: tax, localTax, attendance, healthAdj, careAdj,
     deductions, net: gross - deductions, warnings,
   }

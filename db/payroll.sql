@@ -46,6 +46,7 @@ create table if not exists public.payroll_items (
   holiday_hours        numeric(6,2) not null default 0, -- 휴일 근무시간
   small_business       boolean not null default true,  -- 5인 미만 → 추가근무 가산 없음(1배)
   bonus                bigint not null default 0,
+  special_allowance    bigint not null default 0 constraint payroll_items_special_nonnegative check (special_allowance >= 0), -- 이번 달 특별수당(과세)
   health_ins           bigint not null default 0,
   care_ins             bigint not null default 0,
   pension              bigint not null default 0,
@@ -62,6 +63,12 @@ alter table public.payroll_items add column if not exists rate_days int check (r
 alter table public.payroll_items add column if not exists night_hours numeric(6,2) not null default 0;
 alter table public.payroll_items add column if not exists holiday_hours numeric(6,2) not null default 0;
 alter table public.payroll_items add column if not exists small_business boolean not null default true;
+alter table public.payroll_items add column if not exists special_allowance bigint not null default 0;
+do $$ begin
+  if not exists (select 1 from pg_constraint where conrelid = 'public.payroll_items'::regclass and conname = 'payroll_items_special_nonnegative') then
+    alter table public.payroll_items add constraint payroll_items_special_nonnegative check (special_allowance >= 0);
+  end if;
+end $$;
 create unique index if not exists payroll_items_month_emp on public.payroll_items (month, employee_id);
 create index if not exists payroll_items_month_idx on public.payroll_items (month, sort);
 

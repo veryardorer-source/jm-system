@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test'
 import { login, adminClient, loginApi } from './helpers'
 import fs from 'fs'
+import * as XLSX from 'xlsx'
 import { calcPay, incomeTax, daysWorkedIn, daysInMonth, probationIn, resignsIn, birthFromRrn, ageAt, PayInput } from '../../src/lib/payroll'
 
 // ⑭ 급여대장 — 노무사 양식 계산식 + 관리자 전용 화면
@@ -163,6 +164,8 @@ test.describe('급여대장 화면', () => {
     const admin = adminClient()
     const { error: tblErr } = await admin.from('payroll_items').select('id').limit(1)
     test.skip(!!tblErr, 'payroll_items 테이블 없음 — db/payroll.sql 실행 필요')
+    const { error: retirementTableError } = await admin.from('retirement_settlements').select('id').limit(1)
+    test.skip(!!retirementTableError, '퇴직 정산 테이블 없음 — db/payroll_special_retirement.sql 실행 필요')
 
     const cleanup = async () => {
       await admin.from('payroll_items').delete().eq('month', TEST_MONTH)
@@ -213,31 +216,61 @@ test.describe('급여대장 화면', () => {
       await expect(row).toContainText('추가 8h')
       await expect(row).toContainText('현장직')
       await expect(row.locator('td').nth(5)).toHaveText(holidayPay.toLocaleString()) // 연장추가수당 칸
-      await expect(row.locator('td').nth(8)).toHaveText((3_150_000 + holidayPay).toLocaleString()) // 급여합계
-      await expect(row.locator('td').nth(10)).toHaveText('100,000') // 건강보험
+      await expect(row.locator('td').nth(9)).toHaveText((3_150_000 + holidayPay).toLocaleString()) // 급여합계
+      await expect(row.locator('td').nth(11)).toHaveText('100,000') // 건강보험
 
       // 1년에 한 번 바뀌는 보험 고지액: 급여 기준을 고쳐도 이미 만든 달 대장은 그대로
       await admin.from('employee_pay_settings').update({ health_ins: 123_450 }).eq('employee_id', emp!.id)
+      await admin.from('employees').update({ is_active: false }).eq('id', emp!.id) // 급여대장 생성 뒤 퇴사 처리
       await page.reload()
       await page.locator('input[type="month"]').fill(TEST_MONTH)
-      await expect(row.locator('td').nth(10)).toHaveText('100,000', { timeout: 15_000 })
+      await expect(row.locator('td').nth(11)).toHaveText('100,000', { timeout: 15_000 })
 
       // 퇴사월인데 정산 미입력 → 경고
       await expect(row).toContainText('퇴사월 · 보험 정산 확인')
 
-      // 상여금 100,000 추가 + 건강보험 퇴직정산 환급 −10,000
+      // 상여금 100,000 + 특별수당 200,000 + 건강보험 퇴직정산 환급 −10,000
       await row.getByRole('button', { name: 'E2E_급여' }).click()
       await expect(page.getByText('퇴사월이에요')).toBeVisible()
       await page.getByLabel('상여금').fill('100000')
+      await page.getByLabel('특별수당 (과세·이번 달만)').fill('200000')
       await page.getByLabel('건강보험 정산').fill('-10000')
       await page.getByRole('button', { name: '저장', exact: true }).click()
-      await expect(row.locator('td').nth(8)).toHaveText((3_250_000 + holidayPay).toLocaleString(), { timeout: 15_000 })
+      await expect(row.locator('td').nth(8)).toHaveText('200,000', { timeout: 15_000 })
+      await expect(row.locator('td').nth(9)).toHaveText((3_450_000 + holidayPay).toLocaleString(), { timeout: 15_000 })
       await expect(row).toContainText('퇴사월 · 정산 입력됨')
-      await expect(row.locator('td').nth(17)).toHaveText('-10,000') // 건강정산 칸
+      await expect(row.locator('td').nth(18)).toHaveText('-10,000') // 건강정산 칸
+
+      // 퇴직금 지급은 같은 월 급여와 별도 기록(퇴사 직원도 선택 가능)
+      const retirement = page.locator('section').filter({ has: page.getByRole('heading', { name: /퇴직 정산 내역/ }) })
+      await retirement.getByRole('button', { name: '퇴직금·퇴직연금 지급 추가' }).click()
+      await retirement.getByLabel('직원').selectOption({ label: 'E2E_급여 (퇴사)' })
+      await retirement.getByLabel('지급일').fill(`${TEST_MONTH}-25`)
+      await retirement.getByLabel('지급액 (세전)').fill('1000000')
+      await retirement.getByLabel('퇴직소득세 (직접 입력)').fill('20000')
+      await retirement.getByLabel('지방소득세 (직접 입력)').fill('2000')
+      await retirement.getByLabel('메모 (선택)').fill('E2E_퇴직정산')
+      await retirement.getByRole('button', { name: '저장', exact: true }).click()
+      const retiredRow = retirement.locator('tr').filter({ hasText: 'E2E_퇴직정산' })
+      await expect(retiredRow).toContainText((1_000_000 - 20_000 - 2_000).toLocaleString(), { timeout: 15_000 })
+      await expect(row.locator('td').nth(9)).toHaveText((3_450_000 + holidayPay).toLocaleString()) // 퇴직금은 급여에 합산 안 함
 
       const dl = page.waitForEvent('download')
       await page.getByRole('button', { name: '엑셀 저장' }).click()
-      expect((await dl).suggestedFilename()).toBe('01월 급여대장_2030.xlsx')
+      const payrollDownload = await dl
+      expect(payrollDownload.suggestedFilename()).toBe('01월 급여대장_2030.xlsx')
+      const payrollWorkbook = XLSX.read(fs.readFileSync((await payrollDownload.path())!), { type: 'buffer' })
+      expect(payrollWorkbook.SheetNames).toContain('퇴직 정산 내역')
+      expect(XLSX.utils.sheet_to_json<(string | number)[]>(payrollWorkbook.Sheets['퇴직 정산 내역'], { header: 1 })
+        .some(row => row.includes('E2E_급여') && row.includes(1_000_000 - 20_000 - 2_000))).toBe(true)
+
+      await retiredRow.getByRole('button', { name: '수정' }).click()
+      await retirement.getByLabel('퇴직소득세 (직접 입력)').fill('30000')
+      await retirement.getByRole('button', { name: '저장', exact: true }).click()
+      await expect(retiredRow).toContainText((1_000_000 - 30_000 - 2_000).toLocaleString(), { timeout: 15_000 })
+      await retiredRow.getByRole('button', { name: '수정' }).click()
+      await retirement.getByRole('button', { name: '삭제' }).click()
+      await expect(retiredRow).toHaveCount(0)
 
       await page.getByRole('button', { name: '경영관리에 저장' }).click()
       await expect.poll(async () => {
@@ -245,7 +278,7 @@ test.describe('급여대장 화면', () => {
         return JSON.stringify(data?.rows || [])
       }, { timeout: 15_000 }).toContain('E2E_급여')
       const { data: fp } = await admin.from('finance_payroll').select('amount').eq('employee_name', 'E2E_급여').eq('month', `${TEST_MONTH}-01`)
-      expect(fp?.[0]?.amount).toBe(3_250_000 + holidayPay)
+      expect(fp?.[0]?.amount).toBe(3_450_000 + holidayPay)
 
       // 임금명세서: 노무사 양식 항목만(회사·귀속·지급일·성명·입사일, 지급·공제, 계산 방법) + PDF
       // (테스트 달에는 실제 직원 대장도 같이 만들어지므로 테스트 직원만 골라서 확인)
@@ -258,8 +291,9 @@ test.describe('급여대장 화면', () => {
       await expect(slip).toContainText('E2E_급여')
       await expect(slip).toContainText('2030년 2월 5일') // 지급일 = 다음 달 5일
       await expect(slip).toContainText('2029-12-01') // 입사일
-      await expect(slip).toContainText((3_250_000 + holidayPay).toLocaleString()) // 지급액 계
+      await expect(slip).toContainText((3_450_000 + holidayPay).toLocaleString()) // 지급액 계
       await expect(slip).toContainText('연장추가수당')
+      await expect(slip).toContainText('특별수당')
       await expect(slip).toContainText('통상시급 x 8시간')
       await expect(slip).toContainText('통상시급 x 41.3시간 x 1.5')
       await expect(slip).toContainText('건강보험정산')
@@ -284,6 +318,7 @@ test.describe('급여대장 화면', () => {
       expect(await pop.locator('.pg').count()).toBe(1) // 선택한 1명만 인쇄
       await pop.close()
     } finally {
+      await admin.from('retirement_settlements').delete().eq('employee_id', emp!.id)
       await admin.from('payroll_viewers').delete().eq('user_id', testAdminId)
       await cleanup()
       await admin.from('employees').delete().eq('id', emp!.id)

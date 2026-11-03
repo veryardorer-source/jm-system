@@ -50,7 +50,7 @@ begin
     create policy audit_select_admin on public.audit_logs
       for select to authenticated using (
         public.my_role() = 'admin'
-        and (table_name not in ('employee_pay_settings', 'payroll_items') or public.is_payroll_viewer())
+        and (table_name not in ('employee_pay_settings', 'payroll_items', 'retirement_settlements') or public.is_payroll_viewer())
       );
   end if;
 end $$;

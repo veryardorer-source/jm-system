@@ -19,7 +19,7 @@ type AuditRow = {
 
 const TABLE_KO: Record<string, string> = {
   profiles: '회원(권한)', employees: '직원정보', employee_salaries: '직원 급여', employee_attendance: '직원 근태',
-  finance_payroll: '급여내역', finance_payroll_ledger: '급여대장', project_costs: '현장 비용',
+  finance_payroll: '급여내역', finance_payroll_ledger: '급여대장', retirement_settlements: '퇴직 정산 내역', project_costs: '현장 비용',
   withdrawal_requests: '출금 요청', payments: '수금', company_documents: '회사 서류',
   project_files: '현장 자료', project_access: '현장 접근권한',
 }

@@ -26,7 +26,7 @@ drop policy if exists audit_select_admin on public.audit_logs;
 create policy audit_select_admin on public.audit_logs
   for select to authenticated using (
     public.my_role() = 'admin'
-    and (table_name not in ('employee_pay_settings', 'payroll_items') or public.is_payroll_viewer())
+    and (table_name not in ('employee_pay_settings', 'payroll_items', 'retirement_settlements') or public.is_payroll_viewer())
   );
 -- insert/update/delete 정책 없음 = 클라이언트에서는 그 무엇도 불가(관리자 포함).
 -- 기록은 아래 트리거(security definer)가만 한다.
@@ -68,6 +68,7 @@ begin
       ('employee_overtime',     'INSERT OR UPDATE OR DELETE'),
       ('employee_pay_settings', 'INSERT OR UPDATE OR DELETE'),
       ('payroll_items',         'INSERT OR UPDATE OR DELETE'),
+      ('retirement_settlements','INSERT OR UPDATE OR DELETE'),
       ('finance_payroll',       'INSERT OR UPDATE OR DELETE'),
       ('finance_payroll_ledger','INSERT OR UPDATE OR DELETE'),
       ('project_costs',         'INSERT OR UPDATE OR DELETE'),
