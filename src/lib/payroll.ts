@@ -64,6 +64,8 @@ export type PayInput = {
   health_adj: number           // 건강보험 정산 (환급은 음수)
   care_adj: number             // 장기요양 정산
   attendance_deduction: number // 근태 공제 (지각·결근 등 — 직접 입력)
+  income_tax_override?: number | null  // 소득세 오버라이드 (퇴사자 원천징수 정산, 환급은 음수)
+  local_tax_override?: number | null   // 주민세 오버라이드 (퇴사자 원천징수 정산, 환급은 음수)
 }
 
 export type PayResult = {
@@ -155,8 +157,9 @@ export function calcPay(p: PayInput, year = new Date().getFullYear()): PayResult
   const taxable = base + ot + extraOt + position + bonus + specialAllowance
 
   const empIns = p.employment_insurance && !(p.age !== null && p.age >= 65) ? floor10(taxable * EMPLOYMENT_INS_RATE) : 0
-  const tax = incomeTax(taxable, p.dependents)
-  const localTax = floor10(tax * 0.1)
+  // 소득세/주민세: 오버라이드가 있으면 그 값(음수 허용), 없으면 자동 계산
+  const tax = p.income_tax_override != null ? won(p.income_tax_override) : incomeTax(taxable, p.dependents)
+  const localTax = p.local_tax_override != null ? won(p.local_tax_override) : floor10(Math.max(0, tax) * 0.1)
 
   const health = won(p.health_ins || 0)
   const care = won(p.care_ins || 0)
