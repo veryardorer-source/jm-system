@@ -315,6 +315,14 @@ function PayrollTab({ list, onRefresh }: { list: Payroll[]; onRefresh: () => voi
   const [view, setView] = useState<'month' | 'person' | 'ledger'>('month')
   const [showLedger, setShowLedger] = useState(false)
   const [ledgerRefresh, setLedgerRefresh] = useState(0)
+  const [year, setYear] = useState(() => new Date().getFullYear().toString())
+
+  // 연도 목록 추출
+  const years = [...new Set(list.map(c => c.month?.slice(0, 4)).filter(Boolean))].sort().reverse()
+  if (years.length > 0 && !years.includes(year)) setYear(years[0] || new Date().getFullYear().toString())
+
+  // 선택된 연도로 필터링
+  const filtered = list.filter(c => c.month?.startsWith(year))
 
   async function bulkSave(month: string, rows: ParsedRow[]) {
     const sb = createClient()
@@ -377,7 +385,7 @@ function PayrollTab({ list, onRefresh }: { list: Payroll[]; onRefresh: () => voi
     onRefresh()
   }
 
-  const byMonth = Object.values(list.reduce((acc, c) => {
+  const byMonth = Object.values(filtered.reduce((acc, c) => {
     const k = c.month?.slice(0, 7) || ''
     acc[k] = acc[k] || { label: k.slice(2).replace('-', '.'), value: 0, key: k }
     // 실지급액 추출: 메모에서 "실지급 X원" 파싱, 없으면 급여합계
@@ -387,13 +395,26 @@ function PayrollTab({ list, onRefresh }: { list: Payroll[]; onRefresh: () => voi
     return acc
   }, {} as Record<string, { label: string; value: number; key: string }>)).sort((a, b) => a.key.localeCompare(b.key))
 
+  // 연간 합계 (실지급액 기준)
+  const yearTotal = filtered.reduce((sum, c) => {
+    const netMatch = (c.memo || '').match(/실지급\s*([\d,]+)\s*원/)
+    return sum + (netMatch ? Number(netMatch[1].replace(/,/g, '')) : c.amount)
+  }, 0)
+
   return (
     <div>
       <div className="flex items-center justify-between gap-2 mb-4 flex-wrap">
-        <div className="flex rounded-lg border border-gray-200 overflow-hidden text-sm">
-          <button onClick={() => setView('month')} className={`px-4 py-2 font-medium ${view === 'month' ? 'bg-green-600 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}>월별</button>
-          <button onClick={() => setView('person')} className={`px-4 py-2 font-medium border-l border-gray-200 ${view === 'person' ? 'bg-green-600 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}>개인별</button>
-          <button onClick={() => setView('ledger')} className={`px-4 py-2 font-medium border-l border-gray-200 ${view === 'ledger' ? 'bg-green-600 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}>급여대장</button>
+        <div className="flex items-center gap-3">
+          <select value={year} onChange={e => setYear(e.target.value)}
+            className="border border-gray-300 rounded-lg px-3 py-2 text-sm font-medium">
+            {years.map(y => <option key={y} value={y}>{y}년</option>)}
+          </select>
+          <div className="flex rounded-lg border border-gray-200 overflow-hidden text-sm">
+            <button onClick={() => setView('month')} className={`px-4 py-2 font-medium ${view === 'month' ? 'bg-green-600 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}>월별</button>
+            <button onClick={() => setView('person')} className={`px-4 py-2 font-medium border-l border-gray-200 ${view === 'person' ? 'bg-green-600 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}>개인별</button>
+            <button onClick={() => setView('ledger')} className={`px-4 py-2 font-medium border-l border-gray-200 ${view === 'ledger' ? 'bg-green-600 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}>급여대장</button>
+          </div>
+          <span className="text-sm text-gray-500">연간 합계: <b className="text-green-700">{yearTotal.toLocaleString()}원</b></span>
         </div>
         <div className="flex gap-2">
           <button onClick={() => setShowLedger(true)}
@@ -406,20 +427,20 @@ function PayrollTab({ list, onRefresh }: { list: Payroll[]; onRefresh: () => voi
       </div>
       {view === 'ledger' ? (
         <LedgerView refresh={ledgerRefresh} />
-      ) : list.length === 0 ? (
+      ) : filtered.length === 0 ? (
         <EmptyState icon="💵" text="등록된 급여내역이 없어요. '급여대장 업로드'로 엑셀을 올려보세요." />
       ) : view === 'month' ? (
         <>
-          <ChartCard title="월별 총 급여 추이 (실지급액 기준)" data={byMonth} />
+          <ChartCard title={`${year}년 월별 총 급여 추이 (실지급액 기준)`} data={byMonth} extra={<span className="text-sm text-gray-500">연간 합계 <b className="text-green-700">{yearTotal.toLocaleString()}원</b></span>} />
           <SimpleTable
             cols={['월', '직원명', '급여합계', '메모(실지급 등)']}
-            rows={list.map(c => [c.month?.slice(0,7), c.employee_name, c.amount.toLocaleString() + '원', c.memo || '-'])}
-            onEdit={i => { const c = list[i]; setEditing(c); setForm({ month: c.month?.slice(0,7) || '', employee_name: c.employee_name, amount: String(c.amount), memo: c.memo || '' }); setShowForm(true) }}
-            onDelete={i => del(list[i])}
+            rows={filtered.map(c => [c.month?.slice(0,7), c.employee_name, c.amount.toLocaleString() + '원', c.memo || '-'])}
+            onEdit={i => { const c = filtered[i]; setEditing(c); setForm({ month: c.month?.slice(0,7) || '', employee_name: c.employee_name, amount: String(c.amount), memo: c.memo || '' }); setShowForm(true) }}
+            onDelete={i => del(filtered[i])}
           />
         </>
       ) : (
-        <PayrollPivot list={list} />
+        <PayrollPivot list={filtered} />
       )}
       {showLedger && <LedgerUploadModal onClose={() => setShowLedger(false)} onSave={ledgerSave} onSaveBonus={bonusSave} />}
       {showForm && (
