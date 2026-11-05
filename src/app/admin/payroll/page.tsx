@@ -821,12 +821,12 @@ function Modal({ title, onClose, children, wide }: { title: string; onClose: () 
 
 const inputCls = 'w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500'
 
-function NumField({ label, value, onChange, hint, step, nonNegative = false, allowNull = false }: {
-  label: string; value: number | string | null; onChange: (n: number | string | null) => void;
-  hint?: string; step?: string; nonNegative?: boolean; allowNull?: boolean
+function NumField({ label, value, onChange, hint, step, nonNegative = false }: {
+  label: string; value: number | string | null; onChange: (n: number) => void;
+  hint?: string; step?: string; nonNegative?: boolean
 }) {
   const numVal = typeof value === 'number' ? value : (typeof value === 'string' ? toNum(value) : 0)
-  const [text, setText] = useState(value === null || value === '' ? '' : numVal ? fmt(numVal) : '')
+  const [text, setText] = useState(numVal ? fmt(numVal) : '')
   return (
     <div>
       <label className="text-xs font-medium text-gray-600 block mb-1">{label}{hint && <span className="text-gray-400 font-normal"> · {hint}</span>}</label>
@@ -835,14 +835,31 @@ function NumField({ label, value, onChange, hint, step, nonNegative = false, all
           const raw = e.target.value
           if (nonNegative && raw.includes('-')) { setText(''); onChange(0); return }
           setText(raw)
-          if (allowNull && raw.trim() === '') { onChange(null); return }
           onChange(step ? Number(raw.replace(/[^0-9.\-]/g, '')) || 0 : toNum(raw))
         }}
         onBlur={() => {
-          if (allowNull && text.trim() === '') return
           if (!step) setText(toNum(text) ? fmt(toNum(text)) : '')
         }}
-        className={inputCls + ' text-right'} placeholder={allowNull ? '자동' : undefined} />
+        className={inputCls + ' text-right'} />
+    </div>
+  )
+}
+
+function NullableNumField({ label, value, onChange, hint }: {
+  label: string; value: number | null; onChange: (n: number | null) => void; hint?: string
+}) {
+  const [text, setText] = useState(value != null ? fmt(value) : '')
+  return (
+    <div>
+      <label className="text-xs font-medium text-gray-600 block mb-1">{label}{hint && <span className="text-gray-400 font-normal"> · {hint}</span>}</label>
+      <input inputMode="numeric" value={text} aria-label={label}
+        onChange={e => {
+          const raw = e.target.value
+          setText(raw)
+          if (raw.trim() === '') { onChange(null); return }
+          onChange(toNum(raw))
+        }}
+        className={inputCls + ' text-right'} placeholder="자동" />
     </div>
   )
 }
@@ -1006,10 +1023,10 @@ function ItemModal({ item, emp, month, onClose, onSave, onDelete, onReload }: {
             <div className="col-span-2 bg-blue-50 border border-blue-100 rounded-lg px-3 py-2 text-[11px] text-blue-800">
               <b>원천징수 정산</b> · 퇴사자 연말정산(중도퇴직 정산)으로 소득세·주민세를 환급받을 때 아래에 직접 입력하세요. 비워두면 자동 계산값을 씁니다.
             </div>
-            <NumField label="소득세 (원천정산)" hint="환급은 −" value={f.income_tax_override ?? ''} allowNull
-              onChange={n => set({ income_tax_override: n === '' || n === null ? null : Number(n) })} />
-            <NumField label="주민세 (원천정산)" hint="환급은 −" value={f.local_tax_override ?? ''} allowNull
-              onChange={n => set({ local_tax_override: n === '' || n === null ? null : Number(n) })} />
+            <NullableNumField label="소득세 (원천정산)" hint="환급은 −" value={f.income_tax_override}
+              onChange={n => set({ income_tax_override: n })} />
+            <NullableNumField label="주민세 (원천정산)" hint="환급은 −" value={f.local_tax_override}
+              onChange={n => set({ local_tax_override: n })} />
           </>)}
           <div>
             <label className="text-xs font-medium text-gray-600 block mb-1">지급률(%) <span className="text-gray-400 font-normal">· 수습 90</span></label>
