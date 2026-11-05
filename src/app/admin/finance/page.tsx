@@ -360,7 +360,10 @@ function PayrollTab({ list, onRefresh }: { list: Payroll[]; onRefresh: () => voi
   const byMonth = Object.values(list.reduce((acc, c) => {
     const k = c.month?.slice(0, 7) || ''
     acc[k] = acc[k] || { label: k.slice(2).replace('-', '.'), value: 0, key: k }
-    acc[k].value += c.amount
+    // 실지급액 추출: 메모에서 "실지급 X원" 파싱, 없으면 급여합계
+    const netMatch = (c.memo || '').match(/실지급\s*([\d,]+)\s*원/)
+    const net = netMatch ? Number(netMatch[1].replace(/,/g, '')) : c.amount
+    acc[k].value += net
     return acc
   }, {} as Record<string, { label: string; value: number; key: string }>)).sort((a, b) => a.key.localeCompare(b.key))
 
@@ -387,7 +390,7 @@ function PayrollTab({ list, onRefresh }: { list: Payroll[]; onRefresh: () => voi
         <EmptyState icon="💵" text="등록된 급여내역이 없어요. '급여대장 업로드'로 엑셀을 올려보세요." />
       ) : view === 'month' ? (
         <>
-          <ChartCard title="월별 총 급여 추이 (급여합계 기준)" data={byMonth} />
+          <ChartCard title="월별 총 급여 추이 (실지급액 기준)" data={byMonth} />
           <SimpleTable
             cols={['월', '직원명', '급여합계', '메모(실지급 등)']}
             rows={list.map(c => [c.month?.slice(0,7), c.employee_name, c.amount.toLocaleString() + '원', c.memo || '-'])}
