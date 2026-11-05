@@ -124,6 +124,14 @@ function FixedCostTab({ list, onRefresh }: { list: FixedCost[]; onRefresh: () =>
   const [editing, setEditing] = useState<FixedCost | null>(null)
   const [form, setForm] = useState({ month: '', title: '', amount: '', memo: '' })
   const [saving, setSaving] = useState(false)
+  const [year, setYear] = useState(() => new Date().getFullYear().toString())
+
+  // 연도 목록 추출
+  const years = [...new Set(list.map(c => c.month?.slice(0, 4)).filter(Boolean))].sort().reverse()
+  if (years.length > 0 && !years.includes(year)) setYear(years[0] || new Date().getFullYear().toString())
+
+  // 선택된 연도로 필터링
+  const filtered = list.filter(c => c.month?.startsWith(year))
 
   async function save(e: React.FormEvent) {
     e.preventDefault()
@@ -147,31 +155,43 @@ function FixedCostTab({ list, onRefresh }: { list: FixedCost[]; onRefresh: () =>
     onRefresh()
   }
 
-  const byMonth = Object.values(list.reduce((acc, c) => {
+  const byMonth = Object.values(filtered.reduce((acc, c) => {
     const k = c.month?.slice(0, 7) || ''
     acc[k] = acc[k] || { label: k.slice(2).replace('-', '.'), value: 0, key: k }
     acc[k].value += c.amount
     return acc
   }, {} as Record<string, { label: string; value: number; key: string }>)).sort((a, b) => a.key.localeCompare(b.key))
 
+  // 연간 합계
+  const yearTotal = filtered.reduce((sum, c) => sum + c.amount, 0)
+
   return (
     <div>
-      <div className="flex justify-end gap-2 mb-4">
-        <button onClick={() => setShowBulk(true)}
-          className="border border-green-600 text-green-600 px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-50">📊 월 지출 엑셀 올리기</button>
-        <button onClick={() => { setEditing(null); setForm({ month: '', title: '', amount: '', memo: '' }); setShowForm(true) }}
-          className="bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-700">+ 직접 추가</button>
+      <div className="flex justify-between items-center gap-2 mb-4 flex-wrap">
+        <div className="flex items-center gap-3">
+          <select value={year} onChange={e => setYear(e.target.value)}
+            className="border border-gray-300 rounded-lg px-3 py-2 text-sm font-medium">
+            {years.map(y => <option key={y} value={y}>{y}년</option>)}
+          </select>
+          <span className="text-sm text-gray-500">연간 합계: <b className="text-green-700">{yearTotal.toLocaleString()}원</b></span>
+        </div>
+        <div className="flex gap-2">
+          <button onClick={() => setShowBulk(true)}
+            className="border border-green-600 text-green-600 px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-50">📊 월 지출 엑셀 올리기</button>
+          <button onClick={() => { setEditing(null); setForm({ month: '', title: '', amount: '', memo: '' }); setShowForm(true) }}
+            className="bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-700">+ 직접 추가</button>
+        </div>
       </div>
-      {list.length === 0 ? (
+      {filtered.length === 0 ? (
         <EmptyState icon="📋" text="등록된 고정지출이 없어요" />
       ) : (
         <>
-          <ChartCard title="월별 고정지출 추이" data={byMonth} />
+          <ChartCard title={`${year}년 월별 고정지출 추이`} data={byMonth} extra={<span className="text-sm text-gray-500">연간 합계 <b className="text-green-700">{yearTotal.toLocaleString()}원</b></span>} />
           <SimpleTable
             cols={['월', '항목', '금액', '메모']}
-            rows={list.map(c => [c.month?.slice(0,7), c.title, c.amount.toLocaleString() + '원', c.memo || '-'])}
-            onEdit={i => { const c = list[i]; setEditing(c); setForm({ month: c.month?.slice(0,7) || '', title: c.title, amount: String(c.amount), memo: c.memo || '' }); setShowForm(true) }}
-            onDelete={i => del(list[i])}
+            rows={filtered.map(c => [c.month?.slice(0,7), c.title, c.amount.toLocaleString() + '원', c.memo || '-'])}
+            onEdit={i => { const c = filtered[i]; setEditing(c); setForm({ month: c.month?.slice(0,7) || '', title: c.title, amount: String(c.amount), memo: c.memo || '' }); setShowForm(true) }}
+            onDelete={i => del(filtered[i])}
           />
         </>
       )}
@@ -1452,10 +1472,13 @@ function EmptyState({ icon, text }: { icon: string; text: string }) {
   )
 }
 
-function ChartCard({ title, data }: { title: string; data: { label: string; value: number }[] }) {
+function ChartCard({ title, data, extra }: { title: string; data: { label: string; value: number }[]; extra?: React.ReactNode }) {
   return (
     <div className="bg-white rounded-xl border border-gray-200 px-4 py-5 mb-4">
-      <p className="text-sm font-semibold text-gray-700 mb-4">{title}</p>
+      <div className="flex justify-between items-center mb-4">
+        <p className="text-sm font-semibold text-gray-700">{title}</p>
+        {extra}
+      </div>
       <TrendChart data={data} />
     </div>
   )
