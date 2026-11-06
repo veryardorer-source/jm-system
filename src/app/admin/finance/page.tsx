@@ -1192,21 +1192,21 @@ function QuoteTab({ list, hqExpenses, fixedCosts, onRefresh }: { list: Quote[]; 
           </div>}
         </div>
       ) : (
-        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden overflow-x-auto">
+        <div className="bg-white rounded-xl border border-gray-200 overflow-auto max-h-[calc(100vh-420px)]">
           <table className="w-full whitespace-nowrap">
-            <thead>
-              <tr className="border-b border-gray-100 bg-gray-50">
-                <th className="text-left text-xs font-semibold text-gray-400 px-6 py-3">현장명</th>
-                <th className="text-center text-xs font-semibold text-gray-400 px-3 py-3">계약 확인</th>
-                <th className="text-right text-xs font-semibold text-gray-400 px-4 py-3">공사 금액</th>
-                <th className="text-right text-xs font-semibold text-gray-400 px-4 py-3">추가 공사</th>
-                <th className="text-right text-xs font-semibold text-gray-400 px-4 py-3">부가세</th>
-                <th className="text-right text-xs font-semibold text-gray-400 px-4 py-3">고용산재</th>
-                <th className="text-right text-xs font-semibold text-gray-400 px-4 py-3">순이익<span className="block text-[10px] font-normal">부가세 포함</span></th>
-                <th className="text-right text-xs font-semibold text-gray-400 px-4 py-3">순이익<span className="block text-[10px] font-normal">부가세 제외</span></th>
-                <th className="text-right text-xs font-semibold text-gray-400 px-4 py-3">%<span className="block text-[10px] font-normal">부가세 제외 기준</span></th>
-                <th className="text-left text-xs font-semibold text-gray-400 px-4 py-3">첨부파일</th>
-                <th className="px-4 py-3"></th>
+            <thead className="sticky top-0 z-10">
+              <tr className="border-b border-gray-100">
+                <th className="text-left text-xs font-semibold text-gray-400 px-6 py-3 bg-gray-50">현장명</th>
+                <th className="text-center text-xs font-semibold text-gray-400 px-3 py-3 bg-gray-50">계약 확인</th>
+                <th className="text-right text-xs font-semibold text-gray-400 px-4 py-3 bg-gray-50">공사 금액</th>
+                <th className="text-right text-xs font-semibold text-gray-400 px-4 py-3 bg-gray-50">추가 공사</th>
+                <th className="text-right text-xs font-semibold text-gray-400 px-4 py-3 bg-gray-50">부가세</th>
+                <th className="text-right text-xs font-semibold text-gray-400 px-4 py-3 bg-gray-50">고용산재</th>
+                <th className="text-right text-xs font-semibold text-gray-400 px-4 py-3 bg-gray-50">순이익<span className="block text-[10px] font-normal">부가세 포함</span></th>
+                <th className="text-right text-xs font-semibold text-gray-400 px-4 py-3 bg-gray-50">순이익<span className="block text-[10px] font-normal">부가세 제외</span></th>
+                <th className="text-right text-xs font-semibold text-gray-400 px-4 py-3 bg-gray-50">%<span className="block text-[10px] font-normal">부가세 제외 기준</span></th>
+                <th className="text-left text-xs font-semibold text-gray-400 px-4 py-3 bg-gray-50">첨부파일</th>
+                <th className="px-4 py-3 bg-gray-50"></th>
               </tr>
             </thead>
             <tbody>
