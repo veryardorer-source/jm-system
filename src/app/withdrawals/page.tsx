@@ -11,6 +11,7 @@ import { notifyOthers } from '@/lib/notify'
 import { compressImage, mediaUploadName } from '@/lib/image'
 import { isImageUrl, viewInBrowser, printUrl, SECURE_PREFIX, isSecureUrl, signSecureUrls, removeStoredFile, saveAsOriginal } from '@/lib/media'
 import PdfPreview, { isPdfUrl } from '@/components/PdfPreview'
+import ImageZoom from '@/components/ImageZoom'
 import WithdrawalFields, { PasteTextButton, appendText, EMPTY_INFO, type WithdrawalInfo } from '@/components/WithdrawalFields'
 import { formatWon, notifySafeText } from '@/lib/withdrawal-parse'
 
@@ -72,6 +73,8 @@ export default function WithdrawalsPage() {
   const [viewerNames, setViewerNames] = useState<Record<string, string>>({})
   const [savingReason, setSavingReason] = useState(false)
   const [viewerBusy, setViewerBusy] = useState(false)
+  // 사진 크게 보기: 열린 건의 '사진만' 목록에서 몇 번째인지 (null이면 닫힘)
+  const [zoomIdx, setZoomIdx] = useState<number | null>(null)
   const viewerFileRef = useRef<HTMLInputElement>(null)
   // 잠금 보관함 사진의 볼 주소 {저장값: 서명 주소}
   const [signed, setSigned] = useState<Record<string, string>>({})
@@ -93,6 +96,7 @@ export default function WithdrawalsPage() {
 
   function openViewer(p: Photo) {
     setViewer(p)
+    setZoomIdx(null)
     setViewerReason(p.reason || '')
     setViewerInfo(infoOf(p))
     setViewerImages(imgsOf(p))
@@ -442,7 +446,10 @@ export default function WithdrawalsPage() {
                   {viewerImages.map((u, i) => (
                     <div key={i} className="relative">
                       {isImageUrl(u) ? (
-                        <Image src={view(u) || '/icons/icon-192.png'} alt="" width={800} height={600} unoptimized loading="lazy" className="w-full h-auto rounded-lg" />
+                        <button type="button" onClick={() => setZoomIdx(viewerImages.filter(isImageUrl).indexOf(u))}
+                          className="block w-full cursor-zoom-in" aria-label="사진 크게 보기">
+                          <Image src={view(u) || '/icons/icon-192.png'} alt="" width={800} height={600} unoptimized loading="lazy" className="w-full h-auto rounded-lg" />
+                        </button>
                       ) : isPdfUrl(u) ? (
                         // PDF는 쪽을 그림으로 바로 표시, 누르면 크게(브라우저 뷰어)
                         <button onClick={() => viewInBrowser(view(u), `출금자료_${i + 1}.pdf`)} className="block w-full text-left">
@@ -456,6 +463,9 @@ export default function WithdrawalsPage() {
                         </button>
                       )}
                       <div className="absolute bottom-2 left-2 flex gap-1.5">
+                        {isImageUrl(u) && (
+                          <button onClick={() => setZoomIdx(viewerImages.filter(isImageUrl).indexOf(u))} className="bg-black/60 text-white text-xs px-2.5 py-1 rounded-full">🔍 확대</button>
+                        )}
                         <button onClick={() => printUrl(view(u))} className="bg-black/60 text-white text-xs px-2.5 py-1 rounded-full">🖨 인쇄</button>
                         <button onClick={() => saveAsOriginal(view(u), viewerNames[u], `출금_${i + 1}`, 'share')} className="bg-black/60 text-white text-xs px-2.5 py-1 rounded-full">내보내기</button>
                         <button onClick={() => saveAsOriginal(view(u), viewerNames[u], `출금_${i + 1}`, 'download')} className="bg-black/60 text-white text-xs px-2.5 py-1 rounded-full">저장</button>
@@ -471,6 +481,14 @@ export default function WithdrawalsPage() {
               {viewerBusy && <p className="text-xs text-green-600 mt-2 text-center">처리 중...</p>}
             </div>
           </div>
+          {zoomIdx !== null && (() => {
+            const zoomList = viewerImages.filter(isImageUrl)
+            if (!zoomList.length) return null
+            return (
+              <ImageZoom images={zoomList.map(view)} index={Math.min(zoomIdx, zoomList.length - 1)}
+                onIndexChange={setZoomIdx} onClose={() => setZoomIdx(null)} />
+            )
+          })()}
         </div>
       )}
 
