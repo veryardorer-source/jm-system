@@ -7,6 +7,7 @@ import Sidebar from '@/components/Sidebar'
 import { useAuth } from '@/lib/auth-context'
 import { createClient } from '@/lib/supabase-browser'
 import { Employee, EmploymentType } from '@/lib/supabase'
+import { isEmployed, resignPassed, todayKst } from '@/lib/employee-status'
 
 const EMPTY_FORM = {
   name: '', resident_number: '', department: '', phone: '',
@@ -52,6 +53,9 @@ export default function AdminEmployeesPage() {
       hire_date: form.hire_date || null,
       resign_date: form.resign_date || null,
     }
+    // 퇴사일이 이미 지났으면 상태도 '퇴사'로 함께 바꾼다
+    const resigned = !!payload.resign_date && payload.resign_date < todayKst()
+    if (resigned) Object.assign(payload, { is_active: false })
     const { error } = editingId
       ? await supabase.from('employees').update(payload).eq('id', editingId)
       : await supabase.from('employees').insert([{ ...payload, is_active: true }])
@@ -80,7 +84,18 @@ export default function AdminEmployeesPage() {
 
   async function toggleActive(emp: Employee) {
     const supabase = createClient()
-    await supabase.from('employees').update({ is_active: !emp.is_active }).eq('id', emp.id)
+    let patch: { is_active: boolean; resign_date?: string | null }
+    if (isEmployed(emp)) {
+      if (!confirm(`"${emp.name}" 님을 퇴사 처리할까요?${emp.resign_date ? '' : '\n(퇴사날짜는 [수정]에서 넣을 수 있어요)'}`)) return
+      patch = { is_active: false }
+    } else if (resignPassed(emp)) {
+      if (!confirm(`"${emp.name}" 님은 퇴사날짜(${emp.resign_date})가 지났어요.\n퇴사날짜를 지우고 재직중으로 되돌릴까요?`)) return
+      patch = { is_active: true, resign_date: null }
+    } else {
+      patch = { is_active: true }
+    }
+    const { error } = await supabase.from('employees').update(patch).eq('id', emp.id)
+    if (error) { toast('상태 변경 실패: ' + error.message); return }
     fetchEmployees()
   }
 
@@ -237,7 +252,7 @@ export default function AdminEmployeesPage() {
   )
 }
 
-function EmployeeTable({ title, list, mask, revealedId, setRevealedId, onEdit, onToggle, onDelete, onOpenDetail }: {
+function EmployeeTable({ title, list: allList, mask, revealedId, setRevealedId, onEdit, onToggle, onDelete, onOpenDetail }: {
   title: string
   list: Employee[]
   mask: (v: string, id: string) => string
@@ -248,11 +263,26 @@ function EmployeeTable({ title, list, mask, revealedId, setRevealedId, onEdit, o
   onDelete: (e: Employee) => void
   onOpenDetail: (e: Employee) => void
 }) {
+  // 평소엔 재직중인 직원만, [퇴사 직원 보기]를 눌렀을 때만 퇴사자도 표시
+  const [showResigned, setShowResigned] = useState(false)
+  const activeList = allList.filter(e => isEmployed(e))
+  const resignedCount = allList.length - activeList.length
+  const list = showResigned
+    ? [...activeList, ...allList.filter(e => !isEmployed(e))]
+    : activeList
   return (
     <div>
-      <h2 className="text-sm font-bold text-gray-700 mb-3">{title} <span className="text-gray-400 font-normal">({list.length})</span></h2>
+      <div className="flex items-center justify-between gap-2 mb-3">
+        <h2 className="text-sm font-bold text-gray-700">{title} <span className="text-gray-400 font-normal">(재직 {activeList.length}명)</span></h2>
+        {resignedCount > 0 && (
+          <button onClick={() => setShowResigned(v => !v)}
+            className={`text-xs px-3 py-1.5 rounded-full border font-medium transition-colors ${showResigned ? 'bg-gray-700 text-white border-gray-700' : 'border-gray-300 text-gray-500 hover:bg-gray-50'}`}>
+            {showResigned ? `퇴사 직원 숨기기` : `퇴사 직원 보기 (${resignedCount}명)`}
+          </button>
+        )}
+      </div>
       {list.length === 0 ? (
-        <div className="bg-white rounded-xl border border-gray-200 text-center py-10 text-gray-400 text-sm">등록된 직원이 없어요</div>
+        <div className="bg-white rounded-xl border border-gray-200 text-center py-10 text-gray-400 text-sm">{resignedCount > 0 ? '재직중인 직원이 없어요' : '등록된 직원이 없어요'}</div>
       ) : (
         <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto">
           <table className="w-full whitespace-nowrap">
@@ -272,7 +302,7 @@ function EmployeeTable({ title, list, mask, revealedId, setRevealedId, onEdit, o
             </thead>
             <tbody>
               {list.map(e => (
-                <tr key={e.id} className="border-b border-gray-50 hover:bg-gray-50">
+                <tr key={e.id} className={`border-b border-gray-50 hover:bg-gray-50 ${isEmployed(e) ? '' : 'bg-gray-50/60 text-gray-400'}`}>
                   <td className="px-4 py-3 text-sm font-medium">
                     <button onClick={() => onOpenDetail(e)} className="text-green-700 hover:text-green-900 hover:underline font-semibold">
                       {e.name}
@@ -294,8 +324,8 @@ function EmployeeTable({ title, list, mask, revealedId, setRevealedId, onEdit, o
                   <td className="px-4 py-3 text-sm text-gray-600 font-mono">{e.account_number || '-'}</td>
                   <td className="px-4 py-3">
                     <button onClick={() => onToggle(e)}
-                      className={`text-xs px-2.5 py-1 rounded-full font-medium ${e.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-400'}`}>
-                      {e.is_active ? '재직중' : '퇴사'}
+                      className={`text-xs px-2.5 py-1 rounded-full font-medium ${isEmployed(e) ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-400'}`}>
+                      {isEmployed(e) ? '재직중' : '퇴사'}
                     </button>
                   </td>
                   <td className="px-4 py-3">
