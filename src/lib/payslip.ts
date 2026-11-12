@@ -65,8 +65,8 @@ export function buildSlip(a: {
 
   // 계산 방법 — 양식 문구 그대로 (기본급·연장수당·연장추가수당)
   const methods: SlipMethod[] = [{ label: '기본급', how: '통상시급 x 209시간', amount: r.base }]
-  if (r.ot) methods.push({ label: '연장수당', how: `통상시급 x ${hrs(wt.inclusiveOt)}시간 x 1.5`, amount: r.ot })
-  if (r.extraOt) methods.push({ label: '연장추가수당', how: `통상시급 x ${hrs(r.extraHours)}시간`, amount: r.extraOt })
+  if (r.ot) methods.push({ label: '연장수당', how: `통상시급 x ${hrs(wt.inclusiveOt)}시간 x ${r.otRate}`, amount: r.ot })
+  if (r.extraOt) methods.push({ label: '연장추가수당', how: `통상시급 x ${hrs(r.extraHours)}시간${r.extraRate !== 1 ? ` x ${r.extraRate}` : ''}`, amount: r.extraOt })
 
   return {
     month, monthLabel: `${y}년 ${m}월`, payDate: payDateOf(month),

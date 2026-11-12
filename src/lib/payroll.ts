@@ -25,12 +25,14 @@ export const extraOtMultiplier = (small: boolean) => (small ? 1 : 1.5)
 /** 연도별 최저시급 — 매년 1월 갱신 */
 export const MIN_WAGE: Record<number, number> = { 2025: 10030, 2026: 10320 }
 
-/** 근무구분 — '급여셋팅' 시트. inclusiveOt = 월 포괄연장시간(가산 전) */
+/** 근무구분 — '급여셋팅' 시트. inclusiveOt = 월 포괄연장시간(가산 전), otRate = 포괄연장 가산 배율
+ *  현장2(2026-11 대표 추가): 현장과 같은 근로조건이지만 포괄연장을 1배로 계산 → 기준시간 209 + 41.3 = 250.3 */
 export const WORK_TYPES = {
-  '본사':        { time: '09:00~18:00', rest: '12:00~13:00',             days: '월~금', off: '매주 토·일',      inclusiveOt: 0 },
-  '현장':        { time: '07:00~19:00', rest: '12:00~13:00, 15:00~16:00', days: '월~금', off: '격주 토, 매주 일', inclusiveOt: 41.3 },
-  '본사(계약직)': { time: '09:00~19:00', rest: '12:00~13:00',             days: '월~금', off: '매주 토·일',      inclusiveOt: 0 },
-  '현장(계약직)': { time: '09:00~18:00', rest: '12:00~13:00',             days: '월~금', off: '매주 토·일',      inclusiveOt: 0 },
+  '본사':        { time: '09:00~18:00', rest: '12:00~13:00',             days: '월~금', off: '매주 토·일',      inclusiveOt: 0,    otRate: 1.5 },
+  '현장':        { time: '07:00~18:00', rest: '12:00~13:00, 15:00~16:00', days: '월~금', off: '격주 토, 매주 일', inclusiveOt: 41.3, otRate: 1.5 },
+  '현장2':       { time: '07:00~18:00', rest: '12:00~13:00, 15:00~16:00', days: '월~금', off: '격주 토, 매주 일', inclusiveOt: 41.3, otRate: 1 },
+  '본사(계약직)': { time: '09:00~19:00', rest: '12:00~13:00',             days: '월~금', off: '매주 토·일',      inclusiveOt: 0,    otRate: 1.5 },
+  '현장(계약직)': { time: '09:00~18:00', rest: '12:00~13:00',             days: '월~금', off: '매주 토·일',      inclusiveOt: 0,    otRate: 1.5 },
 } as const
 export type WorkType = keyof typeof WORK_TYPES
 /** 직군 — 노무사 자료 첫 페이지(급여셋팅) 기준: 본사 = 사무직, 현장 = 현장직 (계약직 포함) */
@@ -69,7 +71,9 @@ export type PayInput = {
 }
 
 export type PayResult = {
-  totalHours: number   // 통상시급 기준시간 (209 + 포괄연장×1.5)
+  totalHours: number   // 통상시급 기준시간 (209 + 포괄연장×포괄 배율 — 현장 270.95, 현장2 250.3)
+  otRate: number       // 포괄연장 가산 배율 (근무구분별, 현장 1.5·현장2 1)
+  extraRate: number    // 추가근무 배율 (5인 미만 1)
   hourly: number       // 통상시급
   ratio: number        // 실제 적용 비율 = (지급률 적용일×지급률 + 나머지 근무일) / 그 달 날수
   base: number         // 기본급
@@ -132,7 +136,8 @@ export function calcPay(p: PayInput, year = new Date().getFullYear()): PayResult
   const warnings: string[] = []
   const wt = WORK_TYPES[p.work_type as WorkType] ?? WORK_TYPES['본사']
   const inclusiveOt = wt.inclusiveOt
-  const totalHours = BASE_HOURS + inclusiveOt * 1.5
+  const otRate = wt.otRate
+  const totalHours = BASE_HOURS + inclusiveOt * otRate
   const hourly = p.monthly_pay / totalHours
 
   // 일할: 퇴사 9/11이면 11/30. 수습이 달 중간에 끝나면 그 날까지만 지급률(90%), 다음 날부터 100%
@@ -145,11 +150,12 @@ export function calcPay(p: PayInput, year = new Date().getFullYear()): PayResult
   const meal = won(p.meal * ratio)
   const car = won(p.car * ratio)
   const position = won(p.position_allowance * ratio)
-  const ot = won(hourly * inclusiveOt * 1.5 * ratio)
+  const ot = won(hourly * inclusiveOt * otRate * ratio)
   const base = scaledTotal - meal - car - position - ot
   // 추가근무(포괄 외 연장·야간·휴일) — 엑셀 '추가연장근로' = 통상시급 × 시간 × 배율. 5인 미만은 1배
   const extraHours = (p.extra_ot_hours || 0) + (p.night_hours || 0) + (p.holiday_hours || 0)
-  const extraOt = won(hourly * extraHours * extraOtMultiplier(p.small_business))
+  const extraRate = extraOtMultiplier(p.small_business)
+  const extraOt = won(hourly * extraHours * extraRate)
   const bonus = won(p.bonus || 0)
   const specialAllowance = Math.max(0, won(p.special_allowance || 0))
 
@@ -169,6 +175,7 @@ export function calcPay(p: PayInput, year = new Date().getFullYear()): PayResult
   const attendance = won(p.attendance_deduction || 0)
   const deductions = health + care + pension + empIns + tax + localTax + attendance + healthAdj + careAdj
 
+  if (!(p.work_type in WORK_TYPES)) warnings.push(`근무구분 '${p.work_type}'을(를) 몰라 본사 기준으로 계산했어요`)
   if (base < 0) warnings.push('기본급이 마이너스예요 — 월지급액보다 수당 합계가 커요')
   // 최저임금 확인 (엑셀 '최저임금 여부 확인': 기본급+식대+차량 ≥ 최저시급×209) — 한 달 전체 기준으로 비교
   const minWage = MIN_WAGE[year] ?? MIN_WAGE[Math.max(...Object.keys(MIN_WAGE).map(Number))]
@@ -178,7 +185,7 @@ export function calcPay(p: PayInput, year = new Date().getFullYear()): PayResult
   }
 
   return {
-    totalHours, hourly, ratio, base, meal, car, ot, extraOt, extraHours, position, bonus, specialAllowance, gross, taxable,
+    totalHours, otRate, extraRate, hourly, ratio, base, meal, car, ot, extraOt, extraHours, position, bonus, specialAllowance, gross, taxable,
     health, care, pension, empIns, incomeTax: tax, localTax, attendance, healthAdj, careAdj,
     deductions, net: gross - deductions, warnings,
   }

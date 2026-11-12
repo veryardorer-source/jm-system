@@ -352,17 +352,19 @@ export default function AdminPayrollPage() {
     loadBase()
   }
 
-  // 엑셀 양식(급여대장 시트)과 같은 칸 구성
+  // 엑셀 양식(급여대장 시트)과 같은 칸 구성 — 11월 양식처럼 근무구분과 '지급총액'(공제 앞, 급여합계와 같은 값) 포함
   function sheetRows() {
     const [y, m] = month.split('-').map(Number)
-    const headers = ['연번', '성명', '생년월일', '피부양자', '입사일', '만나이', ...COLS.map(c => c[0])]
+    const at = COLS.findIndex(([h]) => h === '공제합계')
+    const cols = [...COLS.slice(0, at), ['지급총액', (r: PayResult) => r.gross] as (typeof COLS)[number], ...COLS.slice(at)]
+    const headers = ['연번', '성명', '생년월일', '피부양자', '입사일', '만나이', '근무구분', ...cols.map(c => c[0])]
     const body = rows.map(({ it, r }, i) => {
       const emp = it.employee_id ? empById.get(it.employee_id) : undefined
       const birth = birthFromRrn(emp?.resident_number)
       return [i + 1, it.employee_name, birth || '', Number(it.dependents), emp?.hire_date || '',
-        ageAt(birth, new Date(y, m, 0)) ?? '', ...COLS.map(([, f]) => f(r, it))]
+        ageAt(birth, new Date(y, m, 0)) ?? '', it.work_type, ...cols.map(([, f]) => f(r, it))]
     })
-    const total = ['총 합계', '', '', '', '', '', ...totals]
+    const total = ['총 합계', '', '', '', '', '', '', ...cols.map(([, f]) => rows.reduce((s, { it, r }) => s + f(r, it), 0))]
     return { headers, body, total }
   }
 
@@ -380,11 +382,11 @@ export default function AdminPayrollPage() {
     const ws = XLSX.utils.aoa_to_sheet(aoa)
     // 금액 칸 천 단위 쉼표
     const range = XLSX.utils.decode_range(ws['!ref']!)
-    for (let R = 4; R <= range.e.r; R++) for (let C = 6; C <= range.e.c; C++) {
+    for (let R = 4; R <= range.e.r; R++) for (let C = 7; C <= range.e.c; C++) {
       const cell = ws[XLSX.utils.encode_cell({ r: R, c: C })]
       if (cell && typeof cell.v === 'number') cell.z = '#,##0'
     }
-    ws['!cols'] = headers.map((h, i) => ({ wch: i < 2 ? 8 : i < 6 ? 11 : Math.max(10, h.length * 2) }))
+    ws['!cols'] = headers.map((h, i) => ({ wch: i < 2 ? 8 : i < 7 ? 11 : Math.max(10, h.length * 2) }))
     ws['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: headers.length - 1 } }]
     const wb = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(wb, ws, '급여대장')
@@ -490,7 +492,7 @@ export default function AdminPayrollPage() {
               <ul>
                 <li><b>수습</b>: 수습 종료일까지 90% (달 중간에 끝나면 그 날까지만).</li>
                 <li><b>일할</b>: 입사·퇴사 달은 그 달 실제 일수로 나눠요. 퇴사일 = <b>마지막 근무일</b>.</li>
-                <li><b>추가근무</b>: 통상시급 × 시간 × 1배 (상시 5인 미만 — 가산 없음). 현장직 <b>포괄연장 41.3시간은 월급에 포함</b>(1.5배)이라 그걸 넘는 시간만 추가근무로 기록하세요.</li>
+                <li><b>추가근무</b>: 통상시급 × 시간 × 1배 (상시 5인 미만 — 가산 없음). 현장직 <b>포괄연장 41.3시간은 월급에 포함</b>(현장 1.5배·현장2 1배)이라 그걸 넘는 시간만 추가근무로 기록하세요.</li>
                 <li>고용보험 0.9%, 소득세(간이세액표·가족 수), 지방소득세 10%.</li>
               </ul>
             </div>
@@ -593,7 +595,7 @@ export default function AdminPayrollPage() {
                   <ul className="mt-3 text-xs text-red-600 flex flex-col gap-0.5">{allWarnings.map(w => <li key={w}>⚠ {w}</li>)}</ul>
                 )}
                 <p className="text-xs text-gray-400 mt-3 leading-relaxed">
-                  추가근무(연장·야간·휴일)는 ⏱️ 추가근무 기록을 불러와 통상시급 × 시간 × {extraOtMultiplier(SMALL_BUSINESS)}배{SMALL_BUSINESS ? '(5인 미만 — 가산 없음)' : ''}로 계산해요. 포괄연장은 계약대로 1.5배.
+                  추가근무(연장·야간·휴일)는 ⏱️ 추가근무 기록을 불러와 통상시급 × 시간 × {extraOtMultiplier(SMALL_BUSINESS)}배{SMALL_BUSINESS ? '(5인 미만 — 가산 없음)' : ''}로 계산해요. 포괄연장은 계약대로 현장 1.5배·현장2 1배.
                   소득세는 간이세액표(공제대상가족 수 기준), 주민세는 소득세의 10%, 고용보험은 과세합계의 0.9%(10원 미만 절사)로 자동 계산돼요.
                   건강·장기요양·국민연금은 공단 고지액을 그대로 써요.
                 </p>
@@ -664,7 +666,7 @@ export default function AdminPayrollPage() {
                         <td className="px-3 py-1.5">{w}</td><td className="px-3 py-1.5">{t.time}</td><td className="px-3 py-1.5">{t.rest}</td>
                         <td className="px-3 py-1.5">{t.days}</td><td className="px-3 py-1.5">{t.off}</td>
                         <td className="px-3 py-1.5 text-right">{BASE_HOURS}h</td>
-                        <td className="px-3 py-1.5 text-right">{t.inclusiveOt ? `${t.inclusiveOt}h ×1.5` : '-'}</td>
+                        <td className="px-3 py-1.5 text-right">{t.inclusiveOt ? `${t.inclusiveOt}h ×${t.otRate}` : '-'}</td>
                       </tr>
                     )
                   }))}
@@ -874,7 +876,7 @@ function CommonFields<T extends Setting | Item>({ f, set }: { f: T; set: (patch:
             {WORK_TYPE_LIST.map(w => <option key={w} value={w}>{w}</option>)}
           </select>
           <p className="text-[11px] text-gray-400 mt-1">
-            {WORK_TYPES[f.work_type as keyof typeof WORK_TYPES]?.time} · 포괄연장 {WORK_TYPES[f.work_type as keyof typeof WORK_TYPES]?.inclusiveOt || 0}시간
+            {WORK_TYPES[f.work_type as keyof typeof WORK_TYPES]?.time} · 포괄연장 {WORK_TYPES[f.work_type as keyof typeof WORK_TYPES]?.inclusiveOt || 0}시간{WORK_TYPES[f.work_type as keyof typeof WORK_TYPES]?.inclusiveOt ? ` ×${WORK_TYPES[f.work_type as keyof typeof WORK_TYPES].otRate}` : ''}
           </p>
         </div>
         <div>
