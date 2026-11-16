@@ -1066,9 +1066,11 @@ function QuoteTab({ list, hqExpenses, fixedCosts, onRefresh }: { list: Quote[]; 
   })
 
   // 날짜순일 때 추가 견적은 본 견적 바로 아래 — 순이익을 합산한 견적은 합산 대상 아래,
-  // 그 밖에 현장명(또는 파일명)에 '추가'가 있으면 이름이 가장 닮은 앞선 본 견적 아래
+  // 그 밖에 현장명(또는 파일명)에 '추가'가 있으면 이름이 겹치는 앞선 본 견적 아래
+  // — 앞부분(회사명)만 같은 건 다른 계약이라 묶지 않음: 한쪽 이름이 다른 쪽에 통째로 들어 있어야 함
   const isExtra = (q: Quote) => /추가/.test(q.title) || /추가/.test(q.file_name || '')
   const core = (s: string) => s.replace(/^\d{6,7}_?/, '').replace(/\s/g, '').replace(/\(?추가.*$/, '')
+    .replace(/\([^)]*\)?/g, '').replace(/[-_]?(견적서|견적|복사|사본|최종본?)$/g, '')
   const parentOf = new Map<string, string>()
   for (const x of yearList) {
     const target = x.merged_into && yearList.find(p => p.id === x.merged_into && !p.merged_into)
@@ -1080,8 +1082,7 @@ function QuoteTab({ list, hqExpenses, fixedCosts, onRefresh }: { list: Quote[]; 
     for (const p of yearList) {
       if (p.id === x.id || isExtra(p) || parentOf.has(p.id) || dateOf(p) > dateOf(x)) continue
       const pc = core(p.title)
-      let n = 0; while (n < c.length && c[n] === pc[n]) n++
-      const score = Math.max(n, c && pc.includes(c) ? c.length : 0)
+      const score = !c || !pc ? 0 : pc.includes(c) ? c.length : c.includes(pc) ? pc.length : 0
       if (score > bestScore || (score === bestScore && best && dateOf(p) > dateOf(best))) { best = p; bestScore = score }
     }
     if (best) parentOf.set(x.id, best.id)
