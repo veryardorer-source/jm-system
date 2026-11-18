@@ -1196,7 +1196,9 @@ export default function ProjectDetail() {
         <div className="fixed inset-0 bg-black/40 z-[60] flex items-center justify-center p-4" onClick={() => setDlAsk(null)}>
           <div className="bg-white rounded-2xl w-full max-w-sm shadow-xl p-6" onClick={e => e.stopPropagation()}>
             <h2 className="text-base font-bold mb-2">⤓ 다운로드 폴더로 받을까요?</h2>
-            <p className="text-xs text-gray-500 mb-5 leading-relaxed">폴더 선택이 취소됐거나, 크롬이 폴더 저장을 막았어요. 대신 <b>{dlAsk.length}개</b>를 PC의 &lsquo;다운로드&rsquo; 폴더로 받을 수 있어요(사진은 JPG로). 받은 뒤 NAS 폴더로 옮겨 주세요. 크롬이 &lsquo;여러 파일 다운로드&rsquo;를 물으면 <b>허용</b>을 눌러 주세요.</p>
+            {/* 크롬 157: 폴더 선택 창이 크롬 창을 완전히 덮으면(창 가림 판단) 페이지가 숨김 처리돼 AbortError로 끝난다 — 창을 줄이면 정상 */}
+            <div className="mb-3 rounded-xl bg-amber-50 border border-amber-200 px-3 py-2.5 text-xs text-amber-900 leading-relaxed">💡 폴더 선택 창이 화면을 가득 덮으면 크롬이 저장을 취소해요. 폴더 창 크기를 줄이고 다시 <b>&lsquo;저장&rsquo;</b>을 눌러 주세요.</div>
+            <p className="text-xs text-gray-500 mb-5 leading-relaxed">또는 <b>{dlAsk.length}개</b>를 PC의 &lsquo;다운로드&rsquo; 폴더로 받은 뒤 NAS 폴더로 옮길 수 있어요(사진은 JPG로). 크롬이 &lsquo;여러 파일 다운로드&rsquo;를 물으면 <b>허용</b>을 눌러 주세요.</p>
             <div className="flex gap-2">
               <button onClick={() => setDlAsk(null)} className="flex-1 py-2.5 rounded-xl border border-gray-300 text-gray-600 text-sm">취소</button>
               <button onClick={() => { const list = dlAsk; setDlAsk(null); downloadAllTo(list) }} className="flex-1 py-2.5 rounded-xl bg-green-600 hover:bg-green-700 text-white text-sm font-semibold">다운로드로 받기</button>
