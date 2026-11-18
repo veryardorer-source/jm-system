@@ -140,6 +140,7 @@ export default function ProjectDetail() {
   const [uploadProgress, setUploadProgress] = useState(0)
   const [uploadCurrent, setUploadCurrent] = useState(0)
   // '전체 저장' 진행 표시 — NAS 저장은 오래 걸려서 어디까지 됐는지(어느 파일·단계에서 멈췄는지) 화면에 계속 보여 준다
+  const [saveAsk, setSaveAsk] = useState<{ dir: FileSystemDirectoryHandle; fileList: ProjectFile[] } | null>(null) // 고른 폴더 쓰기 허용 대기
   const [saveProg, setSaveProg] = useState<{ done: number; total: number; step: string; name: string } | null>(null)
   const [uploadTotal, setUploadTotal] = useState(0)
   // 올리는 중에 새로고침·탭 닫기를 하면 멈추니 한 번 묻는다
@@ -518,70 +519,94 @@ export default function ProjectDetail() {
   }
 
   // 폴더를 한 번만 고르면 그 안에 전부 저장 (PC 크롬 등). 미지원 시 기존 방식으로.
+  // 권한 받는 순서 (2026-11-18 신진엘레베이터 시공사진에서 수정):
+  //  1) 폴더는 '보기'로만 고른다 — readwrite로 고르면 크롬이 고른 직후 '수정 허용' 창을 띄우지 못하고
+  //     AbortError로 끝내는 PC가 있었다(창도 안 뜨고 저장도 안 됨).
+  //  2) 쓰기 권한이 아직 없으면 앱 화면에 [이 폴더에 저장 허용] 버튼을 띄우고, 그 버튼을 누르는 순간 요청한다
+  //     (클릭 직후라 크롬이 막지 않음). 이미 허용된 폴더는 바로 저장.
   async function saveAll(fileList: ProjectFile[]) {
     if (fileList.length === 0) return
-    const w = window as unknown as { showDirectoryPicker?: (o?: { mode?: 'read' | 'readwrite' }) => Promise<FileSystemDirectoryHandle> }
+    const w = window as unknown as { showDirectoryPicker?: (o?: { mode?: 'read' | 'readwrite'; id?: string }) => Promise<FileSystemDirectoryHandle> }
     if (typeof w.showDirectoryPicker === 'function') {
       let dir: FileSystemDirectoryHandle
-      // 쓰기 권한을 폴더 고를 때 같이 받는다 — 읽기로만 고르면 첫 저장 때 권한을 다시 묻는데,
-      // 그땐 폴더 검사·다운로드로 클릭 직후가 지나 크롬이 묻지도 않고 막아서 전부 실패했다 (NAS 폴더에서 '작동 안 함')
-      try { dir = await w.showDirectoryPicker({ mode: 'readwrite' }) } catch (e) {
-        // 사용자가 직접 취소한 것만 조용히 끝낸다. 그 밖의 실패(창이 이미 열려 있음·권한 막힘 등)는
-        // 예전엔 아무 표시 없이 끝나서 '눌러도 아무 일 없음'으로 보였다 → 원인을 알리고 일반 다운로드로라도 받게 한다
+      try { dir = await w.showDirectoryPicker({ id: 'jm-save' }) } catch (e) {
         const name = e instanceof Error ? e.name : ''
         const msg = e instanceof Error ? e.message : String(e)
         const already = /already/i.test(msg)
-        // AbortError도 조용히 끝내지 않는다 — 폴더를 고른 뒤 크롬이 권한을 거절해도 AbortError로 와서
-        // '폴더를 골랐는데 아무 일도 없음'으로 보였다(2026-11-18 신진엘레베이터 시공사진). 원인 문구를 길게 보여 준다
+        // 취소도 한 줄 알린다 — 폴더를 골랐는데 크롬이 AbortError로 끝내는 경우와 구분할 수 있게
+        if (name === 'AbortError' && !already) { toast(`폴더 선택이 취소됐어요. 폴더를 골랐는데도 이 문구가 나오면 알려 주세요. (${msg})`, 'info', 15000); return }
         toast(already
           ? '폴더 고르는 창이 이미 열려 있어요(다른 창 뒤에 숨어 있을 수 있음). 작업표시줄에서 그 창을 닫거나 앱을 껐다 켠 뒤 다시 눌러 주세요.'
-          : name === 'AbortError'
-            ? `저장을 시작하지 못했어요 — 폴더 선택이 취소됐거나 크롬이 그 폴더 권한을 거절했어요. 폴더를 고른 뒤 '파일 수정 허용' 창이 뜨면 허용을 눌러 주세요. (${name}: ${msg})`
-            : `폴더 고르는 창을 열지 못했어요 (${name}: ${msg}). 대신 '다운로드' 폴더로 받을게요.`, 'error', 60000)
-        if (!already && name !== 'AbortError') await shareFiles(fileList)
+          : `폴더 고르는 창을 열지 못했어요 (${name}: ${msg}). 대신 '다운로드' 폴더로 받을게요.`, 'error', 60000)
+        if (!already) await shareFiles(fileList)
         return
       }
-      // NAS 중복 방지: 폴더에 이미 있는 것(이름이 달라도 내용이 같으면)과 시스템 안 같은 원본은 건너뛴다
-      const { keep, dropped } = uniqueByOriginal(fileList.filter(f => f.file_type !== 'link'))
-      // 한 단계가 NAS·네트워크에서 응답 없이 멈추면 전체가 끝나지 않으므로, 단계마다 시간 제한을 둔다
-      const limit = <T,>(p: Promise<T>, step: string, sec = 90) => Promise.race([
-        p, new Promise<never>((_, rej) => setTimeout(() => rej(new Error(`${step} ${sec}초 응답 없음`)), sec * 1000)),
-      ])
-      setSaveProg({ done: 0, total: keep.length, step: '저장 폴더 확인 중 (이미 받은 사진은 건너뜀)', name: '' })
-      let folder: FolderIndex
-      try { folder = await limit(FolderIndex.scan(dir), '폴더 확인', 180) } catch (e) {
-        setSaveProg(null)
-        toast(`폴더를 읽지 못했어요 — ${e instanceof Error ? `${e.name}: ${e.message}` : '권한을 허용해 주세요'}`, 'error', 60000); return
-      }
-      let ok = 0, already = 0, fail = 0
-      let firstErr = ''
-      for (let i = 0; i < keep.length; i++) {
-        const f = keep[i]
-        const name = nasName(f) || `file_${i}`
-        const step = (s: string) => setSaveProg({ done: i, total: keep.length, step: s, name })
-        try {
-          step('받는 중')
-          const res = await limit(fetch(f.file_url, { mode: 'cors', credentials: 'omit' }), '다운로드')
-          if (!res.ok) { fail++; firstErr ||= `${name}: 다운로드 ${res.status}`; continue }
-          const conv = await limit(toShareableBlob(await res.blob(), name), '변환')
-          step('중복 확인 중')
-          const hash = await sha256Hex(conv.blob)
-          if (await limit(folder.hasSameContent(conv.blob, hash), '중복 확인')) { already++; continue }
-          step('NAS에 쓰는 중')
-          await limit(folder.write(folder.freeName(conv.name), conv.blob, hash), 'NAS 쓰기')
-          ok++
-        } catch (e) { fail++; firstErr ||= `${name}: ${e instanceof Error ? `${e.name === 'Error' ? '' : e.name + ' '}${e.message}` : String(e)}` /* 개별 실패는 건너뜀 */ }
-      }
-      setSaveProg(null)
-      const parts = [`새로 ${ok}개 저장`]
-      if (already) parts.push(`이미 있는 ${already}개 건너뜀`)
-      if (dropped) parts.push(`같은 사진 중복 ${dropped}개 제외`)
-      if (fail) parts.push(`실패 ${fail}개 (${firstErr})`)
-      toast(parts.join(' · '), fail ? 'error' : 'ok', fail ? 60000 : 8000) // 실패 사유는 읽고 캡처할 수 있게 오래 (누르면 닫힘)
+      type PermDir = FileSystemDirectoryHandle & { queryPermission?: (d: { mode: 'readwrite' }) => Promise<PermissionState> }
+      const state = await (dir as PermDir).queryPermission?.({ mode: 'readwrite' }).catch(() => 'prompt' as PermissionState)
+      if (state === 'granted') { await runSaveAll(dir, fileList); return }
+      setSaveAsk({ dir, fileList }) // 버튼을 눌러 쓰기 권한을 받는다
       return
     }
     // 폴더 선택 미지원(모바일/사파리) → 공유 또는 개별 다운로드
     await shareFiles(fileList)
+  }
+
+  // [이 폴더에 저장 허용] 버튼 — 클릭 순간에 쓰기 권한을 요청해야 크롬이 막지 않는다
+  async function grantAndSave() {
+    if (!saveAsk) return
+    const { dir, fileList } = saveAsk
+    type PermDir = FileSystemDirectoryHandle & { requestPermission?: (d: { mode: 'readwrite' }) => Promise<PermissionState> }
+    let state: PermissionState | 'error' = 'error'
+    let why = ''
+    try { state = (await (dir as PermDir).requestPermission?.({ mode: 'readwrite' })) ?? 'error' } catch (e) {
+      why = e instanceof Error ? `${e.name}: ${e.message}` : String(e)
+    }
+    setSaveAsk(null)
+    if (state !== 'granted') {
+      toast(`'${dir.name}' 폴더에 저장할 권한을 받지 못했어요 (${why || state}). 크롬 확인 창에서 '수정 허용'을 눌러 주세요.`, 'error', 60000)
+      return
+    }
+    await runSaveAll(dir, fileList)
+  }
+
+  async function runSaveAll(dir: FileSystemDirectoryHandle, fileList: ProjectFile[]) {
+    // NAS 중복 방지: 폴더에 이미 있는 것(이름이 달라도 내용이 같으면)과 시스템 안 같은 원본은 건너뛴다
+    const { keep, dropped } = uniqueByOriginal(fileList.filter(f => f.file_type !== 'link'))
+    // 한 단계가 NAS·네트워크에서 응답 없이 멈추면 전체가 끝나지 않으므로, 단계마다 시간 제한을 둔다
+    const limit = <T,>(p: Promise<T>, step: string, sec = 90) => Promise.race([
+      p, new Promise<never>((_, rej) => setTimeout(() => rej(new Error(`${step} ${sec}초 응답 없음`)), sec * 1000)),
+    ])
+    setSaveProg({ done: 0, total: keep.length, step: '저장 폴더 확인 중 (이미 받은 사진은 건너뜀)', name: '' })
+    let folder: FolderIndex
+    try { folder = await limit(FolderIndex.scan(dir), '폴더 확인', 180) } catch (e) {
+      setSaveProg(null)
+      toast(`폴더를 읽지 못했어요 — ${e instanceof Error ? `${e.name}: ${e.message}` : '권한을 허용해 주세요'}`, 'error', 60000); return
+    }
+    let ok = 0, already = 0, fail = 0
+    let firstErr = ''
+    for (let i = 0; i < keep.length; i++) {
+      const f = keep[i]
+      const name = nasName(f) || `file_${i}`
+      const step = (s: string) => setSaveProg({ done: i, total: keep.length, step: s, name })
+      try {
+        step('받는 중')
+        const res = await limit(fetch(f.file_url, { mode: 'cors', credentials: 'omit' }), '다운로드')
+        if (!res.ok) { fail++; firstErr ||= `${name}: 다운로드 ${res.status}`; continue }
+        const conv = await limit(toShareableBlob(await res.blob(), name), '변환')
+        step('중복 확인 중')
+        const hash = await sha256Hex(conv.blob)
+        if (await limit(folder.hasSameContent(conv.blob, hash), '중복 확인')) { already++; continue }
+        step('NAS에 쓰는 중')
+        await limit(folder.write(folder.freeName(conv.name), conv.blob, hash), 'NAS 쓰기')
+        ok++
+      } catch (e) { fail++; firstErr ||= `${name}: ${e instanceof Error ? `${e.name === 'Error' ? '' : e.name + ' '}${e.message}` : String(e)}` /* 개별 실패는 건너뜀 */ }
+    }
+    setSaveProg(null)
+    const parts = [`새로 ${ok}개 저장`]
+    if (already) parts.push(`이미 있는 ${already}개 건너뜀`)
+    if (dropped) parts.push(`같은 사진 중복 ${dropped}개 제외`)
+    if (fail) parts.push(`실패 ${fail}개 (${firstErr})`)
+    toast(parts.join(' · '), fail ? 'error' : 'ok', fail ? 60000 : 8000) // 실패 사유는 읽고 캡처할 수 있게 오래 (누르면 닫힘)
   }
 
   // 자료 수정 열기/저장 — 모든 분류 공통 (제목·분류·메모, 링크는 URL도)
@@ -1152,6 +1177,19 @@ export default function ProjectDetail() {
   return (
     <div className="flex flex-col min-h-screen">
       <Sidebar />
+      {saveAsk && (
+        <div className="fixed inset-0 bg-black/40 z-[60] flex items-center justify-center p-4" onClick={() => setSaveAsk(null)}>
+          <div className="bg-white rounded-2xl w-full max-w-sm shadow-xl p-6" onClick={e => e.stopPropagation()}>
+            <h2 className="text-base font-bold mb-2">⤓ 이 폴더에 저장할까요?</h2>
+            <p className="text-sm text-gray-600 mb-1 break-all">📁 {saveAsk.dir.name}</p>
+            <p className="text-xs text-gray-500 mb-5 leading-relaxed">{saveAsk.fileList.length}개를 저장해요. 아래 버튼을 누르면 크롬이 &lsquo;파일 수정 허용&rsquo;을 물어요 — <b>허용</b>을 눌러 주세요.</p>
+            <div className="flex gap-2">
+              <button onClick={() => setSaveAsk(null)} className="flex-1 py-2.5 rounded-xl border border-gray-300 text-gray-600 text-sm">취소</button>
+              <button onClick={grantAndSave} className="flex-1 py-2.5 rounded-xl bg-green-600 hover:bg-green-700 text-white text-sm font-semibold">이 폴더에 저장 허용</button>
+            </div>
+          </div>
+        </div>
+      )}
       {saveProg && (
         <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 w-[min(92vw,420px)] bg-white border border-gray-200 shadow-lg rounded-xl px-4 py-3 text-sm">
           <div className="flex justify-between text-gray-700 mb-1">
