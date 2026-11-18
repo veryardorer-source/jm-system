@@ -537,7 +537,7 @@ export default function ProjectDetail() {
           ? '폴더 고르는 창이 이미 열려 있어요(다른 창 뒤에 숨어 있을 수 있음). 작업표시줄에서 그 창을 닫거나 앱을 껐다 켠 뒤 다시 눌러 주세요.'
           : name === 'AbortError'
             ? `저장을 시작하지 못했어요 — 폴더 선택이 취소됐거나 크롬이 그 폴더 권한을 거절했어요. 폴더를 고른 뒤 '파일 수정 허용' 창이 뜨면 허용을 눌러 주세요. (${name}: ${msg})`
-            : `폴더 고르는 창을 열지 못했어요 (${name}: ${msg}). 대신 '다운로드' 폴더로 받을게요.`, 'error', 15000)
+            : `폴더 고르는 창을 열지 못했어요 (${name}: ${msg}). 대신 '다운로드' 폴더로 받을게요.`, 'error', 60000)
         if (!already && name !== 'AbortError') await shareFiles(fileList)
         return
       }
@@ -551,7 +551,7 @@ export default function ProjectDetail() {
       let folder: FolderIndex
       try { folder = await limit(FolderIndex.scan(dir), '폴더 확인', 180) } catch (e) {
         setSaveProg(null)
-        toast(`폴더를 읽지 못했어요 — ${e instanceof Error ? e.message : '권한을 허용해 주세요'}`, 'error'); return
+        toast(`폴더를 읽지 못했어요 — ${e instanceof Error ? `${e.name}: ${e.message}` : '권한을 허용해 주세요'}`, 'error', 60000); return
       }
       let ok = 0, already = 0, fail = 0
       let firstErr = ''
@@ -577,7 +577,7 @@ export default function ProjectDetail() {
       if (already) parts.push(`이미 있는 ${already}개 건너뜀`)
       if (dropped) parts.push(`같은 사진 중복 ${dropped}개 제외`)
       if (fail) parts.push(`실패 ${fail}개 (${firstErr})`)
-      toast(parts.join(' · '), fail ? 'error' : 'ok')
+      toast(parts.join(' · '), fail ? 'error' : 'ok', fail ? 60000 : 8000) // 실패 사유는 읽고 캡처할 수 있게 오래 (누르면 닫힘)
       return
     }
     // 폴더 선택 미지원(모바일/사파리) → 공유 또는 개별 다운로드
