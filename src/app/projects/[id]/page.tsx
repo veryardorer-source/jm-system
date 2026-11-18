@@ -525,7 +525,19 @@ export default function ProjectDetail() {
       let dir: FileSystemDirectoryHandle
       // 쓰기 권한을 폴더 고를 때 같이 받는다 — 읽기로만 고르면 첫 저장 때 권한을 다시 묻는데,
       // 그땐 폴더 검사·다운로드로 클릭 직후가 지나 크롬이 묻지도 않고 막아서 전부 실패했다 (NAS 폴더에서 '작동 안 함')
-      try { dir = await w.showDirectoryPicker({ mode: 'readwrite' }) } catch { return } // 사용자가 취소
+      try { dir = await w.showDirectoryPicker({ mode: 'readwrite' }) } catch (e) {
+        // 사용자가 직접 취소한 것만 조용히 끝낸다. 그 밖의 실패(창이 이미 열려 있음·권한 막힘 등)는
+        // 예전엔 아무 표시 없이 끝나서 '눌러도 아무 일 없음'으로 보였다 → 원인을 알리고 일반 다운로드로라도 받게 한다
+        const name = e instanceof Error ? e.name : ''
+        const msg = e instanceof Error ? e.message : String(e)
+        const already = /already/i.test(msg)
+        if (name === 'AbortError' && !already) return
+        toast(already
+          ? '폴더 고르는 창이 이미 열려 있어요(다른 창 뒤에 숨어 있을 수 있음). 작업표시줄에서 그 창을 닫거나 앱을 껐다 켠 뒤 다시 눌러 주세요.'
+          : `폴더 고르는 창을 열지 못했어요 (${name} ${msg}). 대신 '다운로드' 폴더로 받을게요.`, 'error')
+        if (!already) await shareFiles(fileList)
+        return
+      }
       // NAS 중복 방지: 폴더에 이미 있는 것(이름이 달라도 내용이 같으면)과 시스템 안 같은 원본은 건너뛴다
       const { keep, dropped } = uniqueByOriginal(fileList.filter(f => f.file_type !== 'link'))
       // 한 단계가 NAS·네트워크에서 응답 없이 멈추면 전체가 끝나지 않으므로, 단계마다 시간 제한을 둔다
