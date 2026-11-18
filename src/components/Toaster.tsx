@@ -7,13 +7,14 @@ import { useEffect, useState } from 'react'
 export type ToastType = 'ok' | 'error' | 'info'
 type ToastItem = { id: number; msg: string; type: ToastType }
 
-export function toast(msg: string, type?: ToastType) {
+// ms: 떠 있는 시간(기본 오류 5초·그 외 3초). 원인 문구를 읽어야 하는 오류는 길게 준다
+export function toast(msg: string, type?: ToastType, ms?: number) {
   if (typeof window === 'undefined') return
   // 종류를 안 주면 문구로 판별 — 실패/오류는 빨강, 완료/성공은 초록
   const auto: ToastType = type
     ?? (/실패|오류|없어요|못 |안 돼|만료/.test(msg) ? 'error'
     : /완료|했어요|보냈|성공/.test(msg) ? 'ok' : 'info')
-  window.dispatchEvent(new CustomEvent('jm-toast', { detail: { msg, type: auto } }))
+  window.dispatchEvent(new CustomEvent('jm-toast', { detail: { msg, type: auto, ms } }))
 }
 
 let seq = 1
@@ -23,7 +24,7 @@ export default function Toaster() {
 
   useEffect(() => {
     const onToast = (e: Event) => {
-      const { msg, type } = (e as CustomEvent).detail as { msg: string; type: ToastType }
+      const { msg, type, ms } = (e as CustomEvent).detail as { msg: string; type: ToastType; ms?: number }
       const id = seq++
       setItems(prev => [...prev.slice(-3), { id, msg, type }]) // 최대 4개
       setTimeout(() => setItems(prev => prev.filter(t => t.id !== id)), type === 'error' ? 5000 : 3000)

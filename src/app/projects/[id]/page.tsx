@@ -531,11 +531,14 @@ export default function ProjectDetail() {
         const name = e instanceof Error ? e.name : ''
         const msg = e instanceof Error ? e.message : String(e)
         const already = /already/i.test(msg)
-        if (name === 'AbortError' && !already) return
+        // AbortError도 조용히 끝내지 않는다 — 폴더를 고른 뒤 크롬이 권한을 거절해도 AbortError로 와서
+        // '폴더를 골랐는데 아무 일도 없음'으로 보였다(2026-11-18 신진엘레베이터 시공사진). 원인 문구를 길게 보여 준다
         toast(already
           ? '폴더 고르는 창이 이미 열려 있어요(다른 창 뒤에 숨어 있을 수 있음). 작업표시줄에서 그 창을 닫거나 앱을 껐다 켠 뒤 다시 눌러 주세요.'
-          : `폴더 고르는 창을 열지 못했어요 (${name} ${msg}). 대신 '다운로드' 폴더로 받을게요.`, 'error')
-        if (!already) await shareFiles(fileList)
+          : name === 'AbortError'
+            ? `저장을 시작하지 못했어요 — 폴더 선택이 취소됐거나 크롬이 그 폴더 권한을 거절했어요. 폴더를 고른 뒤 '파일 수정 허용' 창이 뜨면 허용을 눌러 주세요. (${name}: ${msg})`
+            : `폴더 고르는 창을 열지 못했어요 (${name}: ${msg}). 대신 '다운로드' 폴더로 받을게요.`, 'error', 15000)
+        if (!already && name !== 'AbortError') await shareFiles(fileList)
         return
       }
       // NAS 중복 방지: 폴더에 이미 있는 것(이름이 달라도 내용이 같으면)과 시스템 안 같은 원본은 건너뛴다
