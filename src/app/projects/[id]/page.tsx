@@ -140,6 +140,7 @@ export default function ProjectDetail() {
   const [uploadProgress, setUploadProgress] = useState(0)
   const [uploadCurrent, setUploadCurrent] = useState(0)
   // '전체 저장' 진행 표시 — NAS 저장은 오래 걸려서 어디까지 됐는지(어느 파일·단계에서 멈췄는지) 화면에 계속 보여 준다
+  const [dlAsk, setDlAsk] = useState<ProjectFile[] | null>(null) // 폴더 저장이 안 될 때 다운로드로 받을지
   const [saveAsk, setSaveAsk] = useState<{ dir: FileSystemDirectoryHandle; fileList: ProjectFile[] } | null>(null) // 고른 폴더 쓰기 허용 대기
   const [saveProg, setSaveProg] = useState<{ done: number; total: number; step: string; name: string } | null>(null)
   const [uploadTotal, setUploadTotal] = useState(0)
@@ -534,7 +535,9 @@ export default function ProjectDetail() {
         const msg = e instanceof Error ? e.message : String(e)
         const already = /already/i.test(msg)
         // 취소도 한 줄 알린다 — 폴더를 골랐는데 크롬이 AbortError로 끝내는 경우와 구분할 수 있게
-        if (name === 'AbortError' && !already) { toast(`폴더 선택이 취소됐어요. 폴더를 골랐는데도 이 문구가 나오면 알려 주세요. (${msg})`, 'info', 15000); return }
+        // 크롬 157(2026-11-17 업데이트) 이후 이 PC에선 폴더를 골라도 AbortError로 끝난다(PC 폴더도 같음).
+        // 직접 취소와 구분할 수 없으니, 다운로드 폴더로 받을지 묻는 창을 띄운다(버튼 클릭이라 여러 파일 받기도 막히지 않음)
+        if (name === 'AbortError' && !already) { setDlAsk(fileList); return }
         toast(already
           ? '폴더 고르는 창이 이미 열려 있어요(다른 창 뒤에 숨어 있을 수 있음). 작업표시줄에서 그 창을 닫거나 앱을 껐다 켠 뒤 다시 눌러 주세요.'
           : `폴더 고르는 창을 열지 못했어요 (${name}: ${msg}). 대신 '다운로드' 폴더로 받을게요.`, 'error', 60000)
@@ -549,6 +552,18 @@ export default function ProjectDetail() {
     }
     // 폴더 선택 미지원(모바일/사파리) → 공유 또는 개별 다운로드
     await shareFiles(fileList)
+  }
+
+  // 다운로드 폴더로 차례로 받기 — 진행 표시를 같이 보여 준다
+  async function downloadAllTo(list: ProjectFile[]) {
+    const items = list.filter(f => f.file_type !== 'link')
+    for (let i = 0; i < items.length; i++) {
+      setSaveProg({ done: i, total: items.length, step: '다운로드 폴더로 받는 중', name: nasName(items[i]) })
+      await downloadFile(items[i])
+      await new Promise(r => setTimeout(r, 300))
+    }
+    setSaveProg(null)
+    toast(`${items.length}개 다운로드를 시작했어요. 크롬 다운로드 목록(Ctrl+J)에서 모두 받아졌는지 확인한 뒤 NAS 폴더로 옮겨 주세요.`, 'ok', 12000) // a.click()은 저장 완료를 보장하지 않음
   }
 
   // [이 폴더에 저장 허용] 버튼 — 클릭 순간에 쓰기 권한을 요청해야 크롬이 막지 않는다
@@ -1177,6 +1192,18 @@ export default function ProjectDetail() {
   return (
     <div className="flex flex-col min-h-screen">
       <Sidebar />
+      {dlAsk && (
+        <div className="fixed inset-0 bg-black/40 z-[60] flex items-center justify-center p-4" onClick={() => setDlAsk(null)}>
+          <div className="bg-white rounded-2xl w-full max-w-sm shadow-xl p-6" onClick={e => e.stopPropagation()}>
+            <h2 className="text-base font-bold mb-2">⤓ 다운로드 폴더로 받을까요?</h2>
+            <p className="text-xs text-gray-500 mb-5 leading-relaxed">폴더 선택이 취소됐거나, 크롬이 폴더 저장을 막았어요. 대신 <b>{dlAsk.length}개</b>를 PC의 &lsquo;다운로드&rsquo; 폴더로 받을 수 있어요(사진은 JPG로). 받은 뒤 NAS 폴더로 옮겨 주세요. 크롬이 &lsquo;여러 파일 다운로드&rsquo;를 물으면 <b>허용</b>을 눌러 주세요.</p>
+            <div className="flex gap-2">
+              <button onClick={() => setDlAsk(null)} className="flex-1 py-2.5 rounded-xl border border-gray-300 text-gray-600 text-sm">취소</button>
+              <button onClick={() => { const list = dlAsk; setDlAsk(null); downloadAllTo(list) }} className="flex-1 py-2.5 rounded-xl bg-green-600 hover:bg-green-700 text-white text-sm font-semibold">다운로드로 받기</button>
+            </div>
+          </div>
+        </div>
+      )}
       {saveAsk && (
         <div className="fixed inset-0 bg-black/40 z-[60] flex items-center justify-center p-4" onClick={() => setSaveAsk(null)}>
           <div className="bg-white rounded-2xl w-full max-w-sm shadow-xl p-6" onClick={e => e.stopPropagation()}>
