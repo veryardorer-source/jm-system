@@ -1002,7 +1002,7 @@ function QuoteTab({ list, hqExpenses, fixedCosts, onRefresh }: { list: Quote[]; 
     let url: string
     try { url = await resolveFileUrl(q.file_url) } catch (e) { toast((e as Error).message, 'error'); return }
     const name = q.file_name?.toLowerCase() || ''
-    if (/\.(xlsx|xls|doc|docx|ppt|pptx)$/.test(name)) {
+    if (/\.(xlsx|xls|xlsb|xlsm|doc|docx|ppt|pptx)$/.test(name)) {
       // 엑셀·워드·PPT → 마이크로소프트 오피스 온라인 뷰어(다운로드 없이 미리보기)
       window.open(`https://view.officeapps.live.com/op/view.aspx?src=${encodeURIComponent(url)}`, '_blank')
     } else if (name.endsWith('.pdf')) {
