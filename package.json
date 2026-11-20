@@ -13,7 +13,7 @@
     "@anthropic-ai/sdk": "^0.106.0",
     "@supabase/ssr": "^0.12.0",
     "@supabase/supabase-js": "^2.108.2",
-    "heic2any": "^0.0.4",
+    "libheif-js": "1.19.8",
     "next": "16.2.9",
     "pdf-lib": "^1.17.1",
     "pdfjs-dist": "^4.10.38",

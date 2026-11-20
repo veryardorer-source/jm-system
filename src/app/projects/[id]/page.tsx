@@ -8,6 +8,7 @@ import { supabase, Project, ProjectFile, Schedule, STATUS_LIST, STATUS_COLOR } f
 import { useAuth, canEdit } from '@/lib/auth-context'
 import { notifyOthers, notifyDM, notifyRoom } from '@/lib/notify'
 import { compressImage, makeThumbnail, hashFile, formatBytes, isCompressibleImage, mediaUploadName, toShareableBlob } from '@/lib/image'
+import { convertHeic, isHeic } from '@/lib/heic'
 import { FolderIndex, sha256Hex, uniqueByOriginal } from '@/lib/folder-dedupe'
 import { openPdfTitled, printUrl, downloadUrl, downloadName, viewUrl, SECURE_PREFIX, isSecureUrl, signSecureUrls } from '@/lib/media'
 import PdfPreview, { isPdfUrl } from '@/components/PdfPreview'
@@ -38,68 +39,26 @@ const fileStamp = () => String(Date.now()) // 저장 파일 이름용 시각
 
 const CATEGORY_LIST = ['공사전사진', '시공사진', '마감사진', '도면', '3D', '견적서', '계약서', '미팅내용', '고객요청', '구매링크', '기타']
 
-function isHeic(file: File) {
-  return /\.(heic|heif)$/i.test(file.name) || /^image\/hei(c|f)/i.test(file.type)
-}
-
-// 아이폰/일부 갤럭시가 찍는 HEIC는 브라우저 <img>로 표시가 안 되므로 업로드 전에 JPEG로 변환
-async function toBrowserSafeImage(file: File): Promise<{ file: File; ext: string }> {
-  const ext = file.name.split('.').pop() || 'bin'
-  if (!isHeic(file)) return { file, ext }
-  try {
-    const heic2any = (await import('heic2any')).default
-    // 30초 넘게 걸리면 포기하고 원본 업로드 (변환이 멈춰서 업로드 전체가 안 되는 것 방지)
-    const result = await Promise.race([
-      heic2any({ blob: file, toType: 'image/jpeg', quality: 0.85 }),
-      new Promise<never>((_, rej) => setTimeout(() => rej(new Error('heic timeout')), 30000)),
-    ])
-    const blob = Array.isArray(result) ? result[0] : result
-    const newName = file.name.replace(/\.(heic|heif)$/i, '.jpg')
-    return { file: new File([blob as Blob], newName, { type: 'image/jpeg' }), ext: 'jpg' }
-  } catch {
-    return { file, ext } // 변환 실패 시 원본 그대로 업로드 (다운로드는 가능, 화면엔 HeicImg가 표시)
-  }
-}
-
-// HEIC(아이폰 원본) 이미지는 브라우저가 못 띄우므로, 화면에 보여줄 때 즉석에서 JPEG로 변환해 표시.
-// (업로드 자동변환을 거치지 않은 옛 파일도 이제 정상적으로 보임)
-function HeicImg({ src, alt, className, onClick, thumb }: {
+// 원본 HEIC는 화면에서 재변환하지 않는다 (200MP 메모리 폭증 방지).
+function HeicImg({ src, alt, className, onClick, thumb, originalUrl }: {
   src: string; alt?: string; className?: string; onClick?: (e: React.MouseEvent) => void
-  thumb?: boolean // true=격자 썸네일 — 칸 크기에 맞춰 채우고 화면에 보일 때만 로드
+  thumb?: boolean; originalUrl?: string
 }) {
   const heicSrc = /\.(heic|heif)$/i.test((src || '').split('?')[0])
-  // 변환 결과를 {원본, 변환주소} 쌍으로 저장 — 표시 주소는 파생 (src가 바뀌면 자동으로 '변환 중' 상태)
-  const [conv, setConv] = useState<{ src: string; url: string } | null>(null)
-  const url = heicSrc ? (conv?.src === src ? conv.url : '') : src
-  useEffect(() => {
-    if (!heicSrc) return
-    let created: string | null = null
-    let cancelled = false
-    ;(async () => {
-      try {
-        const heic2any = (await import('heic2any')).default
-        const res = await fetch(src)
-        const blob = await res.blob()
-        const out = await heic2any({ blob, toType: 'image/jpeg', quality: 0.85 })
-        const b = (Array.isArray(out) ? out[0] : out) as Blob
-        if (cancelled) return
-        created = URL.createObjectURL(b)
-        setConv({ src, url: created })
-      } catch { if (!cancelled) setConv({ src, url: src }) }
-    })()
-    return () => { cancelled = true; if (created) URL.revokeObjectURL(created) }
-  }, [src, heicSrc])
-  if (!url) return (
-    <div className={`${className || ''} bg-gray-100 flex items-center justify-center`} onClick={onClick}>
-      <span className="text-[10px] text-gray-400 animate-pulse">사진 변환 중...</span>
+  if (heicSrc) return (
+    <div className={(className || '') + ' bg-gray-100 flex flex-col items-center justify-center gap-2 p-4 text-center text-gray-500 min-h-28'}
+      onClick={onClick} role={thumb ? 'button' : undefined} tabIndex={thumb ? 0 : undefined}
+      onKeyDown={thumb ? e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.currentTarget.click() } } : undefined}>
+      <span className="text-xs">HEIC 원본 · 미리보기 불가</span>
+      {thumb ? <span className="text-xs">눌러서 열기/다운로드</span> : (
+        <a href={originalUrl || src} target="_blank" rel="noopener noreferrer"
+          className="text-sm text-green-700 underline" onClick={e => e.stopPropagation()}>눌러서 열기/다운로드</a>
+      )}
     </div>
   )
-  // 썸네일 모드 — 올릴 때 만든 500px 썸네일(thumb_url)을 그대로 씀 (Vercel 이미지 최적화는 무료 한도 때문에 끔, next.config.ts)
-  if (thumb && !url.startsWith('blob:')) {
-    return <Image src={url} alt={alt || ''} fill sizes="(max-width: 768px) 33vw, 200px" unoptimized loading="lazy"
-      className={className} onClick={onClick} />
-  }
-  return <Image src={url} alt={alt || ''} width={800} height={600} unoptimized className={className} onClick={onClick} loading="lazy" />
+  if (thumb) return <Image src={src} alt={alt || ''} fill sizes="(max-width: 768px) 33vw, 200px" unoptimized loading="lazy"
+    className={className} onClick={onClick} />
+  return <Image src={src} alt={alt || ''} width={800} height={600} unoptimized className={className} onClick={onClick} loading="lazy" />
 }
 
 export default function ProjectDetail() {
@@ -342,12 +301,17 @@ export default function ProjectDetail() {
     let uploaded = 0
     let failCount = 0
     let failMsg = ''
-    // HEIC 무거운 변환(heic2any)은 메모리 보호를 위해 한 장씩만
+    let heicFailCount = 0
+    // 내장 디코드까지 포함하여 HEIC는 한 장씩만 처리한다.
     let heicChain: Promise<unknown> = Promise.resolve()
     const convertHeicSerial = (f: File) => {
-      const run = heicChain.then(() => toBrowserSafeImage(f))
+      const run = heicChain.then(async () => {
+        const native = await compressImage(f)
+        if (native !== f) return native
+        return compressImage(await convertHeic(f))
+      })
       heicChain = run.catch(() => {})
-      return run as Promise<{ file: File; ext: string }>
+      return run
     }
     const upload = (path: string, body: File) =>
       supabase.storage.from('uploads').upload(path, body, { contentType: body.type || 'application/octet-stream', upsert: true })
@@ -357,14 +321,12 @@ export default function ProjectDetail() {
       if (hash && (existingHashes.has(hash) || seenInBatch.has(hash))) { skipped.push(orig.name); return }
       if (hash) seenInBatch.add(hash)
       let file = orig
-      // 1) 사진은 자동 최적화: 긴 변 2400px 이하 + WebP 80% (아이폰 사파리는 HEIC도 여기서 즉시 변환 — 매우 빠름)
-      const c = await compressImage(orig)
-      if (c !== orig) file = c
-      // 2) 아직 HEIC 그대로면(내장 변환 미지원 브라우저) heic2any로 — 한 장씩 순차 처리
-      if (file === orig && isHeic(orig)) {
-        file = (await convertHeicSerial(orig)).file
-        const c2 = await compressImage(file)
-        if (c2 !== file) file = c2
+      // 실패한 HEIC는 업로드에서 제외하고 완료 알림에 수량과 해결 방법을 표시한다.
+      if (isHeic(orig)) {
+        try { file = await convertHeicSerial(orig) }
+        catch { heicFailCount++; return }
+      } else {
+        file = await compressImage(orig)
       }
       // PDF는 문서 속성 제목을 파일명으로 교정 (복사해 만든 제안서에 남은 옛 현장 제목 제거)
       if (/\.pdf$/i.test(file.name)) file = await normalizePdfTitle(file)
@@ -425,6 +387,7 @@ export default function ProjectDetail() {
     }
     await Promise.all(Array.from({ length: Math.min(CONC, list.length) }, worker))
 
+    if (heicFailCount > 0) toast(`${heicFailCount}장은 사진이 너무 커서 변환하지 못했어요 — 폰 카메라를 일반 화질(12MP)로 찍거나 갤러리에서 JPG로 공유해 주세요`, 'error')
     if (failCount > 0) toast(`${failCount}개 업로드 실패: ${failMsg}`)
     if (skipped.length > 0) toast(`이미 올라간 것과 같은 사진 ${skipped.length}장은 건너뛰었어요`)
     if (uploaded > 0) {
@@ -1927,7 +1890,7 @@ export default function ProjectDetail() {
                 className="max-w-full max-h-[calc(100vh-2rem)] rounded-lg" />
             ) : (
               // 우리 주소(끝=올린 파일명)로 표시 — 오른쪽 클릭 '다른 이름으로 저장'도 올린 이름
-              <HeicImg src={viewUrl(lightbox, cur?.file_name)} alt="" onClick={e => e.stopPropagation()} className="max-w-full max-h-[calc(100vh-2rem)] object-contain rounded-lg select-none" />
+              <HeicImg src={viewUrl(lightbox, cur?.file_name)} originalUrl={lightbox} alt="" onClick={e => e.stopPropagation()} className="max-w-full max-h-[calc(100vh-2rem)] object-contain rounded-lg select-none" />
             )}
             </div>
             {gallery.length > 1 && (<>
