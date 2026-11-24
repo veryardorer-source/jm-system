@@ -83,6 +83,36 @@ export default function WithdrawalsPage() {
 
   useEffect(() => { fetchPhotos() }, [])
 
+  // 서명 주소는 1시간만 유효 — PC에서 탭을 오래 열어두면 사진이 깨짐.
+  // 탭으로 돌아올 때·상세를 열 때 50분이 지났으면, 사진이 깨지면 즉시 주소를 새로 받는다.
+  const signedAtRef = useRef(0)
+  const photosRef = useRef<Photo[]>([])
+  const resigningRef = useRef(false)
+  async function resignAll(force = false) {
+    if (resigningRef.current) return
+    if (!force && Date.now() - signedAtRef.current < 50 * 60 * 1000) return
+    resigningRef.current = true
+    try {
+      const m = await signSecureUrls(photosRef.current.flatMap(imgsOf))
+      signedAtRef.current = Date.now()
+      setSigned(s => ({ ...s, ...m }))
+    } finally { resigningRef.current = false }
+  }
+  // 깨진 사진 → 한 번만 다시 받기(1분 안에 반복 안 함)
+  const lastErrorResignRef = useRef(0)
+  function onImgError() {
+    if (Date.now() - lastErrorResignRef.current < 60 * 1000) return
+    lastErrorResignRef.current = Date.now()
+    resignAll(true)
+  }
+  useEffect(() => {
+    const onBack = () => { if (document.visibilityState === 'visible') resignAll() }
+    document.addEventListener('visibilitychange', onBack)
+    window.addEventListener('focus', onBack)
+    const t = setInterval(() => resignAll(), 10 * 60 * 1000)
+    return () => { document.removeEventListener('visibilitychange', onBack); window.removeEventListener('focus', onBack); clearInterval(t) }
+  }, [])
+
   // 알림 링크(?open=id)로 들어오면 해당 건 상세를 바로 열기 — 렌더 중 보정 패턴(같은 링크는 1회만)
   const searchParams = useSearchParams()
   const [openedId, setOpenedId] = useState('')
@@ -95,6 +125,7 @@ export default function WithdrawalsPage() {
   }
 
   function openViewer(p: Photo) {
+    resignAll()
     setViewer(p)
     setZoomIdx(null)
     setViewerReason(p.reason || '')
@@ -156,6 +187,8 @@ export default function WithdrawalsPage() {
     const { data } = await supabase.from('withdrawal_requests').select('*').order('created_at', { ascending: false })
     const list = (data || []) as Photo[]
     setSigned(await signSecureUrls(list.flatMap(imgsOf)))
+    signedAtRef.current = Date.now()
+    photosRef.current = list
     setPhotos(list)
     setLoading(false)
   }
@@ -315,7 +348,7 @@ export default function WithdrawalsPage() {
                     {imgs.length > 0 ? (
                       <>
                         {isImageUrl(imgs[0]) ? (
-                          <Image src={view(imgs[0]) || '/icons/icon-192.png'} alt="출금요청" width={400} height={400} unoptimized loading="lazy" className="w-full aspect-square object-cover" />
+                          <Image src={view(imgs[0]) || '/icons/icon-192.png'} alt="출금요청" width={400} height={400} unoptimized loading="lazy" onError={onImgError} className="w-full aspect-square object-cover" />
                         ) : isPdfUrl(imgs[0]) ? (
                           <PdfPreview url={view(imgs[0])} width={400} className="w-full aspect-square overflow-hidden bg-gray-50" />
                         ) : (
@@ -448,7 +481,7 @@ export default function WithdrawalsPage() {
                       {isImageUrl(u) ? (
                         <button type="button" onClick={() => setZoomIdx(viewerImages.filter(isImageUrl).indexOf(u))}
                           className="block w-full cursor-zoom-in" aria-label="사진 크게 보기">
-                          <Image src={view(u) || '/icons/icon-192.png'} alt="" width={800} height={600} unoptimized loading="lazy" className="w-full h-auto rounded-lg" />
+                          <Image src={view(u) || '/icons/icon-192.png'} alt="" width={800} height={600} unoptimized loading="lazy" onError={onImgError} className="w-full h-auto rounded-lg" />
                         </button>
                       ) : isPdfUrl(u) ? (
                         // PDF는 쪽을 그림으로 바로 표시, 누르면 크게(브라우저 뷰어)
